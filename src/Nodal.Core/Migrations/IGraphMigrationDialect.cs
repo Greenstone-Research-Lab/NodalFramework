@@ -16,6 +16,7 @@ public interface IGraphMigrationDialect
 /// </summary>
 /// <param name="Text">The command text.</param>
 /// <param name="IsTransactional">Whether the provider can execute the command transactionally.</param>
+/// <param name="Kind">The command category used to select a safe execution channel.</param>
 public sealed record MigrationCommand(
     string Text,
     bool IsTransactional,

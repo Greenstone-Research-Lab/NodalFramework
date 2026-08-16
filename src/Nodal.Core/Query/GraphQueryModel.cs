@@ -9,6 +9,7 @@ namespace Nodal.Core.Query;
 /// <param name="Parameters">The parameter values referenced by the predicate.</param>
 /// <param name="Limit">The optional maximum number of results.</param>
 /// <param name="Traversals">The ordered relationship traversal steps.</param>
+/// <param name="Projection">The canonical result shape requested from the provider.</param>
 public sealed record GraphQueryModel(
     string NodeType,
     string Alias,
