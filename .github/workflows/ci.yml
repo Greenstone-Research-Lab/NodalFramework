@@ -1,0 +1,100 @@
+name: Nodal CI
+
+on:
+  push:
+    branches: [developer, staging, master]
+  pull_request:
+    branches: [developer, staging, master]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nodal-ci-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  quality:
+    name: Format, build, test, coverage
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore
+        run: dotnet restore Nodal.slnx
+
+      - name: Verify formatting
+        run: dotnet format Nodal.slnx --no-restore --verify-no-changes
+
+      - name: Build
+        run: dotnet build Nodal.slnx --configuration Release --no-restore
+
+      - name: Run test suite
+        run: dotnet test Nodal.slnx --configuration Release --no-build --logger "console;verbosity=normal"
+
+      - name: Enforce Core coverage
+        shell: pwsh
+        run: ./eng/verify-core-coverage.ps1
+
+  neo4j-smoke:
+    name: Neo4j live smoke
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Run disposable Neo4j integration tests
+        shell: pwsh
+        run: ./eng/run-neo4j-integration.ps1
+
+  tigergraph-smoke:
+    name: TigerGraph live smoke
+    if: github.event_name != 'pull_request' && vars.NODAL_RUN_TIGERGRAPH == 'true'
+    needs: quality
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    environment: tigergraph-qa
+    env:
+      NODAL_TIGERGRAPH_ENDPOINT: ${{ secrets.NODAL_TIGERGRAPH_ENDPOINT }}
+      NODAL_TIGERGRAPH_ACCESS_TOKEN: ${{ secrets.NODAL_TIGERGRAPH_ACCESS_TOKEN }}
+      NODAL_TIGERGRAPH_GRAPH: ${{ secrets.NODAL_TIGERGRAPH_GRAPH }}
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Run TigerGraph QA integration tests
+        shell: pwsh
+        run: ./eng/run-tigergraph-integration.ps1

@@ -1,0 +1,16 @@
+<Solution>
+  <Folder Name="/src/">
+    <Project Path="src/Nodal.Core/Nodal.Core.csproj" />
+    <Project Path="src/Nodal.Migrations/Nodal.Migrations.csproj" />
+    <Project Path="src/Nodal.Neo4j/Nodal.Neo4j.csproj" />
+    <Project Path="src/Nodal.TigerGraph/Nodal.TigerGraph.csproj" />
+  </Folder>
+  <Folder Name="/tests/">
+    <Project Path="tests/Nodal.ArchitectureTests/Nodal.ArchitectureTests.csproj" />
+    <Project Path="tests/Nodal.Core.Tests/Nodal.Core.Tests.csproj" />
+    <Project Path="tests/Nodal.IntegrationTests/Nodal.IntegrationTests.csproj" />
+    <Project Path="tests/Nodal.Migrations.Tests/Nodal.Migrations.Tests.csproj" />
+    <Project Path="tests/Nodal.Neo4j.Tests/Nodal.Neo4j.Tests.csproj" />
+    <Project Path="tests/Nodal.TigerGraph.Tests/Nodal.TigerGraph.Tests.csproj" />
+  </Folder>
+</Solution>
