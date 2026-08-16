@@ -1,0 +1,30 @@
+name: Branch Promotion Policy
+
+on:
+  pull_request:
+    branches: [staging, master]
+
+permissions:
+  contents: read
+
+jobs:
+  validate-promotion-path:
+    name: Validate promotion path
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Validate source and destination branches
+        shell: pwsh
+        env:
+          BASE_BRANCH: ${{ github.base_ref }}
+          HEAD_BRANCH: ${{ github.head_ref }}
+        run: |
+          if ($env:BASE_BRANCH -eq 'staging' -and $env:HEAD_BRANCH -ne 'developer') {
+            throw "Only developer may be promoted to staging. Received '$env:HEAD_BRANCH'."
+          }
+
+          if ($env:BASE_BRANCH -eq 'master' -and $env:HEAD_BRANCH -ne 'staging') {
+            throw "Only staging may be promoted to master. Received '$env:HEAD_BRANCH'."
+          }
+
+          Write-Host "Promotion path accepted: $env:HEAD_BRANCH -> $env:BASE_BRANCH"

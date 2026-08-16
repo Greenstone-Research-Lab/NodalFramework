@@ -1,0 +1,114 @@
+name: Publish Alpha Packages
+
+on:
+  push:
+    branches: [staging]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+  id-token: write
+
+concurrency:
+  group: nuget-staging
+  cancel-in-progress: false
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+  NUGET_SOURCE: https://api.nuget.org/v3/index.json
+
+jobs:
+  publish-alpha:
+    name: Validate and publish alpha packages
+    if: github.ref == 'refs/heads/staging'
+    runs-on: ubuntu-latest
+    timeout-minutes: 20
+    environment: staging
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Select immutable alpha version
+        shell: pwsh
+        run: |
+          $version = "0.1.0-alpha.${{ github.run_number }}"
+          "PACKAGE_VERSION=$version" | Out-File `
+            -FilePath $env:GITHUB_ENV `
+            -Encoding utf8 `
+            -Append
+          "### Nodal Framework $version" | Out-File `
+            -FilePath $env:GITHUB_STEP_SUMMARY `
+            -Encoding utf8 `
+            -Append
+
+      - name: Run complete QA and verify packages
+        shell: pwsh
+        run: ./eng/verify.ps1 -PackageVersion $env:PACKAGE_VERSION
+
+      - name: Upload verified package artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: nodal-${{ env.PACKAGE_VERSION }}
+          path: |
+            TestResults/package-verification/*.nupkg
+            TestResults/package-verification/*.snupkg
+          if-no-files-found: error
+          retention-days: 30
+
+      - name: Validate NuGet publishing identity
+        shell: pwsh
+        env:
+          NUGET_USER: ${{ vars.NUGET_USER }}
+        run: |
+          if ([string]::IsNullOrWhiteSpace($env:NUGET_USER)) {
+            throw "The staging environment must define the NUGET_USER variable."
+          }
+
+      - name: Sign in to NuGet with trusted publishing
+        id: nuget-login
+        uses: NuGet/login@v1
+        with:
+          user: ${{ vars.NUGET_USER }}
+
+      - name: Publish alpha packages to NuGet
+        shell: pwsh
+        env:
+          TEMPORARY_NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
+        run: |
+          $packageDirectory = './TestResults/package-verification'
+          $packageIds = @(
+            'Nodal.Core',
+            'Nodal.Migrations',
+            'Nodal.Neo4j',
+            'Nodal.TigerGraph'
+          )
+
+          foreach ($packageId in $packageIds) {
+            $packagePath = Join-Path `
+              $packageDirectory `
+              "$packageId.$env:PACKAGE_VERSION.nupkg"
+            if (-not (Test-Path -LiteralPath $packagePath)) {
+              throw "Verified package '$packagePath' was not found."
+            }
+
+            dotnet nuget push $packagePath `
+              --api-key $env:TEMPORARY_NUGET_API_KEY `
+              --source $env:NUGET_SOURCE
+            if ($LASTEXITCODE -ne 0) {
+              throw "Publishing '$packageId' failed with exit code $LASTEXITCODE."
+            }
+          }
+
+          "Published all four packages to NuGet.org." | Out-File `
+            -FilePath $env:GITHUB_STEP_SUMMARY `
+            -Encoding utf8 `
+            -Append

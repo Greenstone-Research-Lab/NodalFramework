@@ -243,6 +243,12 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-packages.ps1
 
 The package gate produces all four `.nupkg` and `.snupkg` artifacts, then inspects their manifests and contents for the MIT expression, repository metadata, README, license, IntelliSense XML, target framework, and required package dependencies.
 
+## Publishing
+
+Alpha packages are published only after a pull request promotes `developer` to `staging`. The `Publish Alpha Packages` workflow assigns one immutable `0.1.0-alpha.<run>` version to all four packages, runs the complete QA gate, exchanges GitHub's OIDC identity for a short-lived NuGet credential, and publishes `Nodal.Core` before its dependent packages. No long-lived NuGet API key is stored by the repository.
+
+The GitHub `staging` environment must define `NUGET_USER` as the NuGet profile name. NuGet Trusted Publishing must match repository owner `Greenstone-Research-Lab`, repository `NodalFramework`, workflow file `publish-alpha.yml`, and environment `staging`. Publishing deliberately does not use `--skip-duplicate`, ensuring package conflicts and reserved identifiers fail visibly.
+
 ## Live integration tests
 
 Live database tests are isolated in `Nodal.IntegrationTests` and are skipped during ordinary unit-test runs unless their environment is configured.
