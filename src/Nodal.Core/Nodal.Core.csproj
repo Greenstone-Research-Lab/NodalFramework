@@ -4,6 +4,10 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PackageId>Nodal.Core</PackageId>
+    <Title>Nodal Framework Core</Title>
+    <Description>Provider-neutral graph modeling, querying, change tracking, and unit-of-work primitives for Nodal Framework.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
 </Project>

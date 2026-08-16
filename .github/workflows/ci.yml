@@ -20,7 +20,7 @@ env:
 
 jobs:
   quality:
-    name: Format, build, test, coverage
+    name: Format, build, test, coverage, packages
     runs-on: ubuntu-latest
     timeout-minutes: 15
 
@@ -50,6 +50,10 @@ jobs:
       - name: Enforce Core coverage
         shell: pwsh
         run: ./eng/verify-core-coverage.ps1
+
+      - name: Verify NuGet packages
+        shell: pwsh
+        run: ./eng/verify-packages.ps1
 
   neo4j-smoke:
     name: Neo4j live smoke
