@@ -32,6 +32,9 @@ public sealed record GraphLogicalPredicate(
 /// </summary>
 public enum GraphLogicalOperator
 {
+    /// <summary>Requires both operands to evaluate to true.</summary>
     And,
+
+    /// <summary>Requires at least one operand to evaluate to true.</summary>
     Or,
 }

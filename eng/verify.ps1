@@ -1,3 +1,7 @@
+param(
+    [string]$PackageVersion = '0.1.0-alpha.1'
+)
+
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 
@@ -22,4 +26,9 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 & "$PSScriptRoot/verify-core-coverage.ps1"
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+
+& "$PSScriptRoot/verify-packages.ps1" -PackageVersion $PackageVersion
 exit $LASTEXITCODE

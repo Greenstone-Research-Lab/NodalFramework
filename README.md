@@ -2,6 +2,17 @@
 
 Nodal Framework is a provider-based .NET graph data access prototype. It keeps the domain model and query API provider-neutral while Neo4j and TigerGraph packages compile and execute the same model through their native transports.
 
+## Packages
+
+| Package | Purpose |
+| --- | --- |
+| `Nodal.Core` | Provider-neutral model, LINQ query surface, tracking, and unit of work |
+| `Nodal.Migrations` | Portable graph schema migration contracts and planning |
+| `Nodal.Neo4j` | Neo4j/Cypher provider using the official pooled Bolt driver |
+| `Nodal.TigerGraph` | TigerGraph/GSQL provider using REST++ and an optional administrative transport |
+
+The initial alpha targets .NET 10. Package versions move together so provider and core contracts remain compatible during the pre-release period.
+
 ## Attribute-based model
 
 Attributes describe only portable graph semantics. Database-specific indexes, constraints, storage options, and migration details remain in the fluent migration API so domain POCOs do not become coupled to one graph database.
@@ -216,13 +227,27 @@ The repository has one local command matching the CI quality job:
 powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify.ps1
 ```
 
-It restores dependencies, verifies formatting, builds in Release mode, runs the complete test suite, and enforces the Core package's minimum 95% line-coverage gate. Coverage can also be run independently:
+It restores dependencies, verifies formatting, builds in Release mode, runs the complete test suite, enforces the Core package's minimum 95% line-coverage gate, and validates the publishable NuGet archives. Coverage can also be run independently:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-core-coverage.ps1
 ```
 
 The script rebuilds the Core tests, produces a Cobertura report under the ignored `TestResults` directory, and fails when line coverage falls below the threshold.
+
+Package verification can also be run independently:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-packages.ps1
+```
+
+The package gate produces all four `.nupkg` and `.snupkg` artifacts, then inspects their manifests and contents for the MIT expression, repository metadata, README, license, IntelliSense XML, target framework, and required package dependencies.
+
+## Publishing
+
+Alpha packages are published only after a pull request promotes `developer` to `staging`. The `Publish Alpha Packages` workflow assigns one immutable `0.1.0-alpha.<run>` version to all four packages, runs the complete QA gate, exchanges GitHub's OIDC identity for a short-lived NuGet credential, and publishes `Nodal.Core` before its dependent packages. No long-lived NuGet API key is stored by the repository.
+
+The GitHub `staging` environment must define `NUGET_USER` as the NuGet profile name. NuGet Trusted Publishing must match repository owner `Greenstone-Research-Lab`, repository `NodalFramework`, workflow file `publish-alpha.yml`, and environment `staging`. Publishing deliberately does not use `--skip-duplicate`, ensuring package conflicts and reserved identifiers fail visibly.
 
 ## Live integration tests
 
@@ -248,3 +273,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/run-tigergraph-integra
 No live credentials are stored in the repository. The integration project intentionally avoids the current Testcontainers dependency chain until its high-severity SSH.NET advisory is available through a patched NuGet release.
 
 GitHub Actions runs the quality gate and a disposable Neo4j smoke environment for every pull request targeting `developer`, `staging`, or `master`. TigerGraph smoke tests run only outside pull requests when the repository variable `NODAL_RUN_TIGERGRAPH` is `true`; credentials are read from the protected `tigergraph-qa` environment secrets `NODAL_TIGERGRAPH_ENDPOINT`, `NODAL_TIGERGRAPH_ACCESS_TOKEN`, and `NODAL_TIGERGRAPH_GRAPH`. The TigerGraph suite verifies create/read/update persistence and confirms that an invalid edge rolls back vertices in an atomic REST batch.
+
+## License
+
+Nodal Framework is independently developed and distributed under the [MIT License](LICENSE.txt), the same permissive license model used by Entity Framework Core. Nodal Framework is not affiliated with or endorsed by Microsoft or the .NET Foundation.
