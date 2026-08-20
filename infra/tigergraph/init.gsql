@@ -1,0 +1,12 @@
+CREATE VERTEX Person (
+    PRIMARY_ID Id STRING,
+    Name STRING
+) WITH primary_id_as_attribute="true"
+
+CREATE DIRECTED EDGE KNOWS (
+    FROM Person,
+    TO Person,
+    SinceYear INT
+)
+
+CREATE GRAPH NodalQa(Person, KNOWS)

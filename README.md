@@ -253,6 +253,30 @@ The GitHub `staging` environment must define `NUGET_USER` as the NuGet profile n
 
 Live database tests are isolated in `Nodal.IntegrationTests` and are skipped during ordinary unit-test runs unless their environment is configured.
 
+### Local Docker stack
+
+Neo4j and TigerGraph Community can be started together as a persistent local development stack:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/start-local-databases.ps1
+```
+
+Neo4j Browser is available at `http://localhost:7474` with local-only credentials `neo4j` / `NodalLocal123!`. TigerGraph GraphStudio and its consolidated REST/GSQL endpoint are available at `http://localhost:14240` with the Community image's local credentials `tigergraph` / `tigergraph`; the startup script creates the `NodalQa` graph with the `Person` vertex and `KNOWS` edge schema used by the integration suite. TigerGraph is substantially larger than Neo4j and requires at least 8 GB of Docker memory.
+
+Run both live provider suites against the persistent containers with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/run-local-integration.ps1
+```
+
+Stop containers while preserving their data volumes with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/stop-local-databases.ps1
+```
+
+The compose ports and credentials are intentionally limited to loopback-bound local development. REST++ data authentication is disabled by the Community image's local configuration, while interpreted GSQL requests use Basic authentication. These settings must not be reused for shared or production deployments.
+
 Neo4j can be started in a disposable Docker container and tested end to end with:
 
 ```powershell

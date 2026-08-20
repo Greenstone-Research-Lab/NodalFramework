@@ -17,16 +17,12 @@ public sealed class TigerGraphConnectionTests
         var endpoint = new Uri(
             Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_ENDPOINT")!,
             UriKind.Absolute);
-        var accessToken = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_ACCESS_TOKEN")!;
+        var options = CreateOptions(endpoint);
         var graphName = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GRAPH")!;
         using var httpClient = new HttpClient { BaseAddress = endpoint };
         var provider = new TigerGraphProvider(
             httpClient,
-            new TigerGraphOptions
-            {
-                Endpoint = endpoint,
-                AccessToken = accessToken,
-            },
+            options,
             graphName);
         var context = new SocialContext(provider);
         var suffix = Guid.NewGuid().ToString("N");
@@ -78,8 +74,8 @@ public sealed class TigerGraphConnectionTests
         }
         finally
         {
-            await DeleteVertexAsync(httpClient, accessToken, graphName, source.Id);
-            await DeleteVertexAsync(httpClient, accessToken, graphName, target.Id);
+            await DeleteVertexAsync(httpClient, options, graphName, source.Id);
+            await DeleteVertexAsync(httpClient, options, graphName, target.Id);
         }
     }
 
@@ -91,16 +87,12 @@ public sealed class TigerGraphConnectionTests
         var endpoint = new Uri(
             Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_ENDPOINT")!,
             UriKind.Absolute);
-        var accessToken = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_ACCESS_TOKEN")!;
+        var options = CreateOptions(endpoint);
         var graphName = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GRAPH")!;
         using var httpClient = new HttpClient { BaseAddress = endpoint };
         var provider = new TigerGraphProvider(
             httpClient,
-            new TigerGraphOptions
-            {
-                Endpoint = endpoint,
-                AccessToken = accessToken,
-            },
+            options,
             graphName);
         var context = new FailureContext(provider);
         var suffix = Guid.NewGuid().ToString("N");
@@ -115,26 +107,34 @@ public sealed class TigerGraphConnectionTests
 
             await Assert.ThrowsAnyAsync<Exception>(async () => await context.SaveChangesAsync());
 
-            Assert.False(await VertexExistsAsync(httpClient, accessToken, graphName, source.Id));
-            Assert.False(await VertexExistsAsync(httpClient, accessToken, graphName, target.Id));
+            Assert.False(await VertexExistsAsync(httpClient, options, graphName, source.Id));
+            Assert.False(await VertexExistsAsync(httpClient, options, graphName, target.Id));
         }
         finally
         {
-            await DeleteVertexAsync(httpClient, accessToken, graphName, source.Id);
-            await DeleteVertexAsync(httpClient, accessToken, graphName, target.Id);
+            await DeleteVertexAsync(httpClient, options, graphName, source.Id);
+            await DeleteVertexAsync(httpClient, options, graphName, target.Id);
         }
     }
 
+    private static TigerGraphOptions CreateOptions(Uri endpoint) => new()
+    {
+        Endpoint = endpoint,
+        AccessToken = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_ACCESS_TOKEN"),
+        Username = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_USERNAME"),
+        Password = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_PASSWORD"),
+    };
+
     private static async Task DeleteVertexAsync(
         HttpClient httpClient,
-        string accessToken,
+        TigerGraphOptions options,
         string graphName,
         string identity)
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Delete,
             $"restpp/graph/{Uri.EscapeDataString(graphName)}/vertices/Person/{Uri.EscapeDataString(identity)}");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        ApplyAuthentication(request, options);
         using var response = await httpClient.SendAsync(request);
         if (response.StatusCode != System.Net.HttpStatusCode.NotFound)
         {
@@ -144,14 +144,14 @@ public sealed class TigerGraphConnectionTests
 
     private static async Task<bool> VertexExistsAsync(
         HttpClient httpClient,
-        string accessToken,
+        TigerGraphOptions options,
         string graphName,
         string identity)
     {
         using var request = new HttpRequestMessage(
             HttpMethod.Get,
             $"restpp/graph/{Uri.EscapeDataString(graphName)}/vertices/Person/{Uri.EscapeDataString(identity)}");
-        request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", accessToken);
+        ApplyAuthentication(request, options);
         using var response = await httpClient.SendAsync(request);
         if (response.StatusCode == System.Net.HttpStatusCode.NotFound)
         {
@@ -162,6 +162,19 @@ public sealed class TigerGraphConnectionTests
         var payload = await response.Content.ReadAsStringAsync();
         using var document = JsonDocument.Parse(payload);
         return ContainsVertex(document.RootElement, identity);
+    }
+
+    private static void ApplyAuthentication(HttpRequestMessage request, TigerGraphOptions options)
+    {
+        if (!string.IsNullOrWhiteSpace(options.AccessToken))
+        {
+            request.Headers.Authorization = new AuthenticationHeaderValue("Bearer", options.AccessToken);
+            return;
+        }
+
+        var credentials = Convert.ToBase64String(
+            System.Text.Encoding.UTF8.GetBytes($"{options.Username}:{options.Password}"));
+        request.Headers.Authorization = new AuthenticationHeaderValue("Basic", credentials);
     }
 
     private static bool ContainsVertex(JsonElement element, string identity)
