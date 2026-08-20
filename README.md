@@ -277,6 +277,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/stop-local-databases.p
 
 The compose ports and credentials are intentionally limited to loopback-bound local development. REST++ data authentication is disabled by the Community image's local configuration, while interpreted GSQL requests use Basic authentication. These settings must not be reused for shared or production deployments.
 
+### Runnable provider demos
+
+The [`samples`](samples/README.md) directory contains one shared social graph model and two console hosts. Both hosts execute the same provider-neutral create, path traversal, update, and verification workflow; only provider construction differs.
+
+With the local Docker stack available, run both demos using:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/run-local-demos.ps1
+```
+
+The generated `Ada -> KNOWS -> Alan` paths remain in each database for visual inspection. Connection settings can be overridden through the documented `NODAL_NEO4J_*` and `NODAL_TIGERGRAPH_*` environment variables.
+
 Neo4j can be started in a disposable Docker container and tested end to end with:
 
 ```powershell
