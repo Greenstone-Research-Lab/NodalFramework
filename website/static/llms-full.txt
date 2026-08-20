@@ -2,6 +2,15 @@
 
 Nodal Framework is a provider-based .NET 10 graph data access framework. Application code models nodes and relationship payloads as POCOs. Nodal.Core owns portable metadata, typed sets, expression translation, canonical results, identity resolution, change tracking, and unit-of-work planning. Nodal.Neo4j and Nodal.TigerGraph compile and execute the portable model through native transports. Nodal.Migrations expresses portable schema intent.
 
+## Graph analytics
+
+- Start from a typed node query, call `Analyze` with a same-node `RelationSet`, and select a named algorithm such as `PageRank`, `Betweenness`, `Louvain`, or `WeaklyConnectedComponents`.
+- Use typed `PageRankOptions` and `LouvainOptions` for stable settings, `OnProjection` for a Neo4j GDS named graph, `WeightedBy` for a mapped numeric relationship property, and `Top` to bound result rows. `WithOption` is reserved for provider-extension parameters.
+- `GraphAnalyticsRecord<TNode>` preserves the associated materialized node and every returned metric. `Score` and `CommunityId` are convenience properties; graph- or edge-level algorithms may return no node.
+- Neo4j analytics require explicit GDS enablement. TigerGraph analytics require an explicit algorithm-to-installed-query mapping. Unsupported capabilities fail before transport execution.
+- The live QA database baselines are Neo4j 5.26 Community and TigerGraph 4.2.4 Community. Neo4j 5.26 requires GDS 2.13. Runtime GDS discovery and projection lifecycle management are implemented; per-algorithm live analytics certification remains deployment-gated.
+- Treat compiler verification and live database verification as different guarantees. Consult `/docs/providers/compatibility` before generating provider-specific code.
+
 ## Core composition
 
 - Derive an application context from `NodalContext` and pass `IGraphProvider` to its base constructor.

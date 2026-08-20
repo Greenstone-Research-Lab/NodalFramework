@@ -1,4 +1,5 @@
 using Neo4j.Driver;
+using Nodal.Core.Analytics;
 using Nodal.Core.ChangeTracking;
 using Nodal.Core.Migrations;
 using Nodal.Core.Mutations;
@@ -48,6 +49,8 @@ public sealed class Neo4jExecutionTests
         Assert.Single(result.RelationRecords);
         Assert.Single(result.PathRecords);
         Assert.Equal(2L, result.ScalarValues["count"]);
+        Assert.Single(result.ResultRows);
+        Assert.Equal(2L, result.ResultRows[0].Values["count"]);
         Assert.Equal(string.Empty, result.Nodes.Single(node => Equals(node.Id, "nested")).Type);
         await session.Received(1).DisposeAsync();
     }
@@ -192,6 +195,35 @@ public sealed class Neo4jExecutionTests
         Assert.True(provider.SupportsMigrationExecution);
         Assert.True(provider.Capabilities.SupportsTransactions);
         Assert.Equal(GraphTransactionScope.ClientManaged, provider.Capabilities.TransactionScope);
+        Assert.IsType<Neo4jAnalyticsCompiler>(provider.AnalyticsCompiler);
+        Assert.Equal(
+            new[] { GraphAnalyticsAlgorithm.ShortestPath, GraphAnalyticsAlgorithm.AllShortestPaths },
+            provider.AnalyticsCapabilities.Algorithms.OrderBy(algorithm => algorithm));
+        Assert.Equal(
+            GraphAnalyticsAvailability.Native,
+            provider.AnalyticsCapabilities.GetDetails(GraphAnalyticsAlgorithm.ShortestPath).Availability);
+
+        var analyticsProvider = new Neo4jProvider(driver, "neo4j", graphDataScienceEnabled: true);
+        Assert.True(analyticsProvider.AnalyticsCapabilities.Supports(GraphAnalyticsAlgorithm.PageRank));
+        Assert.True(analyticsProvider.AnalyticsCapabilities.SupportsWeightedRelationships);
+        Assert.Equal("5.26 Community", analyticsProvider.AnalyticsCapabilities.TestedProviderVersion);
+        Assert.Equal("Neo4j.Driver 6.3.0", analyticsProvider.AnalyticsCapabilities.ClientVersion);
+        var pageRank = analyticsProvider.AnalyticsCapabilities.GetDetails(GraphAnalyticsAlgorithm.PageRank);
+        Assert.Equal(GraphAnalyticsAvailability.Extension, pageRank.Availability);
+        Assert.Equal(GraphCapabilityVerification.Compiler, pageRank.Verification);
+        Assert.True(pageRank.SupportsWeights);
+        Assert.False(analyticsProvider.AnalyticsCapabilities
+            .GetDetails(GraphAnalyticsAlgorithm.Bridges).SupportsWeights);
+        Assert.Throws<NotSupportedException>(() => provider.AnalyticsCapabilities
+            .GetDetails(GraphAnalyticsAlgorithm.PageRank));
+
+        var restricted = new Neo4jProvider(
+            driver,
+            "neo4j",
+            graphDataScienceEnabled: true,
+            analyticsAlgorithms: new HashSet<GraphAnalyticsAlgorithm> { GraphAnalyticsAlgorithm.Louvain });
+        Assert.True(restricted.AnalyticsCapabilities.Supports(GraphAnalyticsAlgorithm.Louvain));
+        Assert.False(restricted.AnalyticsCapabilities.Supports(GraphAnalyticsAlgorithm.PageRank));
 
         await provider.DisposeAsync();
 
