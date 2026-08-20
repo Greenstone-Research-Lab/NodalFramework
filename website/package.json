@@ -6,6 +6,8 @@
     "start": "docusaurus start",
     "build": "docusaurus build",
     "serve": "docusaurus serve",
+    "preview": "wrangler pages dev build --ip 127.0.0.1 --port 3010",
+    "smoke:preview": "node scripts/smoke-preview.mjs",
     "clear": "docusaurus clear",
     "typecheck": "tsc --noEmit"
   },
@@ -22,7 +24,8 @@
     "@docusaurus/module-type-aliases": "3.10.2",
     "@docusaurus/tsconfig": "3.10.2",
     "@docusaurus/types": "3.10.2",
-    "typescript": "~5.8.3"
+    "typescript": "~5.8.3",
+    "wrangler": "4.125.0"
   },
   "engines": {
     "node": ">=20.0"

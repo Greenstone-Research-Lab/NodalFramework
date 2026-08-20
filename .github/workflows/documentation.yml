@@ -67,6 +67,12 @@ jobs:
         shell: pwsh
         run: ./eng/build-docs.ps1 -SkipDotNetRestore -SkipNodeInstall
 
+      - name: Start Cloudflare-compatible preview
+        run: npm run preview --prefix website > "$RUNNER_TEMP/nodal-docs-preview.log" 2>&1 &
+
+      - name: Smoke test documentation routes and assets
+        run: npm run smoke:preview --prefix website
+
       - name: Upload static site
         uses: actions/upload-artifact@v6
         with:

@@ -20,6 +20,8 @@ Until the variable is enabled, pull requests still build and validate every docu
 - The deployable directory is `website/build`.
 - Wrangler is pinned in the deployment workflow.
 
+The local production preview uses `wrangler pages dev`. The build also injects an explicit `/api/` base path into the DocFX entry page, keeping its relative styles, scripts, logo, and links correct whether a host canonicalizes `api/index.html` to `/api`, `/api/`, or an extensionless URL.
+
 ## Domain configuration
 
 The initial canonical URL is `https://nodalframework.pages.dev`. When a custom domain is selected:

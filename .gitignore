@@ -12,6 +12,7 @@ BenchmarkDotNet.Artifacts/
 website/node_modules/
 website/build/
 website/.docusaurus/
+website/.wrangler/
 website/static/api/
 docs/api/.docfx/
 docs/api/api/*.yml

@@ -25,6 +25,22 @@ try {
     dotnet tool run docfx -- docs/api/docfx.json
     if ($LASTEXITCODE -ne 0) { throw 'DocFX API generation failed.' }
 
+    $docfxIndexPath = Join-Path $websitePath 'static/api/index.html'
+    $docfxIndex = [System.IO.File]::ReadAllText($docfxIndexPath)
+    $headPattern = [regex]::new('<head>\s*')
+    if (-not $headPattern.IsMatch($docfxIndex)) {
+        throw 'The generated DocFX index does not contain a head element.'
+    }
+
+    $docfxIndex = $headPattern.Replace(
+        $docfxIndex,
+        "<head>`n    <base href=`"/api/`">`n    ",
+        1)
+    [System.IO.File]::WriteAllText(
+        $docfxIndexPath,
+        $docfxIndex,
+        [System.Text.UTF8Encoding]::new($false))
+
     if (-not $SkipNodeInstall) {
         & $npmCommand ci --prefix $websitePath
         if ($LASTEXITCODE -ne 0) { throw 'The documentation npm restore failed.' }
