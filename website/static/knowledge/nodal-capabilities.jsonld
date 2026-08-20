@@ -1,0 +1,28 @@
+{
+  "@context": {
+    "schema": "https://schema.org/",
+    "nodal": "https://nodalframework.pages.dev/vocabulary/",
+    "name": "schema:name",
+    "description": "schema:description",
+    "requires": {"@id": "nodal:requires", "@type": "@id"},
+    "provides": {"@id": "nodal:provides", "@type": "@id"},
+    "uses": {"@id": "nodal:uses", "@type": "@id"},
+    "supports": {"@id": "nodal:supports", "@type": "@id"}
+  },
+  "@graph": [
+    {"@id": "nodal:NodalContext", "@type": "nodal:CoreType", "name": "NodalContext", "description": "Bounded graph unit of work and provider execution boundary.", "provides": ["nodal:GraphSet", "nodal:RelationSet", "nodal:ChangeTracking", "nodal:DatabaseFacade"]},
+    {"@id": "nodal:GraphSet", "@type": "nodal:GenericType", "name": "GraphSet<TNode>", "description": "Strongly typed node query and mutation entry point.", "requires": "nodal:NodePoco", "supports": ["nodal:Query", "nodal:NodeMutation"]},
+    {"@id": "nodal:RelationSet", "@type": "nodal:GenericType", "name": "RelationSet<TSource, TRelation, TTarget>", "description": "Strongly typed edge traversal and mutation entry point.", "requires": ["nodal:NodePoco", "nodal:RelationPoco"], "supports": ["nodal:Traversal", "nodal:RelationMutation"]},
+    {"@id": "nodal:NodePoco", "@type": "nodal:ModelConstraint", "name": "Node POCO", "requires": "nodal:GraphNodeAttribute"},
+    {"@id": "nodal:RelationPoco", "@type": "nodal:ModelConstraint", "name": "Relationship POCO", "requires": "nodal:GraphRelationAttribute"},
+    {"@id": "nodal:GraphNodeAttribute", "@type": "nodal:Attribute", "name": "GraphNodeAttribute"},
+    {"@id": "nodal:GraphRelationAttribute", "@type": "nodal:Attribute", "name": "GraphRelationAttribute"},
+    {"@id": "nodal:Query", "@type": "nodal:Capability", "name": "Provider-neutral query", "supports": ["nodal:Filtering", "nodal:Ordering", "nodal:Paging", "nodal:Projection", "nodal:Aggregates"]},
+    {"@id": "nodal:Traversal", "@type": "nodal:Capability", "name": "Typed graph traversal", "supports": ["nodal:Direction", "nodal:BoundedDepth", "nodal:PathPayload"]},
+    {"@id": "nodal:Neo4jProvider", "@type": "nodal:Provider", "name": "Nodal.Neo4j", "uses": ["nodal:Cypher", "nodal:Bolt"], "supports": ["nodal:Query", "nodal:Traversal", "nodal:MutationTransaction", "nodal:Migrations"]},
+    {"@id": "nodal:TigerGraphProvider", "@type": "nodal:Provider", "name": "Nodal.TigerGraph", "uses": ["nodal:GSQL", "nodal:RESTPP"], "supports": ["nodal:Query", "nodal:Traversal", "nodal:AtomicRequestMutation", "nodal:MigrationsWithAdministrativeTransport"]},
+    {"@id": "nodal:NodalMigrations", "@type": "nodal:Package", "name": "Nodal.Migrations", "description": "Portable graph schema intent, deterministic planning, and provider execution.", "requires": "nodal:MigrationDialect"}
+  ],
+  "schema:version": "0.1.0-alpha",
+  "schema:dateModified": "2026-08-20"
+}

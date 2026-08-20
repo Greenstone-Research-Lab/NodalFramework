@@ -1,0 +1,45 @@
+# Nodal Framework — coding-agent context
+
+Nodal Framework is a provider-based .NET 10 graph data access framework. Application code models nodes and relationship payloads as POCOs. Nodal.Core owns portable metadata, typed sets, expression translation, canonical results, identity resolution, change tracking, and unit-of-work planning. Nodal.Neo4j and Nodal.TigerGraph compile and execute the portable model through native transports. Nodal.Migrations expresses portable schema intent.
+
+## Core composition
+
+- Derive an application context from `NodalContext` and pass `IGraphProvider` to its base constructor.
+- Expose node sets with `GraphSet<TNode> Property => Set<TNode>()`.
+- Expose relationships with `RelationSet<TSource, TRelation, TTarget> Property => Relations<TSource, TRelation, TTarget>()`.
+- Apply `[GraphNode]` to node POCOs and `[GraphRelation]` to edge POCOs.
+- Apply `[GraphKey]` to a stable domain identifier. `[GraphProperty]` changes the stored property name. `[GraphIgnore]` excludes state.
+
+## Query rules
+
+- Begin with `GraphSet.Query()` or `GraphSet.Match(predicate)`.
+- Supported query operations include filtering, ordering, paging, distinctness, projections, bounded terminal operations, and aggregates.
+- Traverse typed relations with `Traverse`, `TraverseIncoming`, or path projections with `TraversePath`.
+- Reuse hot factories through `NodalCompiledQuery.Compile`.
+- Use `Database.QueryRawAsync<T>` only for provider-native operations and always pass values separately as parameters.
+- Use `AsNoTracking()` for read-only or high-volume work.
+
+## Changes and migrations
+
+- Add/update/remove nodes through `GraphSet` and connect/update/disconnect edge payloads through `RelationSet`.
+- Call `SaveChangesAsync` once per bounded unit of work.
+- Nodal orders dependencies and accepts tracked state only after provider success.
+- Migration classes derive from `NodalMigration`, expose a stable `Id`, and implement `Up` and `Down` with `MigrationBuilder`.
+
+## Provider lifetime
+
+- Keep `Neo4jProvider` long-lived; it owns the official driver's Bolt connection pool.
+- Supply TigerGraph with a long-lived, host-managed `HttpClient`.
+- TigerGraph administration operations require an `ITigerGraphAdministrativeTransport` appropriate to the deployment.
+
+## Safety constraints
+
+- Do not claim that every graph semantic is portable. Providers reject combinations they cannot preserve correctly.
+- Do not parse Neo4j or TigerGraph result formats in application code; use Nodal materialization.
+- Do not concatenate user values into native query text.
+- Do not place credentials in source, examples, logs, or migration files.
+- Treat roadmap items as planned capabilities, not shipped APIs.
+
+Capability graph: https://nodalframework.pages.dev/knowledge/nodal-capabilities.jsonld
+Full guide: https://nodalframework.pages.dev/docs/intro
+API: https://nodalframework.pages.dev/api/
