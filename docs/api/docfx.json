@@ -1,0 +1,40 @@
+{
+  "metadata": [
+    {
+      "src": [
+        {
+          "src": "../../src",
+          "files": ["**/*.csproj"]
+        }
+      ],
+      "dest": "api",
+      "properties": {
+        "Configuration": "Release",
+        "TargetFramework": "net10.0"
+      }
+    }
+  ],
+  "build": {
+    "content": [
+      {"files": ["index.md", "toc.yml", "api/**.yml", "api/index.md"]}
+    ],
+    "output": "../../website/static/api",
+    "template": ["default", "modern"],
+    "globalMetadata": {
+      "_appName": "Nodal Framework API",
+      "_appTitle": "Nodal Framework API Reference",
+      "_appFooter": "Nodal Framework · MIT License",
+      "_enableSearch": true,
+      "_disableContribution": false,
+      "_gitContribute": {
+        "repo": "https://github.com/Greenstone-Research-Lab/NodalFramework",
+        "branch": "developer"
+      }
+    },
+    "sitemap": {
+      "baseUrl": "https://nodalframework.pages.dev/api/",
+      "priority": 0.5,
+      "changefreq": "weekly"
+    }
+  }
+}
