@@ -1,0 +1,41 @@
+<svg xmlns="http://www.w3.org/2000/svg" width="1600" height="800" viewBox="0 0 1600 800" role="img" aria-labelledby="title description">
+  <title id="title">Nodal Framework Journal</title>
+  <desc id="description">An abstract graph of connected green, blue, and amber nodes on a dark background.</desc>
+  <defs>
+    <linearGradient id="background" x1="0" y1="0" x2="1" y2="1">
+      <stop stop-color="#07101d"/>
+      <stop offset="1" stop-color="#12233a"/>
+    </linearGradient>
+    <radialGradient id="glow">
+      <stop stop-color="#35ddb1" stop-opacity=".48"/>
+      <stop offset="1" stop-color="#35ddb1" stop-opacity="0"/>
+    </radialGradient>
+    <filter id="shadow" x="-50%" y="-50%" width="200%" height="200%">
+      <feDropShadow dx="0" dy="10" stdDeviation="14" flood-color="#000" flood-opacity=".35"/>
+    </filter>
+  </defs>
+  <rect width="1600" height="800" fill="url(#background)"/>
+  <circle cx="1240" cy="160" r="410" fill="url(#glow)"/>
+  <g fill="none" stroke="#6f89a8" stroke-width="3" stroke-opacity=".48">
+    <path d="M920 220 1130 130 1320 260 1190 410 1410 520"/>
+    <path d="M920 220 1000 470 1190 410 1270 650"/>
+    <path d="M1000 470 820 620 1270 650 1410 520"/>
+    <path d="M1130 130 1190 410"/>
+  </g>
+  <g filter="url(#shadow)">
+    <circle cx="920" cy="220" r="26" fill="#62e6bd"/>
+    <circle cx="1130" cy="130" r="18" fill="#6d86ff"/>
+    <circle cx="1320" cy="260" r="34" fill="#f1a744"/>
+    <circle cx="1190" cy="410" r="42" fill="#62e6bd"/>
+    <circle cx="1000" cy="470" r="24" fill="#a779ff"/>
+    <circle cx="820" cy="620" r="16" fill="#6d86ff"/>
+    <circle cx="1270" cy="650" r="28" fill="#a779ff"/>
+    <circle cx="1410" cy="520" r="20" fill="#f1a744"/>
+  </g>
+  <g fill="#fff" font-family="Inter,Segoe UI,sans-serif">
+    <text x="110" y="190" fill="#62e6bd" font-size="24" font-weight="800" letter-spacing="6">NODAL FRAMEWORK</text>
+    <text x="105" y="320" font-size="92" font-weight="780" letter-spacing="-4">Engineering the</text>
+    <text x="105" y="420" font-size="92" font-weight="780" letter-spacing="-4">connected world.</text>
+    <text x="110" y="505" fill="#aebbd0" font-size="28">Design notes · releases · graph engineering</text>
+  </g>
+</svg>
