@@ -59,6 +59,26 @@ public sealed class Neo4jConnectionTests
         Assert.True(created.IsAtomic);
         Assert.Equal(["Ada", "Alan"], people.Select(person => person.Name).OrderBy(name => name));
         Assert.Equal(["Alan"], acquaintances.Select(person => person.Name));
+        var shortest = await detachedContext.People.Match(person => person.Id == ada.Id)
+            .ShortestPathTo(
+                detachedContext.People.Match(person => person.Id == alan.Id),
+                detachedContext.Friendships)
+            .SingleAsync();
+        Assert.Equal(1, shortest.HopCount);
+        Assert.Equal([ada.Id, alan.Id], shortest.Nodes.Select(person => person.Id));
+        Assert.Empty(await detachedContext.People.Match(person => person.Id == ada.Id)
+            .ShortestPathTo(
+                detachedContext.People.Match(person => person.Id == "missing"),
+                detachedContext.Friendships)
+            .ToListAsync());
+        using var cancelledPath = new CancellationTokenSource();
+        cancelledPath.Cancel();
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(async () =>
+            await detachedContext.People.Match(person => person.Id == ada.Id)
+                .ShortestPathTo(
+                    detachedContext.People.Match(person => person.Id == alan.Id),
+                    detachedContext.Friendships)
+                .ToListAsync(cancelledPath.Token));
         Assert.Equal(2020, friendshipPath.Relation.SinceYear);
         Assert.Equal("Ada", Assert.Single(paged).Name);
         Assert.Empty(detachedContext.ChangeTracker.Entries());

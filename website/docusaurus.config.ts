@@ -17,11 +17,7 @@ const config: Config = {
   },
   i18n: {
     defaultLocale: 'en',
-    locales: ['en', 'tr'],
-    localeConfigs: {
-      en: {label: 'English', htmlLang: 'en'},
-      tr: {label: 'Türkçe', htmlLang: 'tr'},
-    },
+    locales: ['en'],
   },
   presets: [
     [

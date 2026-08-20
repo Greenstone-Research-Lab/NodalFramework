@@ -1,3 +1,4 @@
+using Nodal.Core.Analytics;
 using Nodal.Core.Query;
 
 namespace Nodal.Core.Execution;
@@ -70,6 +71,107 @@ internal sealed class ProviderGraphQueryExecutor(
 
         return Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture);
     }
+
+    public async ValueTask<IReadOnlyList<GraphAnalyticsRecord<TNode>>> ExecuteAnalyticsAsync<TNode>(
+        GraphAnalyticsQueryModel query,
+        CancellationToken cancellationToken)
+    {
+        if (provider is not IGraphAnalyticsProvider analyticsProvider)
+        {
+            throw new NotSupportedException($"Graph provider '{provider.GetType().Name}' does not support analytics.");
+        }
+        if (!analyticsProvider.AnalyticsCapabilities.Supports(query.Algorithm))
+        {
+            throw new NotSupportedException(
+                $"Graph provider '{provider.GetType().Name}' does not support analytics algorithm '{query.Algorithm}'.");
+        }
+        var capabilities = analyticsProvider.AnalyticsCapabilities;
+        var algorithmSupportsWeights = !capabilities.AlgorithmDetails.TryGetValue(query.Algorithm, out var details) ||
+            details.SupportsWeights;
+        if (query.RelationshipWeightProperty is not null &&
+            (!capabilities.SupportsWeightedRelationships || !algorithmSupportsWeights))
+        {
+            throw new NotSupportedException(
+                $"Graph provider '{provider.GetType().Name}' does not support weighted analytics relationships.");
+        }
+
+        var command = analyticsProvider.AnalyticsCompiler.Compile(query);
+        var result = await provider.CommandExecutor.ExecuteAsync(command, cancellationToken).ConfigureAwait(false);
+        var metadata = modelAccessor().GetNode<TNode>();
+        return result.ResultRows.Select(row =>
+        {
+            if (row.Node is null)
+            {
+                return new GraphAnalyticsRecord<TNode>(default, row.Values);
+            }
+            var materialized = provider.ResultMaterializer.Materialize<TNode>(new GraphQueryResult([row.Node])).Single();
+            var node = query.Nodes.TrackingBehavior == GraphTrackingBehavior.NoTracking
+                ? materialized
+                : stateManager.TrackFromQuery(materialized, metadata).Node;
+            return new GraphAnalyticsRecord<TNode>(node, row.Values);
+        }).ToArray();
+    }
+
+    public async ValueTask<IReadOnlyList<Model.GraphRoute<TNode, TRelation>>> ExecuteRoutesAsync<TNode, TRelation>(
+        GraphAnalyticsQueryModel query,
+        CancellationToken cancellationToken)
+        where TRelation : notnull
+    {
+        if (provider is not IGraphAnalyticsProvider analyticsProvider ||
+            !analyticsProvider.AnalyticsCapabilities.Supports(query.Algorithm))
+        {
+            throw new NotSupportedException(
+                $"Graph provider '{provider.GetType().Name}' does not support path algorithm '{query.Algorithm}'.");
+        }
+        var capabilities = analyticsProvider.AnalyticsCapabilities;
+        if ((query.Algorithm is GraphAnalyticsAlgorithm.Dijkstra or GraphAnalyticsAlgorithm.AStar or
+             GraphAnalyticsAlgorithm.YenKShortestPaths) && query.RelationshipWeightProperty is null)
+        {
+            throw new InvalidOperationException(
+                $"Path algorithm '{query.Algorithm}' requires a numeric relationship weight selector.");
+        }
+        if (query.Algorithm == GraphAnalyticsAlgorithm.AStar &&
+            (!query.EffectiveConfiguration.ContainsKey("latitudeProperty") ||
+             !query.EffectiveConfiguration.ContainsKey("longitudeProperty")))
+        {
+            throw new InvalidOperationException("A-star requires typed latitude and longitude node selectors.");
+        }
+        var algorithmSupportsWeights = !capabilities.AlgorithmDetails.TryGetValue(query.Algorithm, out var details) ||
+            details.SupportsWeights;
+        if (query.RelationshipWeightProperty is not null &&
+            (!capabilities.SupportsWeightedRelationships || !algorithmSupportsWeights))
+        {
+            throw new NotSupportedException(
+                $"Graph provider '{provider.GetType().Name}' does not support weights for path algorithm '{query.Algorithm}'.");
+        }
+        var command = analyticsProvider.AnalyticsCompiler.Compile(query);
+        var result = await provider.CommandExecutor.ExecuteAsync(command, cancellationToken).ConfigureAwait(false);
+        var metadata = modelAccessor().GetNode<TNode>();
+        var relationMetadata = modelAccessor().GetRelation<TNode, TRelation, TNode>();
+        return result.RouteRecords.Select(route =>
+        {
+            var nodes = route.Nodes.Select(record =>
+            {
+                var value = provider.ResultMaterializer.Materialize<TNode>(new GraphQueryResult([record])).Single();
+                return query.Nodes.TrackingBehavior == GraphTrackingBehavior.NoTracking
+                    ? value
+                    : stateManager.TrackFromQuery(value, metadata).Node;
+            }).ToArray();
+            var relations = route.Relations.Select((record, index) =>
+            {
+                var normalized = new GraphPathRecord(route.Nodes[index], record, route.Nodes[index + 1]);
+                var value = provider.ResultMaterializer
+                    .MaterializePaths<TNode, TRelation, TNode>(new GraphQueryResult([], Paths: [normalized]))
+                    .Single().Relation;
+                return query.Nodes.TrackingBehavior == GraphTrackingBehavior.NoTracking
+                    ? value
+                    : stateManager.TrackRelationFromQuery(
+                        nodes[index], value, nodes[index + 1], record.Id,
+                        metadata, metadata, relationMetadata).Relation;
+            }).ToArray();
+            return new Model.GraphRoute<TNode, TRelation>(nodes, relations, route.TotalCost);
+        }).ToArray();
+    }
 }
 
 /// <summary>
@@ -97,4 +199,15 @@ public interface IGraphQueryExecutor
 
     /// <summary>Executes a server-side count aggregate.</summary>
     ValueTask<int> ExecuteCountAsync(GraphQueryModel query, CancellationToken cancellationToken = default);
+
+    /// <summary>Executes a provider-native analytics operation.</summary>
+    ValueTask<IReadOnlyList<GraphAnalyticsRecord<TNode>>> ExecuteAnalyticsAsync<TNode>(
+        GraphAnalyticsQueryModel query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Executes a provider-native path-finding operation.</summary>
+    ValueTask<IReadOnlyList<Model.GraphRoute<TNode, TRelation>>> ExecuteRoutesAsync<TNode, TRelation>(
+        GraphAnalyticsQueryModel query,
+        CancellationToken cancellationToken = default)
+        where TRelation : notnull;
 }

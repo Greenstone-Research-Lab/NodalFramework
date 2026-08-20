@@ -1,3 +1,4 @@
+using Nodal.Core.Analytics;
 using Nodal.Core.Execution;
 using Nodal.Core.Migrations;
 using Nodal.Core.Providers;
@@ -14,6 +15,16 @@ public sealed class NodalDatabaseFacade
     /// <summary>Gets whether the configured provider implements migration execution.</summary>
     public bool SupportsMigrations => provider is IGraphMigrationProvider migrationProvider &&
         migrationProvider.SupportsMigrationExecution;
+
+    /// <summary>Gets whether the provider exposes runtime analytics discovery and lifecycle services.</summary>
+    public bool SupportsAnalyticsRuntime => provider is IGraphAnalyticsRuntimeProvider;
+
+    /// <summary>Gets runtime analytics discovery and lifecycle services.</summary>
+    public IGraphAnalyticsRuntime GetAnalyticsRuntime() =>
+        provider is IGraphAnalyticsRuntimeProvider runtimeProvider
+            ? runtimeProvider.AnalyticsRuntime
+            : throw new NotSupportedException(
+                $"Graph provider '{provider.GetType().Name}' does not expose an analytics runtime.");
 
     /// <summary>Gets the migration provider or reports that this provider is query-only.</summary>
     public IGraphMigrationProvider GetMigrationProvider()

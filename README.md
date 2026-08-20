@@ -13,6 +13,33 @@ Nodal Framework is a provider-based .NET graph data access prototype. It keeps t
 
 The initial alpha targets .NET 10. Package versions move together so provider and core contracts remain compatible during the pre-release period.
 
+## Compatibility and provider capabilities
+
+Nodal distinguishes vendor client compatibility from versions verified by this repository. The current live QA baselines are Neo4j 5.26 Community and TigerGraph 4.2.4 Community. `Nodal.Neo4j` uses `Neo4j.Driver` 6.3.0; the vendor states that driver 6.x connects to Neo4j 4.4.x, 5.x, 2025.x, and 2026.x, but those additional server families are not yet Nodal-certified. Neo4j 5.26 analytics require the vendor-matched GDS 2.13 release.
+
+| Capability | Neo4j | TigerGraph |
+| --- | --- | --- |
+| Parameterized queries and fixed traversals | Supported | Supported |
+| Variable-depth traversal | Supported | GSQL Syntax V2 with documented restrictions |
+| Optional match | Supported | Not supported |
+| Transaction boundary | Client-managed transaction | Atomic request or installed query |
+| Migration execution | Supported | Requires administrative transport |
+| Centrality and community detection | Requires compatible GDS and named projection | Requires explicitly configured installed GSQL query |
+| Weighted analytics | Algorithm-specific | Must be declared for each installed query |
+| Typed shortest paths | Native Cypher; GDS for weighted algorithms | Configured installed GSQL query |
+
+Analytics families currently represented by the portable contract:
+
+| Family | Algorithms | Neo4j status | TigerGraph status |
+| --- | --- | --- | --- |
+| Centrality | ArticleRank, articulation points, betweenness, bridges, CELF, closeness, degree, eigenvector, harmonic, HITS, PageRank | GDS compiler; live certification pending | Installed-query contract; configured per deployment |
+| Community | Clique counting, conductance, HDBSCAN, K-core, K-1 coloring, K-means, label propagation, Leiden, local clustering coefficient, Louvain, modularity, modularity optimization, SCC, triangle count, WCC, maximum k-cut, SLLPA | GDS compiler; live certification pending | Installed-query contract; configured per deployment |
+| Path finding | Shortest/all-shortest, Dijkstra, A*, Yen | Native unweighted execution and GDS weighted compiler | Installed-query execution with canonical routes |
+
+The full matrix and verification legend are published in the [compatibility documentation](website/docs/providers/compatibility.md). Unsupported capabilities fail before transport and are never emulated by downloading the graph into application memory.
+
+Weekly Dependabot checks cover NuGet, documentation npm packages, Docker database images, and GitHub Actions. Update pull requests target `developer`; a database version becomes a supported Nodal baseline only after its compatibility and live integration suites pass.
+
 ## Attribute-based model
 
 Attributes describe only portable graph semantics. Database-specific indexes, constraints, storage options, and migration details remain in the fluent migration API so domain POCOs do not become coupled to one graph database.
@@ -115,6 +142,37 @@ var person = await context.People.Match(person => person.Id == "person-42").Sing
 ```
 
 `FirstAsync`, `FirstOrDefaultAsync`, `SingleAsync`, `SingleOrDefaultAsync`, `AnyAsync`, and `CountAsync` apply bounded or aggregate execution. `CountAsync` uses a server-side aggregate when paging has not changed LINQ count semantics. `AsAsyncEnumerable` provides cancellation-aware asynchronous consumption; HTTP providers necessarily receive one response payload, while the API keeps consumer code provider-neutral.
+
+Graph analytics retain the same typed model while executing centrality and community algorithms on the provider:
+
+```csharp
+var influentialPeople = await context.People.Query()
+    .Analyze(context.Friendships)
+    .PageRank()
+    .OnProjection("social")
+    .Top(20)
+    .ToListAsync();
+
+var communities = await context.People.Query()
+    .Analyze(context.Friendships)
+    .Louvain(new LouvainOptions(MaximumLevels: 8))
+    .OnProjection("social")
+    .ToListAsync();
+```
+
+The analytics contract covers the full centrality and community-detection families and preserves algorithm-specific metrics for HITS, bridges, components, cliques, clustering, and modularity. Neo4j uses explicitly enabled GDS procedures; TigerGraph advertises only explicitly configured installed GSQL query endpoints. Unsupported operations fail before transport execution and are never emulated by downloading the graph into application memory.
+
+Shortest paths keep both endpoints strongly typed:
+
+```csharp
+GraphRoute<Person, Knows> route = await context.People
+    .Match(person => person.Id == sourceId)
+    .ShortestPathTo(context.People.Match(person => person.Id == targetId), context.Friendships)
+    .MaxDepth(8)
+    .SingleAsync();
+```
+
+Neo4j GDS deployments expose discovery and projection create/reuse/drop operations through `context.Database.GetAnalyticsRuntime()`. TigerGraph exposes its configured installed-query snapshot through the same segregated runtime contract.
 
 Hot query factories can be compiled once:
 
@@ -284,7 +342,7 @@ The migration executor bootstraps the `__NodalMigration` vertex type when necess
 
 ## Documentation
 
-The documentation platform combines a bilingual Docusaurus guide and journal with a DocFX API reference generated from the product's XML documentation. Machine-readable `llms.txt`, extended coding-agent context, and a JSON-LD capability graph are published with the static site.
+The documentation platform combines an English Docusaurus guide and journal with a DocFX API reference generated from the product's XML documentation. Machine-readable `llms.txt`, extended coding-agent context, and a JSON-LD capability graph are published with the static site.
 
 Build the complete site locally with:
 

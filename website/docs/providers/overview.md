@@ -16,3 +16,5 @@ Provider packages compile the same query and mutation models while respecting th
 | Schema migrations | Transactional Cypher commands | Deterministic schema job through administration transport |
 
 Both providers normalize native responses into Nodal result records before POCO materialization. Application code does not parse provider payloads.
+
+See [Compatibility and capabilities](./compatibility.md) for the tested database versions, query limitations, analytics requirements, and the distinction between compiler coverage and live database verification.

@@ -1,3 +1,5 @@
+using System.Text.Json;
+using Nodal.Core.Analytics;
 using Nodal.Core.Providers;
 
 namespace Nodal.ArchitectureTests;
@@ -15,5 +17,24 @@ public sealed class DependencyDirectionTests
         Assert.DoesNotContain("Nodal.Neo4j", references);
         Assert.DoesNotContain("Nodal.TigerGraph", references);
         Assert.DoesNotContain("Nodal.Migrations", references);
+    }
+
+    [Fact]
+    public void PublishedKnowledgeGraphListsEveryPortableAnalyticsAlgorithm()
+    {
+        var root = new DirectoryInfo(AppContext.BaseDirectory);
+        while (root is not null && !File.Exists(Path.Combine(root.FullName, "Nodal.slnx")))
+        {
+            root = root.Parent;
+        }
+        Assert.NotNull(root);
+        var path = Path.Combine(root.FullName, "website", "static", "knowledge", "nodal-capabilities.jsonld");
+        using var document = JsonDocument.Parse(File.ReadAllText(path));
+        var capability = document.RootElement.GetProperty("@graph").EnumerateArray().Single(item =>
+            item.GetProperty("@id").GetString() == "nodal:ConditionalAnalytics");
+        var documented = capability.GetProperty("algorithms").EnumerateArray()
+            .Select(item => item.GetString()!).ToHashSet(StringComparer.Ordinal);
+
+        Assert.True(Enum.GetNames<GraphAnalyticsAlgorithm>().ToHashSet(StringComparer.Ordinal).SetEquals(documented));
     }
 }

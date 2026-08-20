@@ -8,6 +8,41 @@ namespace Nodal.TigerGraph.Tests;
 public sealed class TigerGraphCommandExecutorTests
 {
     [Fact]
+    public async Task InstalledAnalyticsRoutePreservesCanonicalNodeMetricRows()
+    {
+        var handler = new RecordingHandler("""
+        {"error":false,"results":[{"nodal_node":{"v_id":"p1","v_type":"Person","attributes":{"Name":"Ada"}},"nodal_metrics":{"score":0.9,"communityId":7}}]}
+        """);
+        using var client = new HttpClient(handler);
+        var executor = new TigerGraphCommandExecutor(client, TokenOptions());
+
+        var result = await executor.ExecuteAsync(new GraphCommand(
+            string.Empty,
+            new Dictionary<string, object?> { ["nodal_limit"] = 10 },
+            "restpp/query/SocialGraph/nodal_pagerank"));
+
+        var row = Assert.Single(result.ResultRows);
+        Assert.Equal("p1", row.Node?.Id);
+        Assert.Equal(0.9, row.Values["score"]);
+        Assert.Contains("restpp/query/SocialGraph/nodal_pagerank", handler.RequestUri?.ToString(), StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task InstalledPathRoutePreservesOrderingRelationsAndCost()
+    {
+        var handler = new RecordingHandler("""
+        {"error":false,"results":[{"nodal_nodes":[{"v_id":"p1","v_type":"Person","attributes":{}},{"v_id":"p2","v_type":"Person","attributes":{}}],"nodal_relations":[{"e_type":"KNOWS","e_id":"e1","from_id":"p1","to_id":"p2","attributes":{}}],"nodal_total_cost":4.5}]}
+        """);
+        using var client = new HttpClient(handler);
+        var result = await new TigerGraphCommandExecutor(client, TokenOptions()).ExecuteAsync(
+            new GraphCommand(string.Empty, new Dictionary<string, object?>(), "restpp/query/G/path"));
+
+        var route = Assert.Single(result.RouteRecords);
+        Assert.Equal(["p1", "p2"], route.Nodes.Select(node => node.Id));
+        Assert.Equal("e1", Assert.Single(route.Relations).Id);
+        Assert.Equal(4.5, route.TotalCost);
+    }
+    [Fact]
     public async Task ExecuteAsyncSendsGsqlAndNormalizesVertexResults()
     {
         const string response = """

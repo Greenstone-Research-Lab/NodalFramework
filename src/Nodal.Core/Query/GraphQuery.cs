@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Nodal.Core.Analytics;
 using Nodal.Core.Execution;
 using Nodal.Core.Metadata;
 using Nodal.Core.Model;
@@ -232,6 +233,52 @@ public sealed class GraphQuery<TNode>
     /// <summary>Rejects paths that visit the same vertex more than once.</summary>
     public GraphQuery<TNode> WithoutCycles() => Copy(model with { CycleBehavior = GraphCycleBehavior.SimplePath });
 
+    /// <summary>
+    /// Begins a provider-native analytics operation over this node selection and a same-node relationship type.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// var ranked = await context.People.Query()
+    ///     .Analyze(context.Friendships)
+    ///     .PageRank()
+    ///     .OnProjection("social")
+    ///     .Top(20)
+    ///     .ToListAsync();
+    /// </code>
+    /// </example>
+    public GraphAnalyticsBuilder<TNode, TRelation> Analyze<TRelation>(
+        RelationSet<TNode, TRelation, TNode> relationSet)
+        where TRelation : notnull
+    {
+        ArgumentNullException.ThrowIfNull(relationSet);
+        return new GraphAnalyticsBuilder<TNode, TRelation>(model, executor, relationSet.Metadata);
+    }
+
+    /// <summary>Begins an unweighted shortest-path query between two strongly typed node selectors.</summary>
+    public GraphShortestPathQuery<TNode, TRelation> ShortestPathTo<TRelation>(
+        GraphQuery<TNode> target,
+        RelationSet<TNode, TRelation, TNode> relationSet)
+        where TRelation : notnull
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(relationSet);
+        if (model.Traversals.Count != 0 || target.model.Traversals.Count != 0)
+        {
+            throw new InvalidOperationException("Shortest-path endpoints must be node selectors without traversals.");
+        }
+        var rebasedTarget = Rebase(target.model, model.Parameters.Count);
+        var pathModel = new GraphAnalyticsQueryModel(
+            GraphAnalyticsAlgorithm.ShortestPath,
+            GraphAnalyticsFamily.PathFinding,
+            model,
+            relationSet.Metadata.Name,
+            relationSet.Metadata.Directed,
+            "nodal",
+            TargetNodes: rebasedTarget);
+        return new GraphShortestPathQuery<TNode, TRelation>(
+            pathModel, executor, relationSet.Metadata, propertyMappings);
+    }
+
     /// <summary>Projects materialized nodes into a caller-defined result shape.</summary>
     public GraphProjectedQuery<TNode, TResult> Select<TResult>(Expression<Func<TNode, TResult>> selector)
     {
@@ -392,6 +439,33 @@ public sealed class GraphQuery<TNode>
             throw new ArgumentOutOfRangeException(nameof(maxDepth), "Maximum depth cannot be less than minimum depth.");
         }
     }
+
+    private static GraphQueryModel Rebase(GraphQueryModel source, int offset)
+    {
+        if (offset == 0)
+        {
+            return source;
+        }
+        var names = source.Parameters.ToDictionary(
+            parameter => parameter.Name,
+            parameter => $"p{offset + int.Parse(parameter.Name.AsSpan(1), System.Globalization.CultureInfo.InvariantCulture)}");
+        return source with
+        {
+            Predicate = source.Predicate is null ? null : Rename(source.Predicate, names),
+            Parameters = source.Parameters.Select(parameter => parameter with { Name = names[parameter.Name] }).ToArray(),
+        };
+    }
+
+    private static GraphPredicate Rename(GraphPredicate predicate, IReadOnlyDictionary<string, string> names) => predicate switch
+    {
+        GraphComparisonPredicate value => value with { ParameterName = names[value.ParameterName] },
+        GraphLogicalPredicate value => value with { Left = Rename(value.Left, names), Right = Rename(value.Right, names) },
+        GraphNotPredicate value => value with { Operand = Rename(value.Operand, names) },
+        GraphStringPredicate value => value with { ParameterName = names[value.ParameterName] },
+        GraphInPredicate value => value with { ParameterName = names[value.ParameterName] },
+        GraphNullPredicate value => value,
+        _ => throw new NotSupportedException($"Predicate '{predicate.GetType().Name}' cannot be rebased."),
+    };
 }
 
 /// <summary>Represents a strongly typed client projection over a provider-executed graph query.</summary>

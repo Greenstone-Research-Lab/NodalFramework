@@ -20,6 +20,8 @@ public interface IGraphQueryCompiler
 /// </summary>
 /// <param name="Text">The provider command text.</param>
 /// <param name="Parameters">The command parameters.</param>
+/// <param name="Route">An optional provider-relative execution route for installed operations.</param>
 public sealed record GraphCommand(
     string Text,
-    IReadOnlyDictionary<string, object?> Parameters);
+    IReadOnlyDictionary<string, object?> Parameters,
+    string? Route = null);

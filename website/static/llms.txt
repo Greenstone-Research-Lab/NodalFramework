@@ -18,6 +18,8 @@ License: MIT
 
 - [Neo4j provider](https://nodalframework.pages.dev/docs/providers/neo4j): Cypher and the official pooled Bolt driver.
 - [TigerGraph provider](https://nodalframework.pages.dev/docs/providers/tigergraph): GSQL, REST++, and an optional administration transport.
+- [Graph analytics](https://nodalframework.pages.dev/docs/querying/graph-analytics): strongly typed centrality and community detection through Neo4j GDS or installed TigerGraph queries.
+- [Compatibility matrix](https://nodalframework.pages.dev/docs/providers/compatibility): tested database versions, provider feature boundaries, algorithm requirements, and verification levels.
 
 ## Machine-readable resources
 

@@ -2,6 +2,7 @@ using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
+using Nodal.Core.Analytics;
 using Nodal.Core.ChangeTracking;
 using Nodal.Core.Execution;
 using Nodal.Core.Migrations;
@@ -26,12 +27,40 @@ public sealed class TigerGraphMutationExecutorTests
         Assert.IsType<TigerGraphCommandExecutor>(provider.CommandExecutor);
         Assert.IsType<JsonGraphResultMaterializer>(provider.ResultMaterializer);
         Assert.IsType<TigerGraphMigrationDialect>(provider.MigrationDialect);
+        Assert.Equal("4.2.4 Community", provider.AnalyticsCapabilities.TestedProviderVersion);
+        Assert.Empty(provider.AnalyticsCapabilities.Algorithms);
         Assert.Same(provider.MutationExecutor, ((IGraphMutationProvider)provider).MutationExecutor);
         Assert.Throws<ArgumentNullException>(() => new TigerGraphProvider(
             client,
             TokenOptions(),
             "SocialGraph",
             null!));
+    }
+
+    [Fact]
+    public void ProviderPublishesConfiguredAlgorithmRequirements()
+    {
+        using var client = new HttpClient(new RecordingHandler("{}"));
+        var options = new TigerGraphOptions
+        {
+            Endpoint = new Uri("https://tigergraph.example/"),
+            AccessToken = "token",
+            AnalyticsQueries = new Dictionary<GraphAnalyticsAlgorithm, string>
+            {
+                [GraphAnalyticsAlgorithm.Louvain] = "nodal_louvain",
+            },
+            WeightedAnalyticsAlgorithms = new HashSet<GraphAnalyticsAlgorithm>
+            {
+                GraphAnalyticsAlgorithm.Louvain,
+            },
+        };
+        var provider = new TigerGraphProvider(client, options, "SocialGraph");
+
+        var details = provider.AnalyticsCapabilities.GetDetails(GraphAnalyticsAlgorithm.Louvain);
+        Assert.Equal(GraphAnalyticsAvailability.InstalledQuery, details.Availability);
+        Assert.Equal(GraphCapabilityVerification.Compiler, details.Verification);
+        Assert.Contains("nodal_louvain", details.Requirement, StringComparison.Ordinal);
+        Assert.True(details.SupportsWeights);
     }
 
     [Fact]
