@@ -34,10 +34,29 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
         ValidateIdentifier(query.Alias, nameof(query.Alias));
         foreach (var traversal in query.Traversals)
         {
-            ValidateIdentifier(traversal.RelationType, nameof(traversal.RelationType));
+            foreach (var relationType in traversal.RelationTypes)
+            {
+                ValidateIdentifier(relationType, nameof(traversal.RelationType));
+            }
             ValidateIdentifier(traversal.TargetNodeType, nameof(traversal.TargetNodeType));
             ValidateIdentifier(traversal.RelationAlias, nameof(traversal.RelationAlias));
             ValidateIdentifier(traversal.TargetAlias, nameof(traversal.TargetAlias));
+            if (traversal.Optional)
+            {
+                throw new NotSupportedException("TigerGraph interpreted GSQL does not provide optional-match semantics.");
+            }
+        }
+
+        var useSyntaxV2 = query.Traversals.Any(traversal => traversal.MinDepth != 1 || traversal.MaxDepth != 1);
+        if (useSyntaxV2 && query.CycleBehavior == GraphCycleBehavior.SimplePath)
+        {
+            throw new NotSupportedException(
+                "TigerGraph does not expose intermediate repeated-hop aliases required to enforce vertex-simple paths.");
+        }
+        if (useSyntaxV2 && query.Projection == GraphQueryProjection.Path)
+        {
+            throw new NotSupportedException(
+                "TigerGraph variable-depth path payload projection is not supported because a repeated edge alias is not a single EDGE value.");
         }
 
         var declaration = string.Join(", ", query.Parameters.Select(
@@ -48,18 +67,38 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
             .Append(declaration)
             .Append(") FOR GRAPH ")
             .Append(graphName)
-            .Append(" { ");
+            .Append(useSyntaxV2 ? " SYNTAX V2 { " : " { ");
 
-        if (query.Projection == GraphQueryProjection.Path)
+        if (query.Projection == GraphQueryProjection.Count)
+        {
+            builder.Append(RenderSelection(query, "result", query.ResultAlias, false, useSyntaxV2))
+                .Append("PRINT result.size() AS nodal_count; }");
+        }
+        else if (query.Projection == GraphQueryProjection.Path)
         {
             builder.Append("ListAccum<EDGE> @@nodal_relations; ")
-                .Append(RenderSelection(query, "nodal_sources", query.Alias, collectRelations: true))
-                .Append(RenderSelection(query, "nodal_targets", query.ResultAlias, collectRelations: false))
+                .Append(RenderSelection(query, "nodal_sources", query.Alias, collectRelations: true, useSyntaxV2))
+                .Append(RenderSelection(query, "nodal_targets", query.ResultAlias, collectRelations: false, useSyntaxV2))
                 .Append("PRINT nodal_sources, @@nodal_relations AS nodal_relations, nodal_targets; }");
+        }
+        else if (query.Projection == GraphQueryProjection.Subgraph)
+        {
+            var aliases = new[] { query.Alias }.Concat(query.Traversals.Select(step => step.TargetAlias)).ToArray();
+            var names = aliases.Select((_, index) => $"nodal_nodes_{index}").ToArray();
+            builder.Append("ListAccum<EDGE> @@nodal_relations; ");
+            for (var index = 0; index < aliases.Length; index++)
+            {
+                var selection = RenderSelection(query, names[index], aliases[index], false, useSyntaxV2);
+                builder.Append(index == 0 ? AddRelationAccumulation(selection, query) : selection);
+            }
+
+            builder.Append("PRINT ")
+                .Append(string.Join(", ", names))
+                .Append(", @@nodal_relations AS nodal_relations; }");
         }
         else
         {
-            builder.Append(RenderSelection(query, "result", query.ResultAlias, collectRelations: false))
+            builder.Append(RenderSelection(query, "result", query.ResultAlias, collectRelations: false, useSyntaxV2))
                 .Append("PRINT result; }");
         }
 
@@ -68,27 +107,65 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
             query.Parameters.ToDictionary(parameter => parameter.Name, parameter => NormalizeValue(parameter.Value)));
     }
 
+    private static string AddRelationAccumulation(string selection, GraphQueryModel query)
+    {
+        if (query.Traversals.Count == 0)
+        {
+            return selection;
+        }
+
+        var accumulations = query.Traversals.Select(step => $"@@nodal_relations += {step.RelationAlias}");
+        var insertionIndex = selection.IndexOf(" ORDER BY", StringComparison.Ordinal);
+        if (insertionIndex < 0)
+        {
+            insertionIndex = selection.IndexOf(" LIMIT", StringComparison.Ordinal);
+        }
+        if (insertionIndex < 0)
+        {
+            insertionIndex = selection.IndexOf(';', StringComparison.Ordinal);
+        }
+        return selection.Insert(insertionIndex, $" ACCUM {string.Join(", ", accumulations)}");
+    }
+
     private static string RenderSelection(
         GraphQueryModel query,
         string resultName,
         string selectedAlias,
-        bool collectRelations)
+        bool collectRelations,
+        bool useSyntaxV2)
     {
         var builder = new StringBuilder()
             .Append(resultName)
             .Append(" = SELECT ")
             .Append(selectedAlias)
-            .Append(" FROM ")
-            .Append(query.NodeType)
-            .Append(':')
-            .Append(query.Alias);
+            .Append(" FROM ");
+
+        if (useSyntaxV2)
+        {
+            builder.Append('(').Append(query.Alias).Append(':').Append(query.NodeType).Append(')');
+        }
+        else
+        {
+            builder.Append(query.NodeType).Append(':').Append(query.Alias);
+        }
 
         foreach (var traversal in query.Traversals)
         {
-            builder.Append(RenderTraversal(traversal));
+            builder.Append(RenderTraversal(traversal, useSyntaxV2));
         }
 
         var filters = new List<string>();
+        if (query.CycleBehavior == GraphCycleBehavior.SimplePath)
+        {
+            var aliases = new[] { query.Alias }.Concat(query.Traversals.Select(step => step.TargetAlias)).ToArray();
+            for (var left = 0; left < aliases.Length; left++)
+            {
+                for (var right = left + 1; right < aliases.Length; right++)
+                {
+                    filters.Add($"{aliases[left]} != {aliases[right]}");
+                }
+            }
+        }
         if (query.Predicate is not null)
         {
             filters.Add(RenderPredicate(query.Predicate, query.Alias));
@@ -112,9 +189,22 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
                 .Append(last.RelationAlias);
         }
 
-        if (query.Limit is not null)
+        if (query.EffectiveOrderings.Count > 0)
+        {
+            builder.Append(" ORDER BY ").Append(string.Join(", ", query.EffectiveOrderings.Select(RenderOrdering)));
+        }
+
+        if (query.Limit is not null && query.Offset is not null)
+        {
+            builder.Append(" LIMIT ").Append(query.Limit.Value).Append(" OFFSET ").Append(query.Offset.Value);
+        }
+        else if (query.Limit is not null)
         {
             builder.Append(" LIMIT ").Append(query.Limit.Value);
+        }
+        else if (query.Offset is not null)
+        {
+            throw new NotSupportedException("TigerGraph requires Take when Skip is used.");
         }
 
         return builder.Append("; ").ToString();
@@ -126,12 +216,41 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
             $"{alias}.{comparison.PropertyName} {RenderOperator(comparison.Operator)} {comparison.ParameterName}",
         GraphLogicalPredicate logical =>
             $"({RenderPredicate(logical.Left, alias)} {RenderLogicalOperator(logical.Operator)} {RenderPredicate(logical.Right, alias)})",
+        GraphNotPredicate not => $"NOT ({RenderPredicate(not.Operand, alias)})",
+        GraphNullPredicate nullCheck =>
+            $"{alias}.{nullCheck.PropertyName} IS {(nullCheck.IsNull ? string.Empty : "NOT ")}NULL",
+        GraphStringPredicate text => RenderStringPredicate(text, alias),
+        GraphInPredicate membership =>
+            $"{alias}.{membership.PropertyName} {(membership.Negated ? "NOT " : string.Empty)}IN {membership.ParameterName}",
         _ => throw new NotSupportedException($"Predicate '{predicate.GetType().Name}' is not supported by TigerGraph."),
     };
 
-    private static string RenderTraversal(GraphTraversalStep traversal)
+    private static string RenderTraversal(GraphTraversalStep traversal, bool useSyntaxV2)
     {
-        var relation = $"({traversal.RelationType}:{traversal.RelationAlias})";
+        if (traversal.MinDepth < 0 || traversal.MaxDepth < traversal.MinDepth)
+        {
+            throw new ArgumentOutOfRangeException(nameof(traversal), "Traversal depth bounds are invalid.");
+        }
+        var depth = traversal.MinDepth == 1 && traversal.MaxDepth == 1
+            ? string.Empty
+            : $"*{traversal.MinDepth}..{traversal.MaxDepth}";
+        var types = traversal.RelationTypes.Count == 1
+            ? traversal.RelationType
+            : $"({string.Join('|', traversal.RelationTypes)})";
+        if (useSyntaxV2)
+        {
+            var v2Types = string.Join('|', traversal.RelationTypes);
+            var edge = $"[{traversal.RelationAlias}:{v2Types}{depth}]";
+            var v2Target = $"({traversal.TargetAlias}:{traversal.TargetNodeType})";
+            return traversal.Direction switch
+            {
+                GraphTraversalDirection.Outgoing => $"-{edge}->{v2Target}",
+                GraphTraversalDirection.Incoming => $"<-{edge}-{v2Target}",
+                GraphTraversalDirection.Undirected => $"-{edge}-{v2Target}",
+                _ => throw new ArgumentOutOfRangeException(nameof(traversal), traversal.Direction, null),
+            };
+        }
+        var relation = $"({types}{depth}:{traversal.RelationAlias})";
         var target = $" {traversal.TargetNodeType}:{traversal.TargetAlias}";
         return traversal.Direction switch
         {
@@ -160,8 +279,31 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
         _ => throw new ArgumentOutOfRangeException(nameof(logical), logical, null),
     };
 
+    private static string RenderStringPredicate(GraphStringPredicate predicate, string alias)
+    {
+        var parameter = predicate.Operator switch
+        {
+            GraphStringOperator.StartsWith => $"{predicate.ParameterName} + \"%\"",
+            GraphStringOperator.Contains => $"\"%\" + {predicate.ParameterName} + \"%\"",
+            GraphStringOperator.EndsWith => $"\"%\" + {predicate.ParameterName}",
+            _ => throw new ArgumentOutOfRangeException(nameof(predicate), predicate.Operator, null),
+        };
+        return $"{alias}.{predicate.PropertyName} LIKE {parameter}";
+    }
+
+    private static string RenderOrdering(GraphOrdering ordering) =>
+        $"{ordering.Alias}.{ordering.PropertyName} " +
+        (ordering.Direction == GraphSortDirection.Ascending ? "ASC" : "DESC");
+
     private static string MapType(Type type)
     {
+        if (type != typeof(string) && typeof(System.Collections.IEnumerable).IsAssignableFrom(type))
+        {
+            var elementType = type.IsArray
+                ? type.GetElementType()!
+                : type.IsGenericType ? type.GetGenericArguments()[0] : typeof(string);
+            return $"SET<{MapType(elementType)}>";
+        }
         type = Nullable.GetUnderlyingType(type) ?? type;
         if (type.IsEnum)
         {

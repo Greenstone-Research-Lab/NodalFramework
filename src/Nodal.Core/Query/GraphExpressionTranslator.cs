@@ -4,6 +4,20 @@ namespace Nodal.Core.Query;
 
 internal static class GraphExpressionTranslator
 {
+    public static string TranslateProperty<TNode, TProperty>(
+        Expression<Func<TNode, TProperty>> expression,
+        IReadOnlyDictionary<string, string>? propertyMappings)
+    {
+        ArgumentNullException.ThrowIfNull(expression);
+        var body = StripConvert(expression.Body);
+        if (!TryGetNodeMember(body, expression.Parameters[0], out var member))
+        {
+            throw new NotSupportedException($"Expression '{expression}' must select a direct mapped property.");
+        }
+
+        return MapProperty(member, propertyMappings);
+    }
+
     public static TranslationResult Translate<TNode>(
         Expression<Func<TNode, bool>> expression,
         int parameterOffset,
@@ -28,6 +42,24 @@ internal static class GraphExpressionTranslator
     {
         expression = StripConvert(expression);
 
+        if (expression is UnaryExpression { NodeType: ExpressionType.Not } unary)
+        {
+            return new GraphNotPredicate(TranslateNode(
+                unary.Operand, nodeParameter, parameters, parameterOffset, propertyMappings));
+        }
+
+        if (TryGetNodeMember(expression, nodeParameter, out var booleanMember) &&
+            (booleanMember.Type == typeof(bool) || booleanMember.Type == typeof(bool?)))
+        {
+            return AddComparison(booleanMember, true, typeof(bool), GraphComparisonOperator.Equal,
+                parameters, parameterOffset, propertyMappings);
+        }
+
+        if (expression is MethodCallExpression methodCall)
+        {
+            return TranslateMethodCall(methodCall, nodeParameter, parameters, parameterOffset, propertyMappings);
+        }
+
         if (expression is not BinaryExpression binary)
         {
             throw new NotSupportedException($"Expression '{expression}' is not a supported graph predicate.");
@@ -43,21 +75,100 @@ internal static class GraphExpressionTranslator
 
         var (member, valueExpression, reverse) = GetComparisonParts(binary, nodeParameter);
         var value = Evaluate(valueExpression, nodeParameter);
-        var parameterName = $"p{parameterOffset + parameters.Count}";
-        parameters.Add(new GraphQueryParameter(parameterName, value, valueExpression.Type));
+        var graphPropertyName = MapProperty(member, propertyMappings);
+        if (value is null && binary.NodeType is ExpressionType.Equal or ExpressionType.NotEqual)
+        {
+            return new GraphNullPredicate(graphPropertyName, binary.NodeType == ExpressionType.Equal);
+        }
 
-        var clrPropertyName = member.Member.Name;
-        var graphPropertyName = propertyMappings is null
-            ? clrPropertyName
-            : propertyMappings.TryGetValue(clrPropertyName, out var mappedName)
-                ? mappedName
-                : throw new NotSupportedException(
-                    $"Property '{clrPropertyName}' is ignored or not mapped in the graph model.");
+        return AddComparison(member, value, valueExpression.Type,
+            ToComparisonOperator(binary.NodeType, reverse), parameters, parameterOffset, propertyMappings);
+    }
 
-        return new GraphComparisonPredicate(
-            graphPropertyName,
-            ToComparisonOperator(binary.NodeType, reverse),
-            parameterName);
+    private static GraphPredicate TranslateMethodCall(
+        MethodCallExpression call,
+        ParameterExpression nodeParameter,
+        ICollection<GraphQueryParameter> parameters,
+        int parameterOffset,
+        IReadOnlyDictionary<string, string>? propertyMappings)
+    {
+        if (call.Object is not null && TryGetNodeMember(call.Object, nodeParameter, out var stringMember) &&
+            call.Method.DeclaringType == typeof(string) && call.Arguments.Count == 1)
+        {
+            var operation = call.Method.Name switch
+            {
+                nameof(string.StartsWith) => GraphStringOperator.StartsWith,
+                nameof(string.Contains) => GraphStringOperator.Contains,
+                nameof(string.EndsWith) => GraphStringOperator.EndsWith,
+                _ => throw new NotSupportedException($"String method '{call.Method.Name}' is not supported."),
+            };
+            var value = Evaluate(call.Arguments[0], nodeParameter);
+            var parameterName = AddParameter(value, call.Arguments[0].Type, parameters, parameterOffset);
+            return new GraphStringPredicate(MapProperty(stringMember, propertyMappings), operation, parameterName);
+        }
+
+        Expression? collection = null;
+        Expression? item = null;
+        if (call.Method.Name == nameof(Enumerable.Contains))
+        {
+            if (call.Object is not null && call.Arguments.Count == 1)
+            {
+                collection = call.Object;
+                item = call.Arguments[0];
+            }
+            else if (call.Arguments.Count == 2)
+            {
+                collection = call.Arguments[0];
+                item = call.Arguments[1];
+            }
+        }
+
+        if (collection is not null && item is not null && TryGetNodeMember(item, nodeParameter, out var member))
+        {
+            while (collection.Type.IsByRefLike)
+            {
+                collection = collection switch
+                {
+                    UnaryExpression conversion => conversion.Operand,
+                    MethodCallExpression { Arguments.Count: 1 } conversionCall => conversionCall.Arguments[0],
+                    _ => throw new NotSupportedException(
+                        $"Collection expression '{collection}' uses a by-ref-like value that cannot be parameterized."),
+                };
+            }
+            var value = Evaluate(collection, nodeParameter);
+            var parameterName = AddParameter(value, collection.Type, parameters, parameterOffset);
+            return new GraphInPredicate(MapProperty(member, propertyMappings), parameterName);
+        }
+
+        throw new NotSupportedException($"Method call '{call}' is not a supported graph predicate.");
+    }
+
+    private static GraphComparisonPredicate AddComparison(
+        MemberExpression member,
+        object? value,
+        Type valueType,
+        GraphComparisonOperator operation,
+        ICollection<GraphQueryParameter> parameters,
+        int parameterOffset,
+        IReadOnlyDictionary<string, string>? propertyMappings)
+    {
+        var parameterName = AddParameter(value, valueType, parameters, parameterOffset);
+        return new GraphComparisonPredicate(MapProperty(member, propertyMappings), operation, parameterName);
+    }
+
+    private static string AddParameter(object? value, Type type, ICollection<GraphQueryParameter> parameters, int offset)
+    {
+        var name = $"p{offset + parameters.Count}";
+        parameters.Add(new GraphQueryParameter(name, value, type));
+        return name;
+    }
+
+    private static string MapProperty(MemberExpression member, IReadOnlyDictionary<string, string>? mappings)
+    {
+        var clrName = member.Member.Name;
+        return mappings is null ? clrName : mappings.TryGetValue(clrName, out var mappedName)
+            ? mappedName
+            : throw new NotSupportedException($"Property '{clrName}' is ignored or not mapped in the graph model.");
     }
 
     private static (MemberExpression Member, Expression Value, bool Reverse) GetComparisonParts(

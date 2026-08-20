@@ -47,9 +47,9 @@ jobs:
       - name: Run test suite
         run: dotnet test Nodal.slnx --configuration Release --no-build --logger "console;verbosity=normal"
 
-      - name: Enforce Core coverage
+      - name: Enforce product coverage
         shell: pwsh
-        run: ./eng/verify-core-coverage.ps1
+        run: ./eng/verify-coverage.ps1
 
       - name: Verify NuGet packages
         shell: pwsh

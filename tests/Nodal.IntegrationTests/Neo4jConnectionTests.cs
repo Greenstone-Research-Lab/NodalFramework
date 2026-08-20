@@ -36,12 +36,56 @@ public sealed class Neo4jConnectionTests
             .TraversePath(context.Friendships)
             .WhereRelation(edge => edge.SinceYear >= 2020)
             .ToListAsync());
+        var detachedContext = new SocialContext(provider);
+        string[] selectedIds = [ada.Id, alan.Id];
+        var paged = await detachedContext.People.Query()
+            .Where(person => selectedIds.Contains(person.Id) && person.Name.StartsWith("Ad"))
+            .OrderBy(person => person.Name)
+            .Skip(0)
+            .Take(1)
+            .Distinct()
+            .AsNoTracking()
+            .ToListAsync();
+        var raw = await detachedContext.Database.QueryRawAsync<Person>(
+            "MATCH (`node`:`Person`) WHERE `node`.`Id` = $id RETURN `node`",
+            new Dictionary<string, object?> { ["id"] = alan.Id });
+        var subgraph = await detachedContext.People.Match(person => person.Id == ada.Id)
+            .Traverse(detachedContext.Friendships)
+            .WithoutCycles()
+            .ToSubgraphAsync();
+        var count = await detachedContext.People.Query().CountAsync();
         Assert.Equal(2, created.AffectedNodes);
         Assert.Equal(1, created.AffectedRelations);
         Assert.True(created.IsAtomic);
         Assert.Equal(["Ada", "Alan"], people.Select(person => person.Name).OrderBy(name => name));
         Assert.Equal(["Alan"], acquaintances.Select(person => person.Name));
         Assert.Equal(2020, friendshipPath.Relation.SinceYear);
+        Assert.Equal("Ada", Assert.Single(paged).Name);
+        Assert.Empty(detachedContext.ChangeTracker.Entries());
+        Assert.Equal("Alan", Assert.Single(raw).Name);
+        Assert.Equal(2, subgraph.Nodes.Count);
+        Assert.Single(subgraph.RelationRecords);
+        Assert.Equal(2, count);
+
+        Assert.Equal("Ada", (await detachedContext.People.Query().OrderBy(person => person.Name).FirstAsync()).Name);
+        Assert.Equal("Alan", (await detachedContext.People.Match(person => person.Id == alan.Id).SingleAsync()).Name);
+        Assert.True(await detachedContext.People.Match(person => person.Name.Contains("da")).AnyAsync());
+        var projected = await detachedContext.People.Query().OrderBy(person => person.Name)
+            .Select(person => new { person.Id, person.Name })
+            .ToListAsync();
+        Assert.Equal(2, projected.Count);
+        var streamed = new List<string>();
+        await foreach (var person in detachedContext.People.Query().OrderBy(candidate => candidate.Name).AsAsyncEnumerable())
+        {
+            streamed.Add(person.Name);
+        }
+        Assert.Equal(["Ada", "Alan"], streamed);
+
+        var writer = new SocialContext(provider);
+        writer.People.Update(new Person(ada.Id, "Ada Byron"));
+        await writer.SaveChangesAsync();
+        await context.People.ReloadAsync(ada);
+        Assert.Equal("Ada Byron", ada.Name);
 
         friendshipPath.Relation.SinceYear = 2025;
         context.Friendships.Update(

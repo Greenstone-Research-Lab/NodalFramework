@@ -57,16 +57,33 @@ public sealed class TigerGraphCommandExecutor : IGraphCommandExecutor
             return "gsql/v1/queries/interpret";
         }
 
-        var query = string.Join("&", parameters.Select(parameter =>
-            $"{Uri.EscapeDataString(parameter.Key)}={Uri.EscapeDataString(FormatParameter(parameter.Value))}"));
+        var query = string.Join("&", parameters.SelectMany(FormatQueryParameter));
         return $"gsql/v1/queries/interpret?{query}";
     }
+
+    private static IEnumerable<string> FormatQueryParameter(KeyValuePair<string, object?> parameter)
+    {
+        if (parameter.Value is System.Collections.IEnumerable values and not string)
+        {
+            foreach (var value in values)
+            {
+                yield return FormatPair(parameter.Key, value);
+            }
+
+            yield break;
+        }
+
+        yield return FormatPair(parameter.Key, parameter.Value);
+    }
+
+    private static string FormatPair(string name, object? value) =>
+        $"{Uri.EscapeDataString(name)}={Uri.EscapeDataString(FormatParameter(value))}";
 
     private static string FormatParameter(object? value) => value switch
     {
         null => string.Empty,
         bool boolean => boolean ? "true" : "false",
-        DateTime dateTime => dateTime.ToUniversalTime().ToString("O", CultureInfo.InvariantCulture),
+        DateTime dateTime => dateTime.ToUniversalTime().ToString("yyyy-MM-dd HH:mm:ss", CultureInfo.InvariantCulture),
         IFormattable formattable => formattable.ToString(null, CultureInfo.InvariantCulture),
         _ => value.ToString() ?? string.Empty,
     };
@@ -99,7 +116,35 @@ public sealed class TigerGraphCommandExecutor : IGraphCommandExecutor
                 ? [new GraphPathRecord(source, relation, target)]
                 : Array.Empty<GraphPathRecord>();
         }).ToArray();
-        return new GraphQueryResult(nodes, relations, paths);
+        var scalars = new Dictionary<string, object?>(StringComparer.Ordinal);
+        CollectScalars(document.RootElement, scalars);
+        return new GraphQueryResult(nodes, relations, paths, scalars);
+    }
+
+    private static void CollectScalars(JsonElement element, IDictionary<string, object?> scalars)
+    {
+        if (element.ValueKind == JsonValueKind.Object)
+        {
+            foreach (var property in element.EnumerateObject())
+            {
+                if (property.Name.StartsWith("nodal_", StringComparison.Ordinal) &&
+                    property.Value.ValueKind is not JsonValueKind.Object and not JsonValueKind.Array)
+                {
+                    scalars[property.Name] = ConvertJsonValue(property.Value);
+                }
+                else
+                {
+                    CollectScalars(property.Value, scalars);
+                }
+            }
+        }
+        else if (element.ValueKind == JsonValueKind.Array)
+        {
+            foreach (var item in element.EnumerateArray())
+            {
+                CollectScalars(item, scalars);
+            }
+        }
     }
 
     private static void CollectRelations(JsonElement element, ICollection<GraphRelationRecord> relations)

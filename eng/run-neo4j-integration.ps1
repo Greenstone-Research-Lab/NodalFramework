@@ -27,6 +27,25 @@ try {
         throw 'Neo4j Bolt port was not published before the timeout.'
     }
 
+    $ready = $false
+    for ($attempt = 0; $attempt -lt 90 -and -not $ready; $attempt++) {
+        $previousErrorActionPreference = $ErrorActionPreference
+        $ErrorActionPreference = 'SilentlyContinue'
+        docker exec $containerName cypher-shell `
+            -u neo4j `
+            -p $password `
+            'RETURN 1;' 2>$null | Out-Null
+        $ready = $LASTEXITCODE -eq 0
+        $ErrorActionPreference = $previousErrorActionPreference
+        if (-not $ready) {
+            Start-Sleep -Seconds 1
+        }
+    }
+
+    if (-not $ready) {
+        throw 'Neo4j did not accept a Cypher readiness query before the timeout.'
+    }
+
     $env:NODAL_NEO4J_ENDPOINT = "neo4j://localhost:$port"
     $env:NODAL_NEO4J_USERNAME = 'neo4j'
     $env:NODAL_NEO4J_PASSWORD = $password
