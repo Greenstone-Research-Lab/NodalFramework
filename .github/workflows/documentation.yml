@@ -68,7 +68,7 @@ jobs:
         run: ./eng/build-docs.ps1 -SkipDotNetRestore -SkipNodeInstall
 
       - name: Upload static site
-        uses: actions/upload-artifact@v6
+        uses: actions/upload-artifact@v7
         with:
           name: nodal-documentation-${{ github.sha }}
           path: website/build
