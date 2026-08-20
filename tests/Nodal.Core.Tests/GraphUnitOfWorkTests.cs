@@ -229,6 +229,87 @@ public sealed class GraphUnitOfWorkTests
         Assert.Contains("NodalContext", exception.Message, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task DetectChangesCreatesPropertyLevelUpdateFromSnapshot()
+    {
+        var provider = new RecordingMutationProvider(new GraphMutationResult(1, 0, true));
+        var context = new SocialContext(provider);
+        var person = new MutablePerson { Id = "person-1", Name = "Ada", Age = 30 };
+        var entry = context.MutablePeople.Attach(person);
+        person.Name = "Ada Lovelace";
+
+        var result = await context.SaveChangesAsync();
+
+        var update = Assert.IsType<UpdateNodeOperation>(Assert.Single(result.Changes.Operations));
+        Assert.Equal("Ada Lovelace", Assert.Single(update.Properties).Value);
+        Assert.Empty(entry.ModifiedProperties);
+        Assert.Equal(GraphEntryState.Unchanged, entry.State);
+    }
+
+    [Fact]
+    public async Task AutoDetectionCanBeDisabledAndEntriesCanBeDetached()
+    {
+        var context = new SocialContext(new RecordingMutationProvider(new GraphMutationResult(0, 0, true)));
+        var person = new MutablePerson { Id = "person-1", Name = "Ada", Age = 30 };
+        var entry = context.MutablePeople.Attach(person);
+        person.Age = 31;
+        context.ChangeTracker.AutoDetectChangesEnabled = false;
+
+        var result = await context.SaveChangesAsync();
+        context.ChangeTracker.DetectChanges();
+
+        Assert.Empty(result.Changes.Operations);
+        Assert.Equal(GraphEntryState.Modified, entry.State);
+        Assert.Contains("Age", entry.ModifiedProperties);
+        context.ChangeTracker.Detach(entry);
+        Assert.Equal(GraphEntryState.Detached, entry.State);
+        Assert.Empty(context.ChangeTracker.Entries());
+    }
+
+    [Fact]
+    public async Task EntryCanMarkOneMappedPropertyForUpdate()
+    {
+        var provider = new RecordingMutationProvider(new GraphMutationResult(1, 0, true));
+        var context = new SocialContext(provider);
+        var person = new MutablePerson { Id = "person-1", Name = "Ada", Age = 30 };
+        context.MutablePeople.Attach(person);
+        context.ChangeTracker.AutoDetectChangesEnabled = false;
+
+        var entry = context.Entry(person);
+        var property = entry.Property(candidate => candidate.Name);
+        Assert.False(property.IsModified);
+        property.IsModified = true;
+        Assert.True(property.IsModified);
+        property.IsModified = false;
+        Assert.Equal(GraphEntryState.Unchanged, entry.State);
+        property.IsModified = true;
+        var result = await context.SaveChangesAsync();
+
+        var update = Assert.IsType<UpdateNodeOperation>(Assert.Single(result.Changes.Operations));
+        Assert.Equal("display_name", Assert.Single(update.Properties).Key);
+        Assert.Throws<NotSupportedException>(() => entry.Property(candidate => candidate.Name.Length));
+        Assert.Throws<InvalidOperationException>(() => context.Entry(
+            new MutablePerson { Id = "person-2", Name = "Alan", Age = 31 }));
+    }
+
+    [Fact]
+    public async Task RelationshipPayloadChangesAreDetectedFromSnapshots()
+    {
+        var provider = new RecordingMutationProvider(new GraphMutationResult(0, 1, true));
+        var context = new SocialContext(provider);
+        var source = new Person("person-1", "Ada");
+        var target = new Person("person-2", "Alan");
+        var relation = new Knows(2020);
+        context.Friendships.Connect(source, relation, target);
+        await context.SaveChangesAsync();
+
+        relation.SinceYear = 2026;
+        var result = await context.SaveChangesAsync();
+
+        var update = Assert.IsType<UpdateRelationOperation>(Assert.Single(result.Changes.Operations));
+        Assert.Equal(2026, Assert.Single(update.Properties).Value);
+    }
+
     private static void AssertCreateNode(GraphMutationOperation operation, string id, string name)
     {
         var create = Assert.IsType<CreateNodeOperation>(operation);
@@ -239,6 +320,8 @@ public sealed class GraphUnitOfWorkTests
     private sealed class SocialContext(IGraphProvider provider) : NodalContext(provider)
     {
         public GraphSet<Person> People => Set<Person>();
+
+        public GraphSet<MutablePerson> MutablePeople => Set<MutablePerson>();
 
         public RelationSet<Person, Knows, Person> Friendships => Relations<Person, Knows, Person>();
     }
@@ -251,10 +334,25 @@ public sealed class GraphUnitOfWorkTests
         [property: GraphProperty("display_name")]
         string Name);
 
+    [GraphNode("MutablePerson")]
+    private sealed class MutablePerson
+    {
+        [GraphKey]
+        [GraphProperty("person_id")]
+        public required string Id { get; init; }
+
+        [GraphProperty("display_name")]
+        public required string Name { get; set; }
+
+        public int Age { get; set; }
+    }
+
     [GraphRelation("KNOWS")]
-    private sealed record Knows(
-        [property: GraphProperty("since_year")]
-        int SinceYear);
+    private sealed class Knows(int sinceYear)
+    {
+        [GraphProperty("since_year")]
+        public int SinceYear { get; set; } = sinceYear;
+    }
 
     private sealed class RecordingMutationProvider : ReadOnlyProvider, IGraphMutationProvider
     {

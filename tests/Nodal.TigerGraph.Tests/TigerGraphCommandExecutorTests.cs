@@ -61,6 +61,28 @@ public sealed class TigerGraphCommandExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteAsyncRepeatsCollectionParametersAndFormatsDates()
+    {
+        var handler = new RecordingHandler("""{"error":false,"results":[]}""");
+        using var client = new HttpClient(handler);
+        var executor = new TigerGraphCommandExecutor(client, new TigerGraphOptions
+        {
+            Endpoint = new Uri("https://tigergraph.example/", UriKind.Absolute),
+            AccessToken = "token",
+        });
+
+        await executor.ExecuteAsync(new GraphCommand("INTERPRET QUERY", new Dictionary<string, object?>
+        {
+            ["ids"] = new List<string> { "person-1", "person-2" },
+            ["created"] = new DateTime(2026, 8, 20, 12, 30, 0, DateTimeKind.Utc),
+        }));
+
+        Assert.Equal(
+            "https://tigergraph.example/gsql/v1/queries/interpret?ids=person-1&ids=person-2&created=2026-08-20 12%3A30%3A00",
+            handler.RequestUri?.ToString());
+    }
+
+    [Fact]
     public async Task ExecuteAsyncNormalizesCanonicalPathFromNamedGsqlOutputs()
     {
         const string response = """

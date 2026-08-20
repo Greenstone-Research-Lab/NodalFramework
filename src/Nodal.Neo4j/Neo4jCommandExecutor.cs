@@ -60,6 +60,7 @@ public sealed class Neo4jCommandExecutor : IGraphCommandExecutor
         var nodes = new List<GraphNodeRecord>();
         var relations = new List<GraphRelationRecord>();
         var paths = new List<GraphPathRecord>();
+        var scalars = new Dictionary<string, object?>(StringComparer.Ordinal);
         foreach (var record in records)
         {
             var recordNodes = record.Values.Values.OfType<INode>().Select(NormalizeNode).ToArray();
@@ -78,9 +79,15 @@ public sealed class Neo4jCommandExecutor : IGraphCommandExecutor
                     CollectNodes(value, nodes);
                 }
             }
+            foreach (var scalar in record.Values.Where(value =>
+                         value.Value is not INode && value.Value is not IRelationship &&
+                         value.Value is not System.Collections.IEnumerable))
+            {
+                scalars[scalar.Key] = scalar.Value;
+            }
         }
 
-        return new GraphQueryResult(nodes, relations, paths);
+        return new GraphQueryResult(nodes, relations, paths, scalars);
     }
 
     private static void CollectNodes(object? value, ICollection<GraphNodeRecord> nodes)

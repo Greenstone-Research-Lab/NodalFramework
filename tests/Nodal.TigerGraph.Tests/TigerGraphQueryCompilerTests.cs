@@ -103,5 +103,86 @@ public sealed class TigerGraphQueryCompilerTests
             command.Text);
     }
 
+
+    [Fact]
+    public void CompileSupportsRichPredicatesOrderingAndOffset()
+    {
+        string[] ids = ["a", "b"];
+        var model = new GraphSet<RichPerson>().Query()
+            .Where(person => ids.Contains(person.Id) && person.Name.EndsWith("da"))
+            .OrderBy(person => person.Name)
+            .Skip(2)
+            .Take(3)
+            .ToQueryModel();
+
+        var command = new TigerGraphQueryCompiler("SocialGraph").Compile(model);
+
+        Assert.Contains("SET<STRING> p0", command.Text, StringComparison.Ordinal);
+        Assert.Contains("node.Id IN p0", command.Text, StringComparison.Ordinal);
+        Assert.Contains("node.Name LIKE \"%\" + p1", command.Text, StringComparison.Ordinal);
+        Assert.Contains("ORDER BY node.Name ASC LIMIT 3 OFFSET 2", command.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompileRejectsOptionalTraversalAndOffsetWithoutLimit()
+    {
+        var optional = new GraphQueryModel("Person", "node", null, [], null,
+            [new GraphTraversalStep("KNOWS", "Person", "node", "relation1", "node1",
+                GraphTraversalDirection.Outgoing, null, null, 1, 1, true)]);
+        var offsetOnly = new GraphSet<Person>().Query().OrderBy(person => person.Id).Skip(2).ToQueryModel();
+
+        Assert.Throws<NotSupportedException>(() => new TigerGraphQueryCompiler("SocialGraph").Compile(optional));
+        Assert.Throws<NotSupportedException>(() => new TigerGraphQueryCompiler("SocialGraph").Compile(offsetOnly));
+    }
+
+    [Fact]
+    public void CompileUsesSyntaxV2ForVariableDepthTraversal()
+    {
+        var model = new GraphQueryModel("Person", "node", null, [], 10,
+            [new GraphTraversalStep("KNOWS", "Person", "node", "relation1", "node1",
+                GraphTraversalDirection.Outgoing, null, null, 1, 3)]);
+
+        var command = new TigerGraphQueryCompiler("SocialGraph").Compile(model);
+
+        Assert.Equal(
+            "INTERPRET QUERY () FOR GRAPH SocialGraph SYNTAX V2 { result = SELECT node1 FROM (node:Person)-[relation1:KNOWS*1..3]->(node1:Person) LIMIT 10; PRINT result; }",
+            command.Text);
+    }
+
+    [Fact]
+    public void CompileSupportsFixedSimplePathAndSubgraphProjection()
+    {
+        var model = new GraphQueryModel("Person", "node", null, [], 5,
+            [new GraphTraversalStep("KNOWS", "Person", "node", "relation1", "node1",
+                GraphTraversalDirection.Outgoing, null)],
+            GraphQueryProjection.Subgraph,
+            Orderings: [new GraphOrdering("Id", "node1", GraphSortDirection.Ascending)],
+            CycleBehavior: GraphCycleBehavior.SimplePath);
+
+        var command = new TigerGraphQueryCompiler("SocialGraph").Compile(model);
+
+        Assert.Contains("nodal_nodes_0 = SELECT node", command.Text, StringComparison.Ordinal);
+        Assert.Contains("nodal_nodes_1 = SELECT node1", command.Text, StringComparison.Ordinal);
+        Assert.Contains("WHERE node != node1", command.Text, StringComparison.Ordinal);
+        Assert.Contains("@@nodal_relations += relation1", command.Text, StringComparison.Ordinal);
+        Assert.True(
+            command.Text.IndexOf("ACCUM", StringComparison.Ordinal) <
+            command.Text.IndexOf("ORDER BY", StringComparison.Ordinal));
+    }
+
+    [Fact]
+    public void CompileProducesServerSideCount()
+    {
+        var model = new GraphQueryModel("Person", "node", null, [], null, [], GraphQueryProjection.Count);
+
+        var command = new TigerGraphQueryCompiler("SocialGraph").Compile(model);
+
+        Assert.Equal(
+            "INTERPRET QUERY () FOR GRAPH SocialGraph { result = SELECT node FROM Person:node; PRINT result.size() AS nodal_count; }",
+            command.Text);
+    }
+
     private sealed record Person(string Id, int Age);
+
+    private sealed record RichPerson(string Id, string Name);
 }

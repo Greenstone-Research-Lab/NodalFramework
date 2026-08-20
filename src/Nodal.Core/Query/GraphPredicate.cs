@@ -27,6 +27,32 @@ public sealed record GraphLogicalPredicate(
     GraphLogicalOperator Operator,
     GraphPredicate Right) : GraphPredicate;
 
+/// <summary>Negates a provider-neutral predicate.</summary>
+public sealed record GraphNotPredicate(GraphPredicate Operand) : GraphPredicate;
+
+/// <summary>Checks whether a property is null or non-null.</summary>
+public sealed record GraphNullPredicate(string PropertyName, bool IsNull) : GraphPredicate;
+
+/// <summary>Applies a string matching operation to a property.</summary>
+public sealed record GraphStringPredicate(
+    string PropertyName,
+    GraphStringOperator Operator,
+    string ParameterName) : GraphPredicate;
+
+/// <summary>Checks whether a property occurs in a parameterized collection.</summary>
+public sealed record GraphInPredicate(string PropertyName, string ParameterName, bool Negated = false) : GraphPredicate;
+
+/// <summary>Defines provider-neutral string matching operations.</summary>
+public enum GraphStringOperator
+{
+    /// <summary>Matches a prefix.</summary>
+    StartsWith,
+    /// <summary>Matches a substring.</summary>
+    Contains,
+    /// <summary>Matches a suffix.</summary>
+    EndsWith,
+}
+
 /// <summary>
 /// Defines provider-neutral boolean operations.
 /// </summary>

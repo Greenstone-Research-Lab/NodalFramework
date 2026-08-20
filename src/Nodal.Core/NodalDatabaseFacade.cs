@@ -1,5 +1,6 @@
 using Nodal.Core.Execution;
 using Nodal.Core.Migrations;
+using Nodal.Core.Providers;
 
 namespace Nodal.Core;
 
@@ -26,4 +27,40 @@ public sealed class NodalDatabaseFacade
 
         return migrationProvider;
     }
+
+    /// <summary>Executes a safely parameterized provider-native read command.</summary>
+    public ValueTask<GraphQueryResult> ExecuteRawAsync(
+        string commandText,
+        IReadOnlyDictionary<string, object?>? parameters = null,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentException.ThrowIfNullOrWhiteSpace(commandText);
+        return provider.CommandExecutor.ExecuteAsync(
+            new GraphCommand(commandText, parameters ?? new Dictionary<string, object?>()),
+            cancellationToken);
+    }
+
+    /// <summary>Executes provider-native query text and materializes its normalized node records.</summary>
+    public async ValueTask<IReadOnlyList<TNode>> QueryRawAsync<TNode>(
+        string commandText,
+        IReadOnlyDictionary<string, object?>? parameters = null,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await ExecuteRawAsync(commandText, parameters, cancellationToken).ConfigureAwait(false);
+        return provider.ResultMaterializer.Materialize<TNode>(result);
+    }
+
+    /// <summary>Executes a parameterized Cypher query through the configured provider transport.</summary>
+    public ValueTask<GraphQueryResult> CypherAsync(
+        string cypher,
+        IReadOnlyDictionary<string, object?>? parameters = null,
+        CancellationToken cancellationToken = default) =>
+        ExecuteRawAsync(cypher, parameters, cancellationToken);
+
+    /// <summary>Executes a parameterized GSQL query through the configured provider transport.</summary>
+    public ValueTask<GraphQueryResult> GsqlAsync(
+        string gsql,
+        IReadOnlyDictionary<string, object?>? parameters = null,
+        CancellationToken cancellationToken = default) =>
+        ExecuteRawAsync(gsql, parameters, cancellationToken);
 }

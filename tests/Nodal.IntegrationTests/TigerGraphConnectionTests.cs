@@ -49,9 +49,34 @@ public sealed class TigerGraphConnectionTests
                 .Match(person => person.Id == source.Id)
                 .TraversePath(readContext.Friendships)
                 .ToListAsync());
+            var detachedContext = new SocialContext(provider);
+            string[] selectedIds = [source.Id, target.Id];
+            var paged = await detachedContext.People.Query()
+                .Where(person => selectedIds.Contains(person.Id) && person.Name.StartsWith("Ad"))
+                .OrderBy(person => person.Name)
+                .Skip(0)
+                .Take(1)
+                .AsNoTracking()
+                .ToListAsync();
+            var raw = await detachedContext.Database.QueryRawAsync<Person>(
+                $"INTERPRET QUERY (STRING id) FOR GRAPH {graphName} {{ result = SELECT node FROM Person:node WHERE node.Id == id; PRINT result; }}",
+                new Dictionary<string, object?> { ["id"] = target.Id });
+            var subgraph = await detachedContext.People.Match(person => person.Id == source.Id)
+                .Traverse(detachedContext.Friendships)
+                .WithoutCycles()
+                .ToSubgraphAsync();
+            var count = await detachedContext.People.Query()
+                .Where(person => selectedIds.Contains(person.Id))
+                .CountAsync();
             Assert.Equal("Ada", storedSource.Name);
             Assert.Equal(target.Id, storedPath.Target.Id);
             Assert.Equal(2020, storedPath.Relation.SinceYear);
+            Assert.Equal("Ada", Assert.Single(paged).Name);
+            Assert.Empty(detachedContext.ChangeTracker.Entries());
+            Assert.Equal("Alan", Assert.Single(raw).Name);
+            Assert.Equal(2, subgraph.Nodes.Count);
+            Assert.Single(subgraph.RelationRecords);
+            Assert.Equal(2, count);
 
             source.Name = "Ada Lovelace";
             relation.SinceYear = 2025;

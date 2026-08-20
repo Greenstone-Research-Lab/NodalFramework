@@ -14,6 +14,10 @@ internal sealed class ProviderGraphQueryExecutor(
         var command = provider.QueryCompiler.Compile(query);
         var result = await provider.CommandExecutor.ExecuteAsync(command, cancellationToken).ConfigureAwait(false);
         var materialized = provider.ResultMaterializer.Materialize<TNode>(result);
+        if (query.TrackingBehavior == GraphTrackingBehavior.NoTracking)
+        {
+            return materialized;
+        }
         var metadata = modelAccessor().GetNode<TNode>();
         return materialized.Select(node => stateManager.TrackFromQuery(node, metadata).Node).ToArray();
     }
@@ -46,6 +50,26 @@ internal sealed class ProviderGraphQueryExecutor(
             return new Model.GraphPath<TSource, TRelation, TTarget>(source, relation, target);
         }).ToArray();
     }
+
+    public async ValueTask<GraphQueryResult> ExecuteSubgraphAsync(
+        GraphQueryModel query,
+        CancellationToken cancellationToken)
+    {
+        var command = provider.QueryCompiler.Compile(query);
+        return await provider.CommandExecutor.ExecuteAsync(command, cancellationToken).ConfigureAwait(false);
+    }
+
+    public async ValueTask<int> ExecuteCountAsync(GraphQueryModel query, CancellationToken cancellationToken)
+    {
+        var command = provider.QueryCompiler.Compile(query);
+        var result = await provider.CommandExecutor.ExecuteAsync(command, cancellationToken).ConfigureAwait(false);
+        if (!result.ScalarValues.TryGetValue("nodal_count", out var value))
+        {
+            throw new InvalidOperationException("The provider did not return the expected 'nodal_count' scalar.");
+        }
+
+        return Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture);
+    }
 }
 
 /// <summary>
@@ -65,4 +89,12 @@ public interface IGraphQueryExecutor
         GraphQueryModel query,
         CancellationToken cancellationToken = default)
         where TRelation : notnull;
+
+    /// <summary>Executes a normalized subgraph projection.</summary>
+    ValueTask<GraphQueryResult> ExecuteSubgraphAsync(
+        GraphQueryModel query,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Executes a server-side count aggregate.</summary>
+    ValueTask<int> ExecuteCountAsync(GraphQueryModel query, CancellationToken cancellationToken = default);
 }

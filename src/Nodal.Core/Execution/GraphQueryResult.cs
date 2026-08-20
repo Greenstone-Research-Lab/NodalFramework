@@ -31,14 +31,20 @@ public sealed record GraphPathRecord(
 /// <param name="Nodes">The normalized node records.</param>
 /// <param name="Relations">The normalized relationship records.</param>
 /// <param name="Paths">The normalized path associations.</param>
+/// <param name="Scalars">Named scalar values returned by an aggregate query.</param>
 public sealed record GraphQueryResult(
     IReadOnlyList<GraphNodeRecord> Nodes,
     IReadOnlyList<GraphRelationRecord>? Relations = null,
-    IReadOnlyList<GraphPathRecord>? Paths = null)
+    IReadOnlyList<GraphPathRecord>? Paths = null,
+    IReadOnlyDictionary<string, object?>? Scalars = null)
 {
     /// <summary>Gets normalized relationships, or an empty collection for node-only results.</summary>
     public IReadOnlyList<GraphRelationRecord> RelationRecords => Relations ?? [];
 
     /// <summary>Gets normalized paths, or an empty collection for node-only results.</summary>
     public IReadOnlyList<GraphPathRecord> PathRecords => Paths ?? [];
+
+    /// <summary>Gets named scalar values, or an empty dictionary for graph-record results.</summary>
+    public IReadOnlyDictionary<string, object?> ScalarValues => Scalars ??
+        new Dictionary<string, object?>();
 }
