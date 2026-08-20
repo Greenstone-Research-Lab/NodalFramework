@@ -26,7 +26,7 @@ const structuredData = {
       '@type': 'WebSite',
       name: 'Nodal Framework Documentation',
       url: 'https://nodalframework.pages.dev/',
-      inLanguage: ['en', 'tr'],
+      inLanguage: 'en',
     },
   ],
 };

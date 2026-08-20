@@ -17,10 +17,9 @@ const config: Config = {
   },
   i18n: {
     defaultLocale: 'en',
-    locales: ['en', 'tr'],
+    locales: ['en'],
     localeConfigs: {
       en: {label: 'English', htmlLang: 'en'},
-      tr: {label: 'Türkçe', htmlLang: 'tr'},
     },
   },
   presets: [
@@ -62,7 +61,6 @@ const config: Config = {
         {to: '/docs/providers/overview', label: 'Providers', position: 'left'},
         {href: 'pathname:///api/index.html', label: 'API', position: 'left'},
         {to: '/blog', label: 'Journal', position: 'left'},
-        {type: 'localeDropdown', position: 'right'},
         {href: 'https://github.com/Greenstone-Research-Lab/NodalFramework', label: 'GitHub', position: 'right'},
       ],
     },
