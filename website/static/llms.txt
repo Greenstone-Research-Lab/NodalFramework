@@ -13,6 +13,8 @@ License: MIT
 - [Graph model](https://nodalframework.pages.dev/docs/concepts/graph-model)
 - [Query engine](https://nodalframework.pages.dev/docs/querying/query-engine)
 - [Architecture](https://nodalframework.pages.dev/docs/architecture)
+- [Roadmap](https://nodalframework.pages.dev/docs/roadmap)
+- [Alpha P3 plan](https://nodalframework.pages.dev/blog/alpha-roadmap-pattern-recognition-and-new-providers)
 - [API reference](https://nodalframework.pages.dev/api/)
 
 ## NuGet packages

@@ -59,6 +59,15 @@ Nodal Framework is a provider-based .NET 10 graph data access framework. Applica
 - Do not place credentials in source, examples, logs, or migration files.
 - Treat roadmap items as planned capabilities, not shipped APIs.
 
+## Planned work
+
+- P2 hardens provider certification, samples, migrations, analytics write-back, event/outbox integration, capability metadata, and stable releases.
+- P3 plans the optional `Nodal.PatternRecognition` package for bounded path signatures, heterogeneous similarity, sparse path communities, frequent sequences, temporal transitions, and explainable evidence.
+- `Nodal.Memgraph` and `Nodal.ArangoDB` are provider expansion candidates, not shipped packages.
+- P4+ research items such as temporal graph neural networks and online model learning are not compatibility promises.
+- Roadmap: https://nodalframework.pages.dev/docs/roadmap
+- Dated alpha plan: https://nodalframework.pages.dev/blog/alpha-roadmap-pattern-recognition-and-new-providers
+
 Capability graph: https://nodalframework.pages.dev/knowledge/nodal-capabilities.jsonld
 Full guide: https://nodalframework.pages.dev/docs/intro
 API: https://nodalframework.pages.dev/api/
