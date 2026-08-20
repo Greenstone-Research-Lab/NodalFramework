@@ -1,0 +1,6 @@
+.cover { margin:0 0 1.6rem; overflow:hidden; border:1px solid var(--nodal-border); border-radius:16px; background:#0b1220; box-shadow:0 16px 38px rgba(11,18,32,.13); }
+.cover img { display:block; width:100%; aspect-ratio:16/8; object-fit:cover; }
+.coverPost { margin-bottom:2.25rem; border-radius:20px; }
+.coverPost img { aspect-ratio:16/7; }
+.cover figcaption { padding:.7rem 1rem; border-top:1px solid rgba(255,255,255,.12); background:#0b1220; color:#aebbd0; font-size:.78rem; }
+@media (max-width:640px) { .cover,.coverPost { border-radius:12px; } .coverPost img { aspect-ratio:16/9; } }
