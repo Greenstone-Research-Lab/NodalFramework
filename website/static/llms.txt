@@ -8,11 +8,19 @@ License: MIT
 
 ## Start here
 
+- [Install and configure](https://nodalframework.pages.dev/docs/installation)
 - [Getting started](https://nodalframework.pages.dev/docs/getting-started)
 - [Graph model](https://nodalframework.pages.dev/docs/concepts/graph-model)
 - [Query engine](https://nodalframework.pages.dev/docs/querying/query-engine)
 - [Architecture](https://nodalframework.pages.dev/docs/architecture)
 - [API reference](https://nodalframework.pages.dev/api/)
+
+## NuGet packages
+
+- Install exactly one provider package: `Nodal.Neo4j` or `Nodal.TigerGraph`.
+- Provider packages include `Nodal.Core` transitively.
+- Add `Nodal.Migrations` only when the application owns schema evolution.
+- During the alpha period, keep every explicit Nodal package on the same version.
 
 ## Providers
 

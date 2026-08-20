@@ -4,6 +4,9 @@ title: Building one .NET model for multiple graph engines
 authors: [ilker]
 tags: [architecture, dotnet, neo4j, tigergraph]
 description: Why Nodal Framework separates graph semantics from provider languages and response formats.
+image: /img/journal/default-cover.svg
+image_alt: Abstract connected graph illustrating the Nodal Framework architecture.
+image_caption: The Nodal Framework Journal documents architectural decisions, constraints, and lessons learned.
 ---
 
 Graph databases share nodes and relationships, but their query languages, transports, transaction boundaries, and response formats are not interchangeable. Nodal Framework began with a simple rule: the domain should be portable, while execution should remain native.
