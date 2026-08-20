@@ -12,6 +12,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PackageId>Nodal.Neo4j</PackageId>
+    <Title>Nodal Framework Provider for Neo4j</Title>
+    <Description>Neo4j provider for Nodal Framework with Cypher translation, pooled Bolt connections, transactions, and migrations.</Description>
+    <PackageTags>$(PackageTags);neo4j;cypher;bolt</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
 </Project>

@@ -100,6 +100,20 @@ public sealed class GraphTraversalTests
     }
 
     [Fact]
+    public void CompiledQueryFactoryAcceptsFreshRuntimeParameters()
+    {
+        var context = new NetworkContext(new UnusedProvider());
+        var compiled = NodalCompiledQuery.Compile((NetworkContext database, string id) =>
+            database.People.Match(person => person.Id == id));
+
+        var first = compiled(context, "person-1").ToQueryModel();
+        var second = compiled(context, "person-2").ToQueryModel();
+
+        Assert.Equal("person-1", Assert.Single(first.Parameters).Value);
+        Assert.Equal("person-2", Assert.Single(second.Parameters).Value);
+    }
+
+    [Fact]
     public void TraversalRejectsNullRelationSet()
     {
         var context = new NetworkContext(new UnusedProvider());
@@ -110,6 +124,46 @@ public sealed class GraphTraversalTests
             () => context.Companies.Query().TraverseIncoming<Person, WorksAt>(null!));
         Assert.Throws<ArgumentNullException>(
             () => context.People.Query().TraversePath<WorksAt, Company>(null!));
+    }
+
+    [Fact]
+    public void VariableDepthAndOptionalTraversalsAreRepresentedExplicitly()
+    {
+        var context = new NetworkContext(new UnusedProvider());
+
+        var repeated = Assert.Single(context.People.Query()
+            .Traverse(context.Friendships, 1, 4).ToQueryModel().Traversals);
+        var optional = Assert.Single(context.People.Query()
+            .TraverseOptional(context.Employment).ToQueryModel().Traversals);
+
+        Assert.Equal((1, 4), (repeated.MinDepth, repeated.MaxDepth));
+        Assert.True(optional.Optional);
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => context.People.Query().Traverse(context.Friendships, 3, 2));
+    }
+
+    [Fact]
+    public void TraversalCanMatchMultipleRelationshipPayloadTypes()
+    {
+        var context = new NetworkContext(new UnusedProvider());
+
+        var traversal = Assert.Single(context.People.Query()
+            .TraverseAny<Person>(context.Friendships, context.Follows)
+            .ToQueryModel().Traversals);
+
+        Assert.Equal(["FRIEND_OF", "FOLLOWS"], traversal.RelationTypes);
+        Assert.Throws<ArgumentException>(() => context.People.Query().TraverseAny<Person>());
+    }
+
+    [Fact]
+    public void CyclePolicyIsExplicitInQueryModel()
+    {
+        var context = new NetworkContext(new UnusedProvider());
+
+        var model = context.People.Query().Traverse(context.Friendships, 1, 4)
+            .WithoutCycles().ToQueryModel();
+
+        Assert.Equal(GraphCycleBehavior.SimplePath, model.CycleBehavior);
     }
 
     [Fact]
@@ -154,6 +208,8 @@ public sealed class GraphTraversalTests
 
         public RelationSet<Person, FriendOf, Person> Friendships => Relations<Person, FriendOf, Person>();
 
+        public RelationSet<Person, Follows, Person> Follows => Relations<Person, Follows, Person>();
+
         public RelationSet<Company, LocatedIn, City> Locations => Relations<Company, LocatedIn, City>();
     }
 
@@ -182,6 +238,9 @@ public sealed class GraphTraversalTests
 
     [GraphRelation("FRIEND_OF", Directed = false)]
     private sealed record FriendOf;
+
+    [GraphRelation("FOLLOWS", Directed = false)]
+    private sealed record Follows;
 
     [GraphRelation("LOCATED_IN")]
     private sealed record LocatedIn;

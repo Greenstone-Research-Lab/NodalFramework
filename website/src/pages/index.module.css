@@ -1,0 +1,21 @@
+.hero { display:grid; grid-template-columns:1.05fr .95fr; gap:4rem; align-items:center; min-height:72vh; max-width:1200px; margin:0 auto; padding:6rem 2rem; }
+.hero h1 { font-size:clamp(3rem,7vw,5.7rem); line-height:.95; letter-spacing:-.055em; margin:1rem 0 1.7rem; }
+.hero h1 span { color:var(--ifm-color-primary); }
+.heroCopy p { max-width:650px; font-size:1.2rem; color:var(--nodal-muted); line-height:1.75; }
+.eyebrow { color:var(--ifm-color-primary); text-transform:uppercase; letter-spacing:.14em; font-size:.78rem; font-weight:800; }
+.actions { display:flex; gap:1rem; margin-top:2rem; flex-wrap:wrap; }
+.codePanel { overflow:hidden; border:1px solid var(--nodal-border); border-radius:18px; background:#0b1220; box-shadow:0 30px 80px rgba(0,0,0,.25); }
+.codePanel pre { margin:0 !important; border-radius:0 !important; min-height:235px; padding:2rem !important; }
+.codeHeader { height:47px; display:flex; gap:7px; align-items:center; padding:0 1rem; border-bottom:1px solid #263349; color:#8fa2bc; }
+.codeHeader span { width:9px; height:9px; border-radius:50%; background:#33435c; }
+.codeHeader strong { margin-left:auto; font-size:.72rem; letter-spacing:.08em; text-transform:uppercase; }
+.features { max-width:1200px; margin:0 auto 6rem; padding:0 2rem; display:grid; grid-template-columns:repeat(3,1fr); gap:1.25rem; }
+.features article { border-top:1px solid var(--nodal-border); padding:1.6rem 1rem 0 0; }
+.features article span { color:var(--ifm-color-primary); font-size:.75rem; font-weight:800; }
+.features h2 { font-size:1.35rem; margin:.65rem 0; }
+.features p { color:var(--nodal-muted); line-height:1.7; }
+.providerStrip { background:#0b1220; color:white; padding:4rem max(2rem,calc((100vw - 1160px)/2)); display:flex; justify-content:space-between; gap:3rem; align-items:end; }
+.providerStrip small { color:#62e6bd; letter-spacing:.14em; font-weight:800; }
+.providerStrip h2 { margin:.6rem 0 0; max-width:650px; font-size:clamp(1.8rem,4vw,3rem); }
+.providerNames { display:flex; gap:2rem; color:#b4c4dc; font-size:1.2rem; }
+@media (max-width:900px) { .hero { grid-template-columns:1fr; padding-top:4rem; } .features { grid-template-columns:1fr; } .providerStrip { align-items:start; flex-direction:column; } }

@@ -1,3 +1,4 @@
+using Nodal.Core.Analytics;
 using Nodal.Core.Execution;
 using Nodal.Core.Migrations;
 using Nodal.Core.Mutations;
@@ -8,7 +9,8 @@ namespace Nodal.TigerGraph;
 /// <summary>
 /// Provides the complete Nodal query pipeline for a TigerGraph graph.
 /// </summary>
-public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider, IGraphMigrationProvider
+public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider, IGraphMigrationProvider,
+    IGraphAnalyticsProvider, IGraphAnalyticsRuntimeProvider
 {
     private readonly IGraphMigrationExecutor? migrationExecutor;
 
@@ -22,6 +24,25 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider,
         MutationExecutor = new TigerGraphMutationExecutor(httpClient, options, graphName);
         ResultMaterializer = new JsonGraphResultMaterializer();
         MigrationDialect = new TigerGraphMigrationDialect(graphName);
+        AnalyticsCompiler = new TigerGraphAnalyticsCompiler(graphName, options.AnalyticsQueries);
+        AnalyticsCapabilities = new GraphAnalyticsCapabilities
+        {
+            ProviderName = "TigerGraph",
+            TestedProviderVersion = "4.2.4 Community",
+            ClientVersion = "REST++ / GSQL 4.2.4 baseline",
+            Algorithms = options.AnalyticsQueries.Keys.ToHashSet(),
+            SupportsWeightedRelationships = options.WeightedAnalyticsAlgorithms.Count > 0,
+            SupportsProjectionManagement = false,
+            AlgorithmDetails = options.AnalyticsQueries.ToDictionary(
+                item => item.Key,
+                item => new GraphAlgorithmCapability(
+                    item.Key,
+                    GraphAnalyticsAvailability.InstalledQuery,
+                    GraphCapabilityVerification.Compiler,
+                    $"Installed GSQL query '{item.Value}' returning the Nodal analytics response contract.",
+                    SupportsWeights: options.WeightedAnalyticsAlgorithms.Contains(item.Key))),
+        };
+        AnalyticsRuntime = new TigerGraphAnalyticsRuntime(options.AnalyticsQueries);
     }
 
     /// <summary>
@@ -55,6 +76,15 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider,
 
     /// <inheritdoc />
     public IGraphResultMaterializer ResultMaterializer { get; }
+
+    /// <inheritdoc />
+    public IGraphAnalyticsCompiler AnalyticsCompiler { get; }
+
+    /// <inheritdoc />
+    public GraphAnalyticsCapabilities AnalyticsCapabilities { get; }
+
+    /// <inheritdoc />
+    public IGraphAnalyticsRuntime AnalyticsRuntime { get; }
 
     /// <inheritdoc />
     public IGraphMutationExecutor MutationExecutor { get; private set; }

@@ -14,37 +14,92 @@ public sealed class Neo4jQueryCompiler : IGraphQueryCompiler
     {
         ArgumentNullException.ThrowIfNull(query);
 
+        if (query.CycleBehavior == GraphCycleBehavior.SimplePath &&
+            query.Traversals.Any(traversal => traversal.Optional))
+        {
+            throw new NotSupportedException("A simple path cannot contain an optional traversal.");
+        }
+
         var builder = new StringBuilder()
-            .Append("MATCH (")
+            .Append(query.CycleBehavior == GraphCycleBehavior.SimplePath ? "MATCH `nodalPath` = (" : "MATCH (")
             .Append(Escape(query.Alias))
             .Append(':')
             .Append(Escape(query.NodeType))
             .Append(')');
 
+        var hasOptionalTraversal = query.Traversals.Any(traversal => traversal.Optional);
+        if (hasOptionalTraversal && query.Predicate is not null)
+        {
+            builder.Append(" WHERE ").Append(RenderPredicate(query.Predicate, query.Alias));
+        }
+
         foreach (var traversal in query.Traversals)
         {
-            builder.Append(RenderTraversal(traversal));
+            if (hasOptionalTraversal)
+            {
+                builder.Append(traversal.Optional ? " OPTIONAL MATCH (" : " MATCH (")
+                    .Append(Escape(traversal.SourceAlias))
+                    .Append(')')
+                    .Append(RenderTraversal(traversal));
+                var traversalFilters = new List<string>();
+                if (traversal.Predicate is not null)
+                {
+                    traversalFilters.Add(RenderPredicate(traversal.Predicate, traversal.TargetAlias));
+                }
+                if (traversal.RelationPredicate is not null)
+                {
+                    traversalFilters.Add(RenderPredicate(traversal.RelationPredicate, traversal.RelationAlias));
+                }
+                if (traversalFilters.Count > 0)
+                {
+                    builder.Append(" WHERE ").Append(string.Join(" AND ", traversalFilters));
+                }
+            }
+            else
+            {
+                builder.Append(RenderTraversal(traversal));
+            }
         }
 
         var filters = new List<string>();
-        if (query.Predicate is not null)
+        if (query.CycleBehavior == GraphCycleBehavior.SimplePath)
+        {
+            filters.Add("all(`nodalVertex` IN nodes(`nodalPath`) WHERE single(`nodalCandidate` IN nodes(`nodalPath`) WHERE `nodalCandidate` = `nodalVertex`))");
+        }
+        if (!hasOptionalTraversal && query.Predicate is not null)
         {
             filters.Add(RenderPredicate(query.Predicate, query.Alias));
         }
 
-        filters.AddRange(query.Traversals
-            .Where(traversal => traversal.Predicate is not null)
-            .Select(traversal => RenderPredicate(traversal.Predicate!, traversal.TargetAlias)));
-        filters.AddRange(query.Traversals
-            .Where(traversal => traversal.RelationPredicate is not null)
-            .Select(traversal => RenderPredicate(traversal.RelationPredicate!, traversal.RelationAlias)));
+        if (!hasOptionalTraversal)
+        {
+            filters.AddRange(query.Traversals
+                .Where(traversal => traversal.Predicate is not null)
+                .Select(traversal => RenderPredicate(traversal.Predicate!, traversal.TargetAlias)));
+            filters.AddRange(query.Traversals
+                .Where(traversal => traversal.RelationPredicate is not null)
+                .Select(traversal => RenderPredicate(traversal.RelationPredicate!, traversal.RelationAlias)));
+        }
         if (filters.Count > 0)
         {
             builder.Append(" WHERE ").Append(string.Join(" AND ", filters));
         }
 
         builder.Append(" RETURN ");
-        if (query.Projection == GraphQueryProjection.Path)
+        if (query.Distinct && query.Projection != GraphQueryProjection.Count)
+        {
+            builder.Append("DISTINCT ");
+        }
+        if (query.Projection == GraphQueryProjection.Count)
+        {
+            builder.Append("count(");
+            if (query.Distinct)
+            {
+                builder.Append("DISTINCT ");
+            }
+            builder.Append(Escape(query.ResultAlias)).Append(") AS `nodal_count`");
+        }
+        else if (query.Projection == GraphQueryProjection.Path)
         {
             var last = query.Traversals[^1];
             builder.Append(Escape(last.SourceAlias))
@@ -53,9 +108,24 @@ public sealed class Neo4jQueryCompiler : IGraphQueryCompiler
                 .Append(", ")
                 .Append(Escape(last.TargetAlias));
         }
+        else if (query.Projection == GraphQueryProjection.Subgraph)
+        {
+            builder.Append(string.Join(", ",
+                new[] { query.Alias }
+                    .Concat(query.Traversals.SelectMany(step => new[] { step.RelationAlias, step.TargetAlias }))
+                    .Select(Escape)));
+        }
         else
         {
             builder.Append(Escape(query.ResultAlias));
+        }
+        if (query.Projection != GraphQueryProjection.Count && query.EffectiveOrderings.Count > 0)
+        {
+            builder.Append(" ORDER BY ").Append(string.Join(", ", query.EffectiveOrderings.Select(RenderOrdering)));
+        }
+        if (query.Offset is not null)
+        {
+            builder.Append(" SKIP ").Append(query.Offset.Value);
         }
         if (query.Limit is not null)
         {
@@ -73,12 +143,26 @@ public sealed class Neo4jQueryCompiler : IGraphQueryCompiler
             $"{Escape(alias)}.{Escape(comparison.PropertyName)} {RenderOperator(comparison.Operator)} ${comparison.ParameterName}",
         GraphLogicalPredicate logical =>
             $"({RenderPredicate(logical.Left, alias)} {RenderLogicalOperator(logical.Operator)} {RenderPredicate(logical.Right, alias)})",
+        GraphNotPredicate not => $"NOT ({RenderPredicate(not.Operand, alias)})",
+        GraphNullPredicate nullCheck =>
+            $"{Escape(alias)}.{Escape(nullCheck.PropertyName)} IS {(nullCheck.IsNull ? string.Empty : "NOT ")}NULL",
+        GraphStringPredicate text => RenderStringPredicate(text, alias),
+        GraphInPredicate membership =>
+            $"{Escape(alias)}.{Escape(membership.PropertyName)} {(membership.Negated ? "NOT " : string.Empty)}IN ${membership.ParameterName}",
         _ => throw new NotSupportedException($"Predicate '{predicate.GetType().Name}' is not supported by Neo4j."),
     };
 
     private static string RenderTraversal(GraphTraversalStep traversal)
     {
-        var relation = $"[{Escape(traversal.RelationAlias)}:{Escape(traversal.RelationType)}]";
+        if (traversal.MinDepth < 0 || traversal.MaxDepth < traversal.MinDepth)
+        {
+            throw new ArgumentOutOfRangeException(nameof(traversal), "Traversal depth bounds are invalid.");
+        }
+        var depth = traversal.MinDepth == 1 && traversal.MaxDepth == 1
+            ? string.Empty
+            : $"*{traversal.MinDepth}..{traversal.MaxDepth}";
+        var relationTypes = string.Join("|", traversal.RelationTypes.Select(Escape));
+        var relation = $"[{Escape(traversal.RelationAlias)}:{relationTypes}{depth}]";
         var target = $"({Escape(traversal.TargetAlias)}:{Escape(traversal.TargetNodeType)})";
         return traversal.Direction switch
         {
@@ -106,6 +190,22 @@ public sealed class Neo4jQueryCompiler : IGraphQueryCompiler
         GraphLogicalOperator.Or => "OR",
         _ => throw new ArgumentOutOfRangeException(nameof(logical), logical, null),
     };
+
+    private static string RenderStringPredicate(GraphStringPredicate predicate, string alias)
+    {
+        var property = $"{Escape(alias)}.{Escape(predicate.PropertyName)}";
+        return predicate.Operator switch
+        {
+            GraphStringOperator.StartsWith => $"{property} STARTS WITH ${predicate.ParameterName}",
+            GraphStringOperator.Contains => $"{property} CONTAINS ${predicate.ParameterName}",
+            GraphStringOperator.EndsWith => $"{property} ENDS WITH ${predicate.ParameterName}",
+            _ => throw new ArgumentOutOfRangeException(nameof(predicate), predicate.Operator, null),
+        };
+    }
+
+    private static string RenderOrdering(GraphOrdering ordering) =>
+        $"{Escape(ordering.Alias)}.{Escape(ordering.PropertyName)} " +
+        (ordering.Direction == GraphSortDirection.Ascending ? "ASC" : "DESC");
 
     private static string Escape(string identifier) => $"`{identifier.Replace("`", "``", StringComparison.Ordinal)}`";
 }

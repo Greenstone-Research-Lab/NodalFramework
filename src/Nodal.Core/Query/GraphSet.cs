@@ -69,8 +69,45 @@ public sealed class GraphSet<TNode>
     /// <summary>Marks a node for a complete mapped-property update.</summary>
     public GraphNodeEntry<TNode> Update(TNode node) => GetStateManager().Update(node, GetMetadata());
 
+    /// <summary>Begins tracking an existing node without scheduling a write.</summary>
+    public GraphNodeEntry<TNode> Attach(TNode node) => GetStateManager().Attach(node, GetMetadata());
+
     /// <summary>Marks a node for deletion, or detaches it when it was newly added.</summary>
     public GraphNodeEntry<TNode> Remove(TNode node) => GetStateManager().Remove(node, GetMetadata());
+
+    /// <summary>Reloads every writable mapped property from the provider and refreshes its snapshot.</summary>
+    public async ValueTask ReloadAsync(TNode node, CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(node);
+        var mapped = GetMetadata();
+        var runtimeExecutor = executor ?? throw new InvalidOperationException(
+            "Reload requires a GraphSet obtained from a NodalContext.");
+        var key = mapped.ClrType.GetProperty(mapped.KeyProperty)!.GetValue(node) ??
+            throw new InvalidOperationException($"Key property '{mapped.KeyProperty}' cannot be null.");
+        var query = new GraphQueryModel(
+            nodeType,
+            "node",
+            new GraphComparisonPredicate(
+                mapped.Properties[mapped.KeyProperty].Name,
+                GraphComparisonOperator.Equal,
+                "p0"),
+            [new GraphQueryParameter("p0", key, key.GetType())],
+            2,
+            [],
+            TrackingBehavior: GraphTrackingBehavior.NoTracking);
+        var values = await runtimeExecutor.ExecuteAsync<TNode>(query, cancellationToken).ConfigureAwait(false);
+        var fresh = values.Single();
+        foreach (var property in mapped.Properties.Values)
+        {
+            var clrProperty = mapped.ClrType.GetProperty(property.ClrName)!;
+            if (clrProperty.SetMethod is not null)
+            {
+                clrProperty.SetValue(node, clrProperty.GetValue(fresh));
+            }
+        }
+
+        GetStateManager().AcceptReload(node);
+    }
 
     private GraphStateManager GetStateManager() => stateManager ?? throw new InvalidOperationException(
         "Mutation operations require a GraphSet obtained from a NodalContext.");

@@ -2,6 +2,44 @@
 
 Nodal Framework is a provider-based .NET graph data access prototype. It keeps the domain model and query API provider-neutral while Neo4j and TigerGraph packages compile and execute the same model through their native transports.
 
+## Packages
+
+| Package | Purpose |
+| --- | --- |
+| `Nodal.Core` | Provider-neutral model, LINQ query surface, tracking, and unit of work |
+| `Nodal.Migrations` | Portable graph schema migration contracts and planning |
+| `Nodal.Neo4j` | Neo4j/Cypher provider using the official pooled Bolt driver |
+| `Nodal.TigerGraph` | TigerGraph/GSQL provider using REST++ and an optional administrative transport |
+
+The initial alpha targets .NET 10. Package versions move together so provider and core contracts remain compatible during the pre-release period.
+
+## Compatibility and provider capabilities
+
+Nodal distinguishes vendor client compatibility from versions verified by this repository. The current live QA baselines are Neo4j 5.26 Community and TigerGraph 4.2.4 Community. `Nodal.Neo4j` uses `Neo4j.Driver` 6.3.0; the vendor states that driver 6.x connects to Neo4j 4.4.x, 5.x, 2025.x, and 2026.x, but those additional server families are not yet Nodal-certified. Neo4j 5.26 analytics require the vendor-matched GDS 2.13 release.
+
+| Capability | Neo4j | TigerGraph |
+| --- | --- | --- |
+| Parameterized queries and fixed traversals | Supported | Supported |
+| Variable-depth traversal | Supported | GSQL Syntax V2 with documented restrictions |
+| Optional match | Supported | Not supported |
+| Transaction boundary | Client-managed transaction | Atomic request or installed query |
+| Migration execution | Supported | Requires administrative transport |
+| Centrality and community detection | Requires compatible GDS and named projection | Requires explicitly configured installed GSQL query |
+| Weighted analytics | Algorithm-specific | Must be declared for each installed query |
+| Typed shortest paths | Native Cypher; GDS for weighted algorithms | Configured installed GSQL query |
+
+Analytics families currently represented by the portable contract:
+
+| Family | Algorithms | Neo4j status | TigerGraph status |
+| --- | --- | --- | --- |
+| Centrality | ArticleRank, articulation points, betweenness, bridges, CELF, closeness, degree, eigenvector, harmonic, HITS, PageRank | GDS compiler; live certification pending | Installed-query contract; configured per deployment |
+| Community | Clique counting, conductance, HDBSCAN, K-core, K-1 coloring, K-means, label propagation, Leiden, local clustering coefficient, Louvain, modularity, modularity optimization, SCC, triangle count, WCC, maximum k-cut, SLLPA | GDS compiler; live certification pending | Installed-query contract; configured per deployment |
+| Path finding | Shortest/all-shortest, Dijkstra, A*, Yen | Native unweighted execution and GDS weighted compiler | Installed-query execution with canonical routes |
+
+The full matrix and verification legend are published in the [compatibility documentation](website/docs/providers/compatibility.md). Unsupported capabilities fail before transport and are never emulated by downloading the graph into application memory.
+
+Weekly Dependabot checks cover NuGet, documentation npm packages, Docker database images, and GitHub Actions. Update pull requests target `developer`; a database version becomes a supported Nodal baseline only after its compatibility and live integration suites pass.
+
 ## Attribute-based model
 
 Attributes describe only portable graph semantics. Database-specific indexes, constraints, storage options, and migration details remain in the fluent migration API so domain POCOs do not become coupled to one graph database.
@@ -78,6 +116,92 @@ var peopleWhoKnowAda = await context.People
 ```
 
 The same provider-neutral traversal model compiles to directed Cypher patterns for Neo4j and directed GSQL path patterns for TigerGraph. Relations declared with `Directed = false` automatically use an undirected traversal.
+
+### Query engine
+
+The fluent query surface keeps values parameterized while pushing filtering, ordering, paging, distinctness, traversal, and aggregates into the selected provider:
+
+```csharp
+string[] selectedIds = ["person-42", "person-84"];
+
+var page = await context.People.Query()
+    .Where(person => selectedIds.Contains(person.Id))
+    .Where(person => person.Name.StartsWith("Ad") && person.Name != null)
+    .OrderBy(person => person.Name)
+    .ThenByDescending(person => person.Id)
+    .Skip(20)
+    .Take(10)
+    .Distinct()
+    .AsNoTracking()
+    .Select(person => new { person.Id, person.Name })
+    .ToListAsync();
+
+var exists = await context.People.Match(person => person.Name.Contains("Lovelace")).AnyAsync();
+var count = await context.People.Match(person => selectedIds.Contains(person.Id)).CountAsync();
+var person = await context.People.Match(person => person.Id == "person-42").SingleAsync();
+```
+
+`FirstAsync`, `FirstOrDefaultAsync`, `SingleAsync`, `SingleOrDefaultAsync`, `AnyAsync`, and `CountAsync` apply bounded or aggregate execution. `CountAsync` uses a server-side aggregate when paging has not changed LINQ count semantics. `AsAsyncEnumerable` provides cancellation-aware asynchronous consumption; HTTP providers necessarily receive one response payload, while the API keeps consumer code provider-neutral.
+
+Graph analytics retain the same typed model while executing centrality and community algorithms on the provider:
+
+```csharp
+var influentialPeople = await context.People.Query()
+    .Analyze(context.Friendships)
+    .PageRank()
+    .OnProjection("social")
+    .Top(20)
+    .ToListAsync();
+
+var communities = await context.People.Query()
+    .Analyze(context.Friendships)
+    .Louvain(new LouvainOptions(MaximumLevels: 8))
+    .OnProjection("social")
+    .ToListAsync();
+```
+
+The analytics contract covers the full centrality and community-detection families and preserves algorithm-specific metrics for HITS, bridges, components, cliques, clustering, and modularity. Neo4j uses explicitly enabled GDS procedures; TigerGraph advertises only explicitly configured installed GSQL query endpoints. Unsupported operations fail before transport execution and are never emulated by downloading the graph into application memory.
+
+Shortest paths keep both endpoints strongly typed:
+
+```csharp
+GraphRoute<Person, Knows> route = await context.People
+    .Match(person => person.Id == sourceId)
+    .ShortestPathTo(context.People.Match(person => person.Id == targetId), context.Friendships)
+    .MaxDepth(8)
+    .SingleAsync();
+```
+
+Neo4j GDS deployments expose discovery and projection create/reuse/drop operations through `context.Database.GetAnalyticsRuntime()`. TigerGraph exposes its configured installed-query snapshot through the same segregated runtime contract.
+
+Hot query factories can be compiled once:
+
+```csharp
+var personById = NodalCompiledQuery.Compile((SocialGraphContext database, string id) =>
+    database.People.Match(person => person.Id == id));
+
+var ada = await personById(context, "person-42").SingleAsync();
+```
+
+Graph-native queries support incoming, outgoing, and undirected hops, repeated-hop depth bounds, multiple compatible edge types, explicit cycle policy, and normalized subgraph output:
+
+```csharp
+GraphQueryResult neighborhood = await context.People
+    .Match(person => person.Id == "person-42")
+    .Traverse(context.Friendships, minDepth: 1, maxDepth: 3)
+    .WithoutCycles()
+    .ToSubgraphAsync();
+```
+
+Neo4j compiles repeated hops and simple paths to Cypher. TigerGraph switches only repeated-hop queries to GSQL Syntax V2 and keeps fixed traversals on the stable Syntax V1 path. Unsupported semantic combinations fail explicitly: TigerGraph does not emulate optional match or a vertex-simple variable-depth path when GSQL cannot expose the required intermediate aliases.
+
+Provider-native escape hatches remain parameterized and return the same normalized result contracts:
+
+```csharp
+var rawPeople = await context.Database.QueryRawAsync<Person>(
+    "MATCH (`node`:`Person`) WHERE `node`.`person_id` = $id RETURN `node`",
+    new Dictionary<string, object?> { ["id"] = "person-42" });
+```
 
 Use a path projection when the relationship payload is part of the domain operation:
 
@@ -164,6 +288,8 @@ Pending work can be inspected without exposing provider-specific commands:
 var pending = context.ChangeTracker.Entries(GraphEntryState.Added);
 ```
 
+Queries use identity resolution by default. Tracked mutable POCOs are compared with their original mapped-property snapshots when `SaveChangesAsync` runs, so calling `Update` is not required for ordinary property edits. `AutoDetectChangesEnabled`, `DetectChanges`, `Entry`, `Attach`, `Detach`, property-level `IsModified`, `AsNoTracking`, and `ReloadAsync` provide explicit control for high-volume workloads.
+
 ## Migrations
 
 Migrations declare portable schema intent and carry a stable history identifier:
@@ -195,10 +321,16 @@ MigrationPlan applied = await context.Database.MigrateAsync(migrations);
 
 Plans contain deterministic SHA-256 checksums and provider-specific commands. Neo4j applies its commands and `__NodalMigration` history record in one write transaction. TigerGraph compiles typed vertex, edge, and secondary-index operations into one deterministic schema-change job. TigerGraph administrative execution remains an explicit provider capability because its supported REST API exposes schema inspection and query installation but not a general arbitrary-DDL endpoint; the framework does not silently invent or depend on an undocumented route.
 
-TigerGraph migration execution is enabled only when the host supplies an administrative transport appropriate to its deployment:
+TigerGraph migration execution is enabled only when the host supplies an administrative transport appropriate to its deployment. Self-managed and local Docker installations can use the included documented GSQL process transport:
 
 ```csharp
-ITigerGraphAdministrativeTransport administration = new MySupportedGsqlTransport();
+ITigerGraphAdministrativeTransport administration = new TigerGraphGsqlProcessTransport(
+    new TigerGraphGsqlProcessOptions
+    {
+        FileName = "docker",
+        PrefixArguments = ["exec", "nodal-tigergraph", "gsql"],
+        GraphName = "SocialGraph"
+    });
 var provider = new TigerGraphProvider(
     httpClient,
     tigerGraphOptions,
@@ -208,6 +340,25 @@ var provider = new TigerGraphProvider(
 
 The migration executor bootstraps the `__NodalMigration` vertex type when necessary, records checksums through an atomic REST++ upsert, and removes temporary schema jobs even when job execution fails. The same administrative channel enables lazy installation of transactional mutation queries required by delete-containing units of work. Without it, querying and atomic create/update batches remain available while migrations and delete plans report an explicit unsupported-capability error. Because mutation dictionaries currently carry runtime values rather than declared property metadata, a null property in a delete-containing compiled plan is rejected instead of guessing an unsafe GSQL parameter type.
 
+## Documentation
+
+The documentation platform combines an English Docusaurus guide and journal with a DocFX API reference generated from the product's XML documentation. Machine-readable `llms.txt`, extended coding-agent context, and a JSON-LD capability graph are published with the static site.
+
+Build the complete site locally with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/build-docs.ps1
+```
+
+The production output is written to `website/build`. During authoring, restore the website packages and start the live Docusaurus server with:
+
+```powershell
+npm.cmd ci --prefix website
+npm.cmd run start --prefix website
+```
+
+API pages under `/api` are generated by DocFX before the Docusaurus build. See [`docs/DEPLOYMENT.md`](docs/DEPLOYMENT.md) for the Cloudflare Pages setup and required GitHub environment secrets.
+
 ## Quality gate
 
 The repository has one local command matching the CI quality job:
@@ -216,7 +367,7 @@ The repository has one local command matching the CI quality job:
 powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify.ps1
 ```
 
-It restores dependencies, verifies formatting, builds in Release mode, runs the complete test suite, and enforces the Core package's minimum 95% line-coverage gate. Coverage can also be run independently:
+It restores dependencies, verifies formatting, builds in Release mode, runs the complete test suite, enforces the Core package's minimum 95% line-coverage gate, and validates the publishable NuGet archives. Coverage can also be run independently:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-core-coverage.ps1
@@ -224,9 +375,59 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-core-coverage.p
 
 The script rebuilds the Core tests, produces a Cobertura report under the ignored `TestResults` directory, and fails when line coverage falls below the threshold.
 
+Package verification can also be run independently:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-packages.ps1
+```
+
+The package gate produces all four `.nupkg` and `.snupkg` artifacts, then inspects their manifests and contents for the MIT expression, repository metadata, README, license, IntelliSense XML, target framework, and required package dependencies.
+
+## Publishing
+
+Alpha packages are published only after a pull request promotes `developer` to `staging`. The `Publish Alpha Packages` workflow assigns one immutable `0.1.0-alpha.<run>` version to all four packages, runs the complete QA gate, exchanges GitHub's OIDC identity for a short-lived NuGet credential, and publishes `Nodal.Core` before its dependent packages. No long-lived NuGet API key is stored by the repository.
+
+The GitHub `staging` environment must define `NUGET_USER` as the NuGet profile name. NuGet Trusted Publishing must match repository owner `Greenstone-Research-Lab`, repository `NodalFramework`, workflow file `publish-alpha.yml`, and environment `staging`. Publishing deliberately does not use `--skip-duplicate`, ensuring package conflicts and reserved identifiers fail visibly.
+
 ## Live integration tests
 
 Live database tests are isolated in `Nodal.IntegrationTests` and are skipped during ordinary unit-test runs unless their environment is configured.
+
+### Local Docker stack
+
+Neo4j and TigerGraph Community can be started together as a persistent local development stack:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/start-local-databases.ps1
+```
+
+Neo4j Browser is available at `http://localhost:7474` with local-only credentials `neo4j` / `NodalLocal123!`. TigerGraph GraphStudio and its consolidated REST/GSQL endpoint are available at `http://localhost:14240` with the Community image's local credentials `tigergraph` / `tigergraph`; the startup script creates the `NodalQa` graph with the `Person` vertex and `KNOWS` edge schema used by the integration suite. TigerGraph is substantially larger than Neo4j and requires at least 8 GB of Docker memory.
+
+Run both live provider suites against the persistent containers with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/run-local-integration.ps1
+```
+
+Stop containers while preserving their data volumes with:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/stop-local-databases.ps1
+```
+
+The compose ports and credentials are intentionally limited to loopback-bound local development. REST++ data authentication is disabled by the Community image's local configuration, while interpreted GSQL requests use Basic authentication. These settings must not be reused for shared or production deployments.
+
+### Runnable provider demos
+
+The [`samples`](samples/README.md) directory contains one shared social graph model and two console hosts. Both hosts execute the same provider-neutral create, path traversal, update, and verification workflow; only provider construction differs.
+
+With the local Docker stack available, run both demos using:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/run-local-demos.ps1
+```
+
+The generated `Ada -> KNOWS -> Alan` paths remain in each database for visual inspection. Connection settings can be overridden through the documented `NODAL_NEO4J_*` and `NODAL_TIGERGRAPH_*` environment variables.
 
 Neo4j can be started in a disposable Docker container and tested end to end with:
 
@@ -248,3 +449,7 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/run-tigergraph-integra
 No live credentials are stored in the repository. The integration project intentionally avoids the current Testcontainers dependency chain until its high-severity SSH.NET advisory is available through a patched NuGet release.
 
 GitHub Actions runs the quality gate and a disposable Neo4j smoke environment for every pull request targeting `developer`, `staging`, or `master`. TigerGraph smoke tests run only outside pull requests when the repository variable `NODAL_RUN_TIGERGRAPH` is `true`; credentials are read from the protected `tigergraph-qa` environment secrets `NODAL_TIGERGRAPH_ENDPOINT`, `NODAL_TIGERGRAPH_ACCESS_TOKEN`, and `NODAL_TIGERGRAPH_GRAPH`. The TigerGraph suite verifies create/read/update persistence and confirms that an invalid edge rolls back vertices in an atomic REST batch.
+
+## License
+
+Nodal Framework is distributed under the [MIT License](LICENSE.txt).

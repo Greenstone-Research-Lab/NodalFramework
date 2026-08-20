@@ -14,11 +14,23 @@
   <PropertyGroup Condition="'$(IsPackable)' != 'false'">
     <Authors>Greenstone Research Lab</Authors>
     <Company>Greenstone Research Lab</Company>
+    <Copyright>Copyright (c) 2023-2026 Ilker Yesilkaya</Copyright>
+    <PackageProjectUrl>https://github.com/Greenstone-Research-Lab/NodalFramework</PackageProjectUrl>
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/Greenstone-Research-Lab/NodalFramework</RepositoryUrl>
     <PackageLicenseExpression>MIT</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
+    <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageReleaseNotes>https://github.com/Greenstone-Research-Lab/NodalFramework/releases</PackageReleaseNotes>
+    <PackageTags>graph;graph-database;dotnet;linq;orm;nodal</PackageTags>
+    <VersionPrefix>0.1.0</VersionPrefix>
+    <VersionSuffix>alpha.1</VersionSuffix>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
+
+  <ItemGroup Condition="'$(IsPackable)' != 'false'">
+    <None Include="$(MSBuildThisFileDirectory)LICENSE.txt" Pack="true" PackagePath="" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="" Visible="false" />
+  </ItemGroup>
 </Project>

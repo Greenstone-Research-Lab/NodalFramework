@@ -9,3 +9,10 @@ BenchmarkDotNet.Artifacts/
 *.suo
 *.nupkg
 *.snupkg
+website/node_modules/
+website/build/
+website/.docusaurus/
+website/static/api/
+docs/api/.docfx/
+docs/api/api/*.yml
+docs/api/api/.manifest

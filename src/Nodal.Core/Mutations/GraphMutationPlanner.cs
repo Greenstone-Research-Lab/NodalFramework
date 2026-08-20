@@ -31,7 +31,9 @@ internal static class GraphMutationPlanner
             operations.Add(state switch
             {
                 GraphEntryState.Added => new CreateNodeOperation(nodeEntry.Identity, nodeEntry.ReadProperties()),
-                GraphEntryState.Modified => new UpdateNodeOperation(nodeEntry.Identity, nodeEntry.ReadProperties()),
+                GraphEntryState.Modified => new UpdateNodeOperation(
+                    nodeEntry.Identity,
+                    SelectModifiedProperties(entry, nodeEntry.ReadProperties())),
                 GraphEntryState.Deleted => new DeleteNodeOperation(nodeEntry.Identity),
                 _ => throw new InvalidOperationException($"State '{state}' is not a node mutation state."),
             });
@@ -63,7 +65,7 @@ internal static class GraphMutationPlanner
                     relationEntry.Metadata.Name,
                     relationEntry.TargetIdentity,
                     relationEntry.Metadata.Directed,
-                    relationEntry.ReadProperties(),
+                    SelectModifiedProperties(entry, relationEntry.ReadProperties()),
                     relationEntry.ProviderId),
                 GraphEntryState.Deleted => new DeleteRelationOperation(
                     relationEntry.SourceIdentity,
@@ -73,5 +75,19 @@ internal static class GraphMutationPlanner
                 _ => throw new InvalidOperationException($"State '{state}' is not a relationship mutation state."),
             });
         }
+    }
+
+    private static IReadOnlyDictionary<string, object?> SelectModifiedProperties(
+        GraphEntry entry,
+        IReadOnlyDictionary<string, object?> properties)
+    {
+        if (entry.IsExplicitlyModified || entry.ModifiedProperties.Count == 0)
+        {
+            return properties;
+        }
+
+        return properties
+            .Where(property => entry.ModifiedProperties.Contains(property.Key))
+            .ToDictionary(property => property.Key, property => property.Value, StringComparer.Ordinal);
     }
 }

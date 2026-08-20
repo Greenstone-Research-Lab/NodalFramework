@@ -8,6 +8,11 @@
     <TargetFramework>net10.0</TargetFramework>
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
+    <PackageId>Nodal.TigerGraph</PackageId>
+    <Title>Nodal Framework Provider for TigerGraph</Title>
+    <Description>TigerGraph provider for Nodal Framework with GSQL translation, REST++ transport, atomic mutations, and migrations.</Description>
+    <PackageTags>$(PackageTags);tigergraph;gsql;restpp</PackageTags>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
 </Project>

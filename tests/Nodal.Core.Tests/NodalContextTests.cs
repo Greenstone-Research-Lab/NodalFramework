@@ -1,3 +1,4 @@
+using Nodal.Core.Analytics;
 using Nodal.Core.Execution;
 using Nodal.Core.Metadata;
 using Nodal.Core.Migrations;
@@ -25,6 +26,8 @@ public sealed class NodalContextTests
         Assert.Equal([new Person("person-42", 24)], people);
         Assert.False(context.Database.SupportsMigrations);
         Assert.Throws<NotSupportedException>(() => context.Database.GetMigrationProvider());
+        Assert.False(context.Database.SupportsAnalyticsRuntime);
+        Assert.Throws<NotSupportedException>(() => context.Database.GetAnalyticsRuntime());
     }
 
     [Fact]
@@ -43,6 +46,16 @@ public sealed class NodalContextTests
 
         Assert.True(context.Database.SupportsMigrations);
         Assert.Same(provider, context.Database.GetMigrationProvider());
+    }
+
+    [Fact]
+    public void DatabaseFacadeReturnsConfiguredAnalyticsRuntime()
+    {
+        var provider = new RuntimeProvider();
+        var context = new EmptyContext(provider);
+
+        Assert.True(context.Database.SupportsAnalyticsRuntime);
+        Assert.Same(provider.AnalyticsRuntime, context.Database.GetAnalyticsRuntime());
     }
 
     private sealed class SocialGraphContext(IGraphProvider provider) : NodalContext(provider)
@@ -100,6 +113,24 @@ public sealed class NodalContextTests
         IGraphCommandExecutor IGraphProvider.CommandExecutor => Executor;
 
         IGraphResultMaterializer IGraphProvider.ResultMaterializer => Materializer;
+    }
+
+    private sealed class RuntimeProvider : IGraphProvider, IGraphAnalyticsRuntimeProvider
+    {
+        public IGraphAnalyticsRuntime AnalyticsRuntime { get; } = new RuntimeStub();
+        public IGraphQueryCompiler QueryCompiler => throw new NotSupportedException();
+        public IGraphCommandExecutor CommandExecutor => throw new NotSupportedException();
+        public IGraphResultMaterializer ResultMaterializer => throw new NotSupportedException();
+    }
+
+    private sealed class RuntimeStub : IGraphAnalyticsRuntime
+    {
+        public ValueTask<GraphAnalyticsRuntimeSnapshot> DiscoverAsync(
+            bool forceRefresh = false, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask EnsureProjectionAsync(
+            GraphProjectionDefinition projection, CancellationToken cancellationToken = default) => throw new NotSupportedException();
+        public ValueTask DropProjectionAsync(
+            string name, CancellationToken cancellationToken = default) => throw new NotSupportedException();
     }
 
     private sealed class RecordingCompiler : IGraphQueryCompiler

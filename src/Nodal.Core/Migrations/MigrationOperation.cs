@@ -9,6 +9,9 @@ public abstract record MigrationOperation;
 /// Requests creation of a graph node type.
 /// </summary>
 /// <param name="NodeType">The provider-neutral node type.</param>
+/// <param name="KeyProperty">The stable key property's storage name.</param>
+/// <param name="KeyClrType">The key property's declared CLR type, when known.</param>
+/// <param name="Properties">The properties declared for the node schema.</param>
 public sealed record CreateNodeTypeOperation(
     string NodeType,
     string KeyProperty = "Id",
@@ -22,6 +25,7 @@ public sealed record CreateNodeTypeOperation(
 /// <param name="SourceType">The source node type.</param>
 /// <param name="TargetType">The target node type.</param>
 /// <param name="Directed">Whether the relationship is directed.</param>
+/// <param name="Properties">The properties declared for the relationship schema.</param>
 public sealed record CreateRelationTypeOperation(
     string RelationType,
     string SourceType,
@@ -55,7 +59,10 @@ public sealed record DropSchemaObjectOperation(
 /// <summary>Identifies a named schema object category.</summary>
 public enum MigrationSchemaObjectKind
 {
+    /// <summary>Identifies a graph schema constraint.</summary>
     Constraint,
+
+    /// <summary>Identifies a graph schema index.</summary>
     Index,
 }
 

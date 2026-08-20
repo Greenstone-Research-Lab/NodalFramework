@@ -46,6 +46,9 @@ public abstract class NodalContext
     /// <summary>Gets database-wide services such as migration planning and execution.</summary>
     public NodalDatabaseFacade Database { get; }
 
+    /// <summary>Gets the tracking entry for a node currently managed by this context.</summary>
+    public GraphNodeEntry<TNode> Entry<TNode>(TNode node) => stateManager.Value.GetEntry(node);
+
     /// <summary>
     /// Gets a query root for a configured node type.
     /// </summary>
@@ -75,6 +78,10 @@ public abstract class NodalContext
     public async ValueTask<GraphSaveResult> SaveChangesAsync(CancellationToken cancellationToken = default)
     {
         cancellationToken.ThrowIfCancellationRequested();
+        if (ChangeTracker.AutoDetectChangesEnabled)
+        {
+            ChangeTracker.DetectChanges();
+        }
         var plan = GraphMutationPlanner.Create(stateManager.Value.Entries);
         if (plan.IsEmpty)
         {
