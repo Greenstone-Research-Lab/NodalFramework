@@ -1,3 +1,4 @@
+using Nodal.Core.Providers;
 using Nodal.Core.Query;
 
 namespace Nodal.Neo4j.Tests;
@@ -179,7 +180,110 @@ public sealed class Neo4jQueryCompilerTests
         Assert.Equal("MATCH (`node`:`Person`) RETURN count(DISTINCT `node`) AS `nodal_count`", command.Text);
     }
 
+    [Fact]
+    public void CompileRendersEverySupportedPredicateVariantAcrossNodeAndRelationScopes()
+    {
+        GraphPredicate predicate = new GraphLogicalPredicate(
+            new GraphNotPredicate(new GraphComparisonPredicate("Age", GraphComparisonOperator.NotEqual, "p0")),
+            GraphLogicalOperator.Or,
+            new GraphLogicalPredicate(
+                new GraphComparisonPredicate("Score", GraphComparisonOperator.GreaterThan, "p1"),
+                GraphLogicalOperator.And,
+                new GraphLogicalPredicate(
+                    new GraphComparisonPredicate("Rank", GraphComparisonOperator.LessThan, "p2"),
+                    GraphLogicalOperator.And,
+                    new GraphComparisonPredicate("Level", GraphComparisonOperator.LessThanOrEqual, "p3"))));
+        var relationPredicate = new GraphLogicalPredicate(
+            new GraphStringPredicate("Comment", GraphStringOperator.Contains, "p4"),
+            GraphLogicalOperator.And,
+            new GraphStringPredicate("Code", GraphStringOperator.EndsWith, "p5"));
+        var model = new GraphQueryModel(
+            "Person",
+            "node",
+            predicate,
+            [
+                new GraphQueryParameter("p0", 18, typeof(int)),
+                new GraphQueryParameter("p1", 50, typeof(int)),
+                new GraphQueryParameter("p2", 10, typeof(int)),
+                new GraphQueryParameter("p3", 5, typeof(int)),
+                new GraphQueryParameter("p4", "friend", typeof(string)),
+                new GraphQueryParameter("p5", "-trusted", typeof(string)),
+            ],
+            null,
+            [new GraphTraversalStep(
+                "KNOWS",
+                "Person",
+                "node",
+                "relation1",
+                "node1",
+                GraphTraversalDirection.Outgoing,
+                null,
+                relationPredicate)]);
+
+        var command = new Neo4jQueryCompiler().Compile(model);
+
+        Assert.Contains("NOT (`node`.`Age` <> $p0)", command.Text, StringComparison.Ordinal);
+        Assert.Contains("`node`.`Score` > $p1", command.Text, StringComparison.Ordinal);
+        Assert.Contains("`node`.`Rank` < $p2", command.Text, StringComparison.Ordinal);
+        Assert.Contains("`node`.`Level` <= $p3", command.Text, StringComparison.Ordinal);
+        Assert.Contains("`relation1`.`Comment` CONTAINS $p4", command.Text, StringComparison.Ordinal);
+        Assert.Contains("`relation1`.`Code` ENDS WITH $p5", command.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompileRejectsInvalidSimpleOptionalAndDepthCombinations()
+    {
+        var optionalSimple = new GraphQueryModel(
+            "Person", "node", null, [], null,
+            [new GraphTraversalStep(
+                "KNOWS", "Person", "node", "relation1", "node1",
+                GraphTraversalDirection.Outgoing, null, Optional: true)],
+            CycleBehavior: GraphCycleBehavior.SimplePath);
+        var invalidDepth = new GraphQueryModel(
+            "Person", "node", null, [], null,
+            [new GraphTraversalStep(
+                "KNOWS", "Person", "node", "relation1", "node1",
+                GraphTraversalDirection.Outgoing, null, MinDepth: -1, MaxDepth: 1)]);
+
+        Assert.Throws<NotSupportedException>(() => new Neo4jQueryCompiler().Compile(optionalSimple));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new Neo4jQueryCompiler().Compile(invalidDepth));
+    }
+
+    [Fact]
+    public void CompileRejectsUnknownPredicateAndEnumValues()
+    {
+        Assert.Throws<NotSupportedException>(() => CompilePredicate(new UnsupportedPredicate()));
+        Assert.Throws<ArgumentOutOfRangeException>(() => CompilePredicate(
+            new GraphComparisonPredicate("Age", (GraphComparisonOperator)999, "p0")));
+        Assert.Throws<ArgumentOutOfRangeException>(() => CompilePredicate(
+            new GraphLogicalPredicate(
+                new GraphNullPredicate("Name", true),
+                (GraphLogicalOperator)999,
+                new GraphNullPredicate("Name", false))));
+        Assert.Throws<ArgumentOutOfRangeException>(() => CompilePredicate(
+            new GraphStringPredicate("Name", (GraphStringOperator)999, "p0")));
+
+        var invalidDirection = new GraphQueryModel(
+            "Person", "node", null, [], null,
+            [new GraphTraversalStep(
+                "KNOWS", "Person", "node", "relation1", "node1",
+                (GraphTraversalDirection)999, null)]);
+        Assert.Throws<ArgumentOutOfRangeException>(
+            () => new Neo4jQueryCompiler().Compile(invalidDirection));
+
+        static GraphCommand CompilePredicate(GraphPredicate predicate) => new Neo4jQueryCompiler().Compile(
+            new GraphQueryModel(
+                "Person",
+                "node",
+                predicate,
+                [new GraphQueryParameter("p0", "value", typeof(string))],
+                null,
+                []));
+    }
+
     private sealed record Person(string Id, int Age);
 
     private sealed record RichPerson(string Id, string Name, DateTime? DeletedAt);
+
+    private sealed record UnsupportedPredicate : GraphPredicate;
 }

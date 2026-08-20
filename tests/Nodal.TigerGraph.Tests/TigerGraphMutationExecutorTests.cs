@@ -3,6 +3,7 @@ using System.Net.Http.Headers;
 using System.Text;
 using System.Text.Json;
 using Nodal.Core.ChangeTracking;
+using Nodal.Core.Execution;
 using Nodal.Core.Migrations;
 using Nodal.Core.Mutations;
 
@@ -21,7 +22,16 @@ public sealed class TigerGraphMutationExecutorTests
         Assert.Equal(GraphTransactionScope.RequestOrQuery, provider.Capabilities.TransactionScope);
         Assert.False(provider.Capabilities.SupportsSavepoints);
         Assert.False(provider.Capabilities.SupportsOptimisticConcurrency);
+        Assert.IsType<TigerGraphQueryCompiler>(provider.QueryCompiler);
+        Assert.IsType<TigerGraphCommandExecutor>(provider.CommandExecutor);
+        Assert.IsType<JsonGraphResultMaterializer>(provider.ResultMaterializer);
+        Assert.IsType<TigerGraphMigrationDialect>(provider.MigrationDialect);
         Assert.Same(provider.MutationExecutor, ((IGraphMutationProvider)provider).MutationExecutor);
+        Assert.Throws<ArgumentNullException>(() => new TigerGraphProvider(
+            client,
+            TokenOptions(),
+            "SocialGraph",
+            null!));
     }
 
     [Fact]
@@ -221,6 +231,83 @@ public sealed class TigerGraphMutationExecutorTests
         Assert.Equal("schema mismatch", exception.Message);
     }
 
+    [Fact]
+    public async Task TransactionalCompilerSupportsClrTypesAndUndirectedDeletes()
+    {
+        var handler = new RecordingHandler("""{"error":false,"results":[{"status":"ok"}]}""");
+        var administration = new RecordingAdministrativeTransport();
+        using var client = new HttpClient(handler);
+        var executor = new TigerGraphMutationExecutor(
+            client,
+            TokenOptions(),
+            "SocialGraph",
+            administration);
+        var source = Identity("Person", "person-1");
+        var target = Identity("Person", "person-2");
+        var plan = new GraphMutationPlan(
+        [
+            new CreateNodeOperation(source, Properties(
+                ("Initial", 'A'),
+                ("Age", (byte)42),
+                ("Score", 98.5m),
+                ("Active", true),
+                ("Created", new DateTime(2026, 8, 20, 12, 0, 0, DateTimeKind.Utc)),
+                ("Updated", new DateTimeOffset(2026, 8, 20, 13, 0, 0, TimeSpan.Zero)),
+                ("ExternalId", Guid.Parse("863c8be2-7271-4e77-b7c9-7fd5d683e8d4")),
+                ("Level", SampleLevel.Admin))),
+            new CreateRelationOperation(source, "KNOWS", target, true, Properties(("Since", 2020))),
+            new UpdateRelationOperation(source, "KNOWS", target, true, Properties(("Since", 2026))),
+            new DeleteRelationOperation(source, "KNOWS", target, false),
+        ]);
+
+        var result = await executor.ExecuteAsync(plan);
+
+        Assert.True(result.IsAtomic);
+        var definition = administration.Commands[0].Text;
+        Assert.Contains("BOOL", definition, StringComparison.Ordinal);
+        Assert.Contains("DOUBLE", definition, StringComparison.Ordinal);
+        Assert.Contains("DATETIME", definition, StringComparison.Ordinal);
+        Assert.Contains("-(KNOWS:e)-", definition, StringComparison.Ordinal);
+        Assert.Contains("true", handler.RequestUris[0].Query, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task TransactionalCompilerRejectsNullUnsupportedAndUnsafeProperties()
+    {
+        var handler = new RecordingHandler("""{"error":false}""");
+        var administration = new RecordingAdministrativeTransport();
+        using var client = new HttpClient(handler);
+        var executor = new TigerGraphMutationExecutor(
+            client,
+            TokenOptions(),
+            "SocialGraph",
+            administration);
+
+        await Assert.ThrowsAsync<NotSupportedException>(async () => await executor.ExecuteAsync(
+            new GraphMutationPlan(
+            [
+                new DeleteNodeOperation(Identity("Person", null!)),
+            ])));
+        await Assert.ThrowsAsync<NotSupportedException>(async () => await executor.ExecuteAsync(
+            new GraphMutationPlan(
+            [
+                new CreateNodeOperation(
+                    Identity("Person", "person-1"),
+                    Properties(("Unsupported", new Version(1, 0)))),
+                new DeleteNodeOperation(Identity("Person", "person-2")),
+            ])));
+        await Assert.ThrowsAsync<ArgumentException>(async () => await executor.ExecuteAsync(
+            new GraphMutationPlan(
+            [
+                new CreateNodeOperation(
+                    Identity("Unsafe Type", "person-1"),
+                    Properties(("Name", "Ada"))),
+                new DeleteNodeOperation(Identity("Person", "person-2")),
+            ])));
+
+        Assert.Equal(0, handler.CallCount);
+    }
+
     private static TigerGraphOptions TokenOptions() => new()
     {
         Endpoint = new Uri("https://tigergraph.example/", UriKind.Absolute),
@@ -290,5 +377,11 @@ public sealed class TigerGraphMutationExecutorTests
 
             return ValueTask.CompletedTask;
         }
+    }
+
+    private enum SampleLevel
+    {
+        User,
+        Admin,
     }
 }
