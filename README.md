@@ -284,7 +284,7 @@ The migration executor bootstraps the `__NodalMigration` vertex type when necess
 
 ## Documentation
 
-The documentation platform combines a bilingual Docusaurus guide and journal with a DocFX API reference generated from the product's XML documentation. Machine-readable `llms.txt`, extended coding-agent context, and a JSON-LD capability graph are published with the static site.
+The documentation platform combines an English Docusaurus guide and journal with a DocFX API reference generated from the product's XML documentation. Machine-readable `llms.txt`, extended coding-agent context, and a JSON-LD capability graph are published with the static site.
 
 Build the complete site locally with:
 
