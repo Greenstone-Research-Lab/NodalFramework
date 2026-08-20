@@ -375,4 +375,4 @@ GitHub Actions runs the quality gate and a disposable Neo4j smoke environment fo
 
 ## License
 
-Nodal Framework is independently developed and distributed under the [MIT License](LICENSE.txt), the same permissive license model used by Entity Framework Core. Nodal Framework is not affiliated with or endorsed by Microsoft or the .NET Foundation.
+Nodal Framework is distributed under the [MIT License](LICENSE.txt).
