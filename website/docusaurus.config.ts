@@ -56,6 +56,7 @@ const config: Config = {
       items: [
         {type: 'docSidebar', sidebarId: 'guideSidebar', position: 'left', label: 'Guide'},
         {to: '/docs/providers/overview', label: 'Providers', position: 'left'},
+        {to: '/capabilities', label: 'Capabilities', position: 'left'},
         {href: 'pathname:///api/index.html', label: 'API', position: 'left'},
         {to: '/blog', label: 'Journal', position: 'left'},
         {type: 'localeDropdown', position: 'right'},
@@ -65,7 +66,7 @@ const config: Config = {
     footer: {
       style: 'dark',
       links: [
-        {title: 'Learn', items: [{label: 'Get started', to: '/docs/getting-started'}, {label: 'API reference', href: 'pathname:///api/index.html'}]},
+        {title: 'Learn', items: [{label: 'Get started', to: '/docs/getting-started'}, {label: 'Capability graph', to: '/capabilities'}, {label: 'API reference', href: 'pathname:///api/index.html'}]},
         {title: 'Providers', items: [{label: 'Neo4j', to: '/docs/providers/neo4j'}, {label: 'TigerGraph', to: '/docs/providers/tigergraph'}]},
         {title: 'Project', items: [{label: 'GitHub', href: 'https://github.com/Greenstone-Research-Lab/NodalFramework'}, {label: 'Roadmap', to: '/docs/roadmap'}]},
       ],
