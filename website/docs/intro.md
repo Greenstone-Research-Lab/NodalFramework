@@ -21,4 +21,6 @@ The first provider family supports Neo4j through Cypher and the pooled Bolt driv
 
 Nodal Framework currently targets .NET 10 and is under active pre-release development.
 
-Continue with [Getting started](./getting-started.md), or read the [architecture](./architecture.md) first.
+Start with [Install and configure](./installation.md), continue with
+[Getting started](./getting-started.md), or read the
+[architecture](./architecture.md) first.
