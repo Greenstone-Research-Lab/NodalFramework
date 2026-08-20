@@ -85,10 +85,62 @@ public sealed class GraphQueryTests
     }
 
     [Fact]
-    public void PredicateMustBeBinaryExpression()
+    public void BooleanPropertyIsTranslatedWithoutExplicitComparison()
     {
-        Assert.Throws<NotSupportedException>(
-            () => new GraphSet<Person>().Match(person => person.Active));
+        var predicate = Assert.IsType<GraphComparisonPredicate>(
+            new GraphSet<Person>().Match(person => person.Active).ToQueryModel().Predicate);
+
+        Assert.Equal("Active", predicate.PropertyName);
+        Assert.Equal(true, Assert.Single(new GraphSet<Person>().Match(person => person.Active)
+            .ToQueryModel().Parameters).Value);
+    }
+
+    [Fact]
+    public void StringCollectionNullAndNotPredicatesAreTranslated()
+    {
+        string[] names = ["Ada", "Alan"];
+        var text = new GraphSet<Person>().Match(person => person.Name.StartsWith("Ad") &&
+            person.Name.Contains("da") && person.Name.EndsWith("la")).ToQueryModel();
+        var membership = new GraphSet<Person>().Match(person => names.Contains(person.Name)).ToQueryModel();
+        var nullCheck = new GraphSet<Person>().Match(person => person.Name == null!).ToQueryModel();
+        var negated = new GraphSet<Person>().Match(person => !person.Active).ToQueryModel();
+
+        Assert.Equal(3, text.Parameters.Count);
+        Assert.IsType<GraphLogicalPredicate>(text.Predicate);
+        Assert.IsType<GraphInPredicate>(membership.Predicate);
+        Assert.IsType<GraphNullPredicate>(nullCheck.Predicate);
+        Assert.IsType<GraphNotPredicate>(negated.Predicate);
+    }
+
+    [Fact]
+    public void OrderingPagingDistinctAndTrackingAreRepresentedInModel()
+    {
+        var model = new GraphSet<Person>().Query()
+            .OrderBy(person => person.Name)
+            .ThenByDescending(person => person.Age)
+            .Skip(10)
+            .Take(5)
+            .Distinct()
+            .AsNoTracking()
+            .ToQueryModel();
+
+        Assert.Equal(10, model.Offset);
+        Assert.Equal(5, model.Limit);
+        Assert.True(model.Distinct);
+        Assert.Equal(GraphTrackingBehavior.NoTracking, model.TrackingBehavior);
+        Assert.Collection(model.EffectiveOrderings,
+            ordering => Assert.Equal(("Name", GraphSortDirection.Ascending), (ordering.PropertyName, ordering.Direction)),
+            ordering => Assert.Equal(("Age", GraphSortDirection.Descending), (ordering.PropertyName, ordering.Direction)));
+    }
+
+    [Fact]
+    public void PagingAndOrderingValidateArguments()
+    {
+        var query = new GraphSet<Person>().Query();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => query.Skip(-1));
+        Assert.Throws<InvalidOperationException>(() => query.ThenBy(person => person.Name));
+        Assert.Throws<NotSupportedException>(() => query.OrderBy(person => person.Name.Length));
     }
 
     [Fact]

@@ -60,6 +60,9 @@ public sealed class Neo4jCommandExecutor : IGraphCommandExecutor
         var nodes = new List<GraphNodeRecord>();
         var relations = new List<GraphRelationRecord>();
         var paths = new List<GraphPathRecord>();
+        var scalars = new Dictionary<string, object?>(StringComparer.Ordinal);
+        var rows = new List<GraphResultRow>();
+        var routes = new List<GraphRouteRecord>();
         foreach (var record in records)
         {
             var recordNodes = record.Values.Values.OfType<INode>().Select(NormalizeNode).ToArray();
@@ -78,9 +81,49 @@ public sealed class Neo4jCommandExecutor : IGraphCommandExecutor
                     CollectNodes(value, nodes);
                 }
             }
+            foreach (var scalar in record.Values.Where(value =>
+                         value.Value is not INode && value.Value is not IRelationship &&
+                         value.Value is not System.Collections.IEnumerable))
+            {
+                scalars[scalar.Key] = scalar.Value;
+            }
+
+            var rowNode = record.Values.Values.OfType<INode>().Select(NormalizeNode).FirstOrDefault();
+            var rowValues = record.Values
+                .Where(value => value.Value is not INode && value.Value is not IRelationship)
+                .SelectMany(value => NormalizeRowValue(value.Key, value.Value))
+                .ToDictionary(value => value.Key, value => value.Value, StringComparer.Ordinal);
+            rows.Add(new GraphResultRow(rowNode, rowValues));
+            foreach (var path in record.Values.Values.OfType<IPath>())
+            {
+                var totalCost = record.Values.TryGetValue("nodal_total_cost", out var cost) && cost is not null
+                    ? Convert.ToDouble(cost, System.Globalization.CultureInfo.InvariantCulture)
+                    : (double?)null;
+                routes.Add(new GraphRouteRecord(
+                    path.Nodes.Select(NormalizeNode).ToArray(),
+                    path.Relationships.Select(NormalizeRelation).ToArray(),
+                    totalCost));
+            }
         }
 
-        return new GraphQueryResult(nodes, relations, paths);
+        return new GraphQueryResult(nodes, relations, paths, scalars, rows, routes);
+    }
+
+    private static IEnumerable<KeyValuePair<string, object?>> NormalizeRowValue(string name, object? value)
+    {
+        if (value is IReadOnlyDictionary<string, object> readOnlyMap)
+        {
+            return readOnlyMap.Select(item => new KeyValuePair<string, object?>(item.Key, item.Value));
+        }
+        if (value is IDictionary<string, object> map)
+        {
+            return map.Select(item => new KeyValuePair<string, object?>(item.Key, item.Value));
+        }
+        if (value is System.Collections.IEnumerable and not string)
+        {
+            return [new KeyValuePair<string, object?>(name, value)];
+        }
+        return [new KeyValuePair<string, object?>(name, value)];
     }
 
     private static void CollectNodes(object? value, ICollection<GraphNodeRecord> nodes)

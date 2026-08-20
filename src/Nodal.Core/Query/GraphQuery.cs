@@ -1,4 +1,5 @@
 using System.Linq.Expressions;
+using Nodal.Core.Analytics;
 using Nodal.Core.Execution;
 using Nodal.Core.Metadata;
 using Nodal.Core.Model;
@@ -84,7 +85,72 @@ public sealed class GraphQuery<TNode>
         return AppendTraversal<TTarget>(
             relationSet.Metadata.Name,
             relationSet.TargetMetadata,
-            direction);
+            direction, 1, 1, false);
+    }
+
+    /// <summary>Traverses a relationship repeatedly within inclusive depth bounds.</summary>
+    public GraphQuery<TTarget> Traverse<TRelation, TTarget>(
+        RelationSet<TNode, TRelation, TTarget> relationSet,
+        int minDepth,
+        int maxDepth)
+        where TRelation : notnull
+    {
+        ArgumentNullException.ThrowIfNull(relationSet);
+        ValidateDepth(minDepth, maxDepth);
+        return AppendTraversal<TTarget>(
+            relationSet.Metadata.Name,
+            relationSet.TargetMetadata,
+            relationSet.Metadata.Directed ? GraphTraversalDirection.Outgoing : GraphTraversalDirection.Undirected,
+            minDepth,
+            maxDepth,
+            false);
+    }
+
+    /// <summary>Preserves the preceding match when the requested relationship does not exist.</summary>
+    public GraphQuery<TTarget> TraverseOptional<TRelation, TTarget>(
+        RelationSet<TNode, TRelation, TTarget> relationSet)
+        where TRelation : notnull
+    {
+        ArgumentNullException.ThrowIfNull(relationSet);
+        return AppendTraversal<TTarget>(
+            relationSet.Metadata.Name,
+            relationSet.TargetMetadata,
+            relationSet.Metadata.Directed ? GraphTraversalDirection.Outgoing : GraphTraversalDirection.Undirected,
+            1,
+            1,
+            true);
+    }
+
+    /// <summary>Traverses any of several relationship types that share the same payload and target types.</summary>
+    public GraphQuery<TTarget> TraverseAny<TTarget>(
+        params IGraphRelationSet<TNode, TTarget>[] relationSets)
+    {
+        ArgumentNullException.ThrowIfNull(relationSets);
+        if (relationSets.Length == 0 || relationSets.Any(relation => relation is null))
+        {
+            throw new ArgumentException("At least one non-null relationship set is required.", nameof(relationSets));
+        }
+
+        var first = relationSets[0];
+        var direction = first.Metadata.Directed
+            ? GraphTraversalDirection.Outgoing
+            : GraphTraversalDirection.Undirected;
+        if (relationSets.Any(relation => relation.TargetMetadata.ClrType != first.TargetMetadata.ClrType ||
+                                         (relation.Metadata.Directed ? GraphTraversalDirection.Outgoing :
+                                             GraphTraversalDirection.Undirected) != direction))
+        {
+            throw new ArgumentException(
+                "All relationship sets must have the same target type and direction.", nameof(relationSets));
+        }
+
+        var query = AppendTraversal<TTarget>(
+            first.Metadata.Name, first.TargetMetadata, direction, 1, 1, false);
+        var traversals = query.model.Traversals.ToArray();
+        traversals[^1] = traversals[^1] with
+        {
+            AlternativeRelationTypes = relationSets.Skip(1).Select(relation => relation.Metadata.Name).ToArray(),
+        };
+        return new GraphQuery<TTarget>(query.model with { Traversals = traversals }, executor, query.propertyMappings);
     }
 
     /// <summary>
@@ -101,7 +167,7 @@ public sealed class GraphQuery<TNode>
         var query = AppendTraversal<TTarget>(
             relationSet.Metadata.Name,
             relationSet.TargetMetadata,
-            direction);
+            direction, 1, 1, false);
         return GraphPathQuery<TNode, TRelation, TTarget>.Create(
             query.model with { Projection = GraphQueryProjection.Path },
             executor,
@@ -120,7 +186,8 @@ public sealed class GraphQuery<TNode>
             relationSet.SourceMetadata,
             relationSet.Metadata.Directed
                 ? GraphTraversalDirection.Incoming
-                : GraphTraversalDirection.Undirected);
+                : GraphTraversalDirection.Undirected,
+            1, 1, false);
     }
 
     /// <summary>
@@ -132,6 +199,91 @@ public sealed class GraphQuery<TNode>
     {
         ArgumentOutOfRangeException.ThrowIfNegativeOrZero(count);
         return new GraphQuery<TNode>(model with { Limit = count }, executor, propertyMappings);
+    }
+
+    /// <summary>Skips a non-negative number of ordered results at the provider.</summary>
+    public GraphQuery<TNode> Skip(int count)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(count);
+        return Copy(model with { Offset = count });
+    }
+
+    /// <summary>Removes duplicate result nodes.</summary>
+    public GraphQuery<TNode> Distinct() => Copy(model with { Distinct = true });
+
+    /// <summary>Orders results by a mapped property in ascending order.</summary>
+    public GraphQuery<TNode> OrderBy<TProperty>(Expression<Func<TNode, TProperty>> keySelector) =>
+        SetOrdering(keySelector, GraphSortDirection.Ascending, append: false);
+
+    /// <summary>Orders results by a mapped property in descending order.</summary>
+    public GraphQuery<TNode> OrderByDescending<TProperty>(Expression<Func<TNode, TProperty>> keySelector) =>
+        SetOrdering(keySelector, GraphSortDirection.Descending, append: false);
+
+    /// <summary>Adds an ascending ordering after the existing ordering clauses.</summary>
+    public GraphQuery<TNode> ThenBy<TProperty>(Expression<Func<TNode, TProperty>> keySelector) =>
+        SetOrdering(keySelector, GraphSortDirection.Ascending, append: true);
+
+    /// <summary>Adds a descending ordering after the existing ordering clauses.</summary>
+    public GraphQuery<TNode> ThenByDescending<TProperty>(Expression<Func<TNode, TProperty>> keySelector) =>
+        SetOrdering(keySelector, GraphSortDirection.Descending, append: true);
+
+    /// <summary>Returns detached objects without identity resolution or change tracking.</summary>
+    public GraphQuery<TNode> AsNoTracking() => Copy(model with { TrackingBehavior = GraphTrackingBehavior.NoTracking });
+
+    /// <summary>Rejects paths that visit the same vertex more than once.</summary>
+    public GraphQuery<TNode> WithoutCycles() => Copy(model with { CycleBehavior = GraphCycleBehavior.SimplePath });
+
+    /// <summary>
+    /// Begins a provider-native analytics operation over this node selection and a same-node relationship type.
+    /// </summary>
+    /// <example>
+    /// <code>
+    /// var ranked = await context.People.Query()
+    ///     .Analyze(context.Friendships)
+    ///     .PageRank()
+    ///     .OnProjection("social")
+    ///     .Top(20)
+    ///     .ToListAsync();
+    /// </code>
+    /// </example>
+    public GraphAnalyticsBuilder<TNode, TRelation> Analyze<TRelation>(
+        RelationSet<TNode, TRelation, TNode> relationSet)
+        where TRelation : notnull
+    {
+        ArgumentNullException.ThrowIfNull(relationSet);
+        return new GraphAnalyticsBuilder<TNode, TRelation>(model, executor, relationSet.Metadata);
+    }
+
+    /// <summary>Begins an unweighted shortest-path query between two strongly typed node selectors.</summary>
+    public GraphShortestPathQuery<TNode, TRelation> ShortestPathTo<TRelation>(
+        GraphQuery<TNode> target,
+        RelationSet<TNode, TRelation, TNode> relationSet)
+        where TRelation : notnull
+    {
+        ArgumentNullException.ThrowIfNull(target);
+        ArgumentNullException.ThrowIfNull(relationSet);
+        if (model.Traversals.Count != 0 || target.model.Traversals.Count != 0)
+        {
+            throw new InvalidOperationException("Shortest-path endpoints must be node selectors without traversals.");
+        }
+        var rebasedTarget = Rebase(target.model, model.Parameters.Count);
+        var pathModel = new GraphAnalyticsQueryModel(
+            GraphAnalyticsAlgorithm.ShortestPath,
+            GraphAnalyticsFamily.PathFinding,
+            model,
+            relationSet.Metadata.Name,
+            relationSet.Metadata.Directed,
+            "nodal",
+            TargetNodes: rebasedTarget);
+        return new GraphShortestPathQuery<TNode, TRelation>(
+            pathModel, executor, relationSet.Metadata, propertyMappings);
+    }
+
+    /// <summary>Projects materialized nodes into a caller-defined result shape.</summary>
+    public GraphProjectedQuery<TNode, TResult> Select<TResult>(Expression<Func<TNode, TResult>> selector)
+    {
+        ArgumentNullException.ThrowIfNull(selector);
+        return new GraphProjectedQuery<TNode, TResult>(this, selector.Compile());
     }
 
     /// <summary>
@@ -155,10 +307,102 @@ public sealed class GraphQuery<TNode>
         return executor.ExecuteAsync<TNode>(model, cancellationToken);
     }
 
+    /// <summary>Executes the query and returns every bound node and relationship as a normalized subgraph.</summary>
+    public ValueTask<GraphQueryResult> ToSubgraphAsync(CancellationToken cancellationToken = default)
+    {
+        if (executor is null)
+        {
+            throw new InvalidOperationException(
+                "This query is not attached to a NodalContext. Use ToQueryModel for compiler-only scenarios.");
+        }
+
+        return executor.ExecuteSubgraphAsync(
+            model with { Projection = GraphQueryProjection.Subgraph }, cancellationToken);
+    }
+
+    /// <summary>Streams results through an asynchronous enumerable.</summary>
+    public async IAsyncEnumerable<TNode> AsAsyncEnumerable(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        foreach (var item in await ToListAsync(cancellationToken).ConfigureAwait(false))
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            yield return item;
+        }
+    }
+
+    /// <summary>Returns the first result and throws when the query is empty.</summary>
+    public async ValueTask<TNode> FirstAsync(CancellationToken cancellationToken = default)
+    {
+        var results = await Copy(model with { Limit = 1 }).ToListAsync(cancellationToken).ConfigureAwait(false);
+        return results.Count == 0 ? throw new InvalidOperationException("Sequence contains no elements.") : results[0];
+    }
+
+    /// <summary>Returns the first result or the default value when the query is empty.</summary>
+    public async ValueTask<TNode?> FirstOrDefaultAsync(CancellationToken cancellationToken = default)
+    {
+        var results = await Copy(model with { Limit = 1 }).ToListAsync(cancellationToken).ConfigureAwait(false);
+        return results.Count == 0 ? default : results[0];
+    }
+
+    /// <summary>Returns the only result and verifies that no second result exists.</summary>
+    public async ValueTask<TNode> SingleAsync(CancellationToken cancellationToken = default) =>
+        (await Copy(model with { Limit = 2 }).ToListAsync(cancellationToken).ConfigureAwait(false)).Single();
+
+    /// <summary>Returns the only result or the default value and verifies uniqueness.</summary>
+    public async ValueTask<TNode?> SingleOrDefaultAsync(CancellationToken cancellationToken = default) =>
+        (await Copy(model with { Limit = 2 }).ToListAsync(cancellationToken).ConfigureAwait(false)).SingleOrDefault();
+
+    /// <summary>Determines whether at least one matching result exists.</summary>
+    public async ValueTask<bool> AnyAsync(CancellationToken cancellationToken = default) =>
+        (await Copy(model with { Limit = 1 }).ToListAsync(cancellationToken).ConfigureAwait(false)).Count != 0;
+
+    /// <summary>Counts matching results.</summary>
+    public async ValueTask<int> CountAsync(CancellationToken cancellationToken = default)
+    {
+        if (model.Offset is not null || model.Limit is not null)
+        {
+            return (await ToListAsync(cancellationToken).ConfigureAwait(false)).Count;
+        }
+
+        if (executor is null)
+        {
+            throw new InvalidOperationException(
+                "This query is not attached to a NodalContext. Use ToQueryModel for compiler-only scenarios.");
+        }
+
+        return await executor.ExecuteCountAsync(
+            model with { Projection = GraphQueryProjection.Count, Orderings = [] }, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private GraphQuery<TNode> SetOrdering<TProperty>(
+        Expression<Func<TNode, TProperty>> selector,
+        GraphSortDirection direction,
+        bool append)
+    {
+        var ordering = new GraphOrdering(
+            GraphExpressionTranslator.TranslateProperty(selector, propertyMappings),
+            model.ResultAlias,
+            direction);
+        var existing = model.EffectiveOrderings;
+        if (append && existing.Count == 0)
+        {
+            throw new InvalidOperationException("ThenBy requires a preceding OrderBy or OrderByDescending call.");
+        }
+
+        return Copy(model with { Orderings = append ? [.. existing, ordering] : [ordering] });
+    }
+
+    private GraphQuery<TNode> Copy(GraphQueryModel next) => new(next, executor, propertyMappings);
+
     private GraphQuery<TTarget> AppendTraversal<TTarget>(
         string relationType,
         GraphNodeMetadata targetMetadata,
-        GraphTraversalDirection direction)
+        GraphTraversalDirection direction,
+        int minDepth,
+        int maxDepth,
+        bool optional)
     {
         var index = model.Traversals.Count + 1;
         var step = new GraphTraversalStep(
@@ -168,7 +412,11 @@ public sealed class GraphQuery<TNode>
             $"relation{index}",
             $"node{index}",
             direction,
-            null);
+            null,
+            null,
+            minDepth,
+            maxDepth,
+            optional);
         var mappings = targetMetadata.Properties.ToDictionary(
             property => property.Key,
             property => property.Value.Name);
@@ -182,6 +430,60 @@ public sealed class GraphQuery<TNode>
         current is null
             ? next
             : new GraphLogicalPredicate(current, GraphLogicalOperator.And, next);
+
+    private static void ValidateDepth(int minDepth, int maxDepth)
+    {
+        ArgumentOutOfRangeException.ThrowIfNegative(minDepth);
+        if (maxDepth < minDepth)
+        {
+            throw new ArgumentOutOfRangeException(nameof(maxDepth), "Maximum depth cannot be less than minimum depth.");
+        }
+    }
+
+    private static GraphQueryModel Rebase(GraphQueryModel source, int offset)
+    {
+        if (offset == 0)
+        {
+            return source;
+        }
+        var names = source.Parameters.ToDictionary(
+            parameter => parameter.Name,
+            parameter => $"p{offset + int.Parse(parameter.Name.AsSpan(1), System.Globalization.CultureInfo.InvariantCulture)}");
+        return source with
+        {
+            Predicate = source.Predicate is null ? null : Rename(source.Predicate, names),
+            Parameters = source.Parameters.Select(parameter => parameter with { Name = names[parameter.Name] }).ToArray(),
+        };
+    }
+
+    private static GraphPredicate Rename(GraphPredicate predicate, IReadOnlyDictionary<string, string> names) => predicate switch
+    {
+        GraphComparisonPredicate value => value with { ParameterName = names[value.ParameterName] },
+        GraphLogicalPredicate value => value with { Left = Rename(value.Left, names), Right = Rename(value.Right, names) },
+        GraphNotPredicate value => value with { Operand = Rename(value.Operand, names) },
+        GraphStringPredicate value => value with { ParameterName = names[value.ParameterName] },
+        GraphInPredicate value => value with { ParameterName = names[value.ParameterName] },
+        GraphNullPredicate value => value,
+        _ => throw new NotSupportedException($"Predicate '{predicate.GetType().Name}' cannot be rebased."),
+    };
+}
+
+/// <summary>Represents a strongly typed client projection over a provider-executed graph query.</summary>
+public sealed class GraphProjectedQuery<TSource, TResult>(GraphQuery<TSource> source, Func<TSource, TResult> selector)
+{
+    /// <summary>Executes the graph query and projects each materialized node.</summary>
+    public async ValueTask<IReadOnlyList<TResult>> ToListAsync(CancellationToken cancellationToken = default) =>
+        (await source.ToListAsync(cancellationToken).ConfigureAwait(false)).Select(selector).ToArray();
+
+    /// <summary>Streams projected results asynchronously.</summary>
+    public async IAsyncEnumerable<TResult> AsAsyncEnumerable(
+        [System.Runtime.CompilerServices.EnumeratorCancellation] CancellationToken cancellationToken = default)
+    {
+        await foreach (var item in source.AsAsyncEnumerable(cancellationToken).ConfigureAwait(false))
+        {
+            yield return selector(item);
+        }
+    }
 }
 
 /// <summary>Builds a strongly typed query for one source–relationship–target path.</summary>

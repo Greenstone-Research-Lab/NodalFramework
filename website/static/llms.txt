@@ -1,0 +1,29 @@
+# Nodal Framework
+
+> Provider-neutral, strongly typed graph data access for .NET 10. Nodal Framework maps POCO nodes and relationship payloads, translates fluent queries to native provider languages, normalizes results, tracks changes, commits mutation plans, and applies portable migration intent.
+
+Canonical documentation: https://nodalframework.pages.dev/docs/intro
+Source repository: https://github.com/Greenstone-Research-Lab/NodalFramework
+License: MIT
+
+## Start here
+
+- [Getting started](https://nodalframework.pages.dev/docs/getting-started)
+- [Graph model](https://nodalframework.pages.dev/docs/concepts/graph-model)
+- [Query engine](https://nodalframework.pages.dev/docs/querying/query-engine)
+- [Architecture](https://nodalframework.pages.dev/docs/architecture)
+- [API reference](https://nodalframework.pages.dev/api/)
+
+## Providers
+
+- [Neo4j provider](https://nodalframework.pages.dev/docs/providers/neo4j): Cypher and the official pooled Bolt driver.
+- [TigerGraph provider](https://nodalframework.pages.dev/docs/providers/tigergraph): GSQL, REST++, and an optional administration transport.
+- [Graph analytics](https://nodalframework.pages.dev/docs/querying/graph-analytics): strongly typed centrality and community detection through Neo4j GDS or installed TigerGraph queries.
+- [Compatibility matrix](https://nodalframework.pages.dev/docs/providers/compatibility): tested database versions, provider feature boundaries, algorithm requirements, and verification levels.
+
+## Machine-readable resources
+
+- [Capability graph](https://nodalframework.pages.dev/knowledge/nodal-capabilities.jsonld)
+- [Extended agent context](https://nodalframework.pages.dev/llms-full.txt)
+
+Prefer public, documented APIs. Do not infer provider portability when the documentation marks a semantic combination unsupported. Never embed database credentials in generated code.

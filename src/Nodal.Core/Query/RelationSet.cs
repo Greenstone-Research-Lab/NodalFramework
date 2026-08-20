@@ -9,7 +9,7 @@ namespace Nodal.Core.Query;
 /// <typeparam name="TSource">The source node type.</typeparam>
 /// <typeparam name="TRelation">The relationship POCO type.</typeparam>
 /// <typeparam name="TTarget">The target node type.</typeparam>
-public sealed class RelationSet<TSource, TRelation, TTarget>
+public sealed class RelationSet<TSource, TRelation, TTarget> : IGraphRelationSet<TSource, TTarget>
     where TRelation : notnull
 {
     private readonly GraphStateManager stateManager;
@@ -34,6 +34,8 @@ public sealed class RelationSet<TSource, TRelation, TTarget>
     internal GraphNodeMetadata SourceMetadata => sourceMetadata;
 
     internal GraphNodeMetadata TargetMetadata => targetMetadata;
+
+    GraphNodeMetadata IGraphRelationSet<TSource, TTarget>.TargetMetadata => targetMetadata;
 
     /// <summary>Adds a relationship and its payload to the current unit of work.</summary>
     public GraphRelationEntry<TSource, TRelation, TTarget> Connect(
@@ -70,4 +72,13 @@ public sealed class RelationSet<TSource, TRelation, TTarget>
             sourceMetadata,
             targetMetadata,
             Metadata);
+}
+
+/// <summary>Exposes traversal metadata independently of a relationship payload CLR type.</summary>
+public interface IGraphRelationSet<in TSource, out TTarget>
+{
+    /// <summary>Gets the relationship mapping used by provider compilers.</summary>
+    GraphRelationMetadata Metadata { get; }
+
+    internal GraphNodeMetadata TargetMetadata { get; }
 }

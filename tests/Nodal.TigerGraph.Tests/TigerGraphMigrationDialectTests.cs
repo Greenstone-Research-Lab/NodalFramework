@@ -65,4 +65,51 @@ public sealed class TigerGraphMigrationDialectTests
         Assert.Throws<ArgumentException>(() =>
             dialect.Compile([new DropNodeTypeOperation("bad-name")]));
     }
+
+    [Fact]
+    public void CompileMapsEnumNumericBooleanAndFloatingPointSchemaTypes()
+    {
+        var dialect = new TigerGraphMigrationDialect("SocialGraph");
+
+        var commands = dialect.Compile(
+        [
+            new CreateNodeTypeOperation(
+                "Metric",
+                "level",
+                typeof(MetricLevel),
+                [
+                    new GraphSchemaProperty("level", typeof(MetricLevel)),
+                    new GraphSchemaProperty("enabled", typeof(bool)),
+                    new GraphSchemaProperty("score", typeof(double)),
+                ]),
+            new CreateRelationTypeOperation("LINKS", "Metric", "Metric", false),
+        ]);
+
+        Assert.Contains("PRIMARY_ID level INT, enabled BOOL, score DOUBLE", commands[0].Text, StringComparison.Ordinal);
+        Assert.Contains("ADD UNDIRECTED EDGE LINKS", commands[0].Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompileRejectsUnmappablePrimaryAttributeAndOperationTypes()
+    {
+        var dialect = new TigerGraphMigrationDialect("SocialGraph");
+
+        Assert.Throws<NotSupportedException>(() => dialect.Compile(
+            [new CreateNodeTypeOperation("Metric", "enabled", typeof(bool))]));
+        Assert.Throws<NotSupportedException>(() => dialect.Compile(
+            [new CreateNodeTypeOperation(
+                "Metric",
+                "id",
+                typeof(string),
+                [new GraphSchemaProperty("payload", typeof(Version))])]));
+        Assert.Throws<NotSupportedException>(() => dialect.Compile([new UnsupportedMigrationOperation()]));
+    }
+
+    private enum MetricLevel
+    {
+        Low,
+        High,
+    }
+
+    private sealed record UnsupportedMigrationOperation : MigrationOperation;
 }

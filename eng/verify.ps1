@@ -25,7 +25,7 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
-& "$PSScriptRoot/verify-core-coverage.ps1"
+& "$PSScriptRoot/verify-coverage.ps1"
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }

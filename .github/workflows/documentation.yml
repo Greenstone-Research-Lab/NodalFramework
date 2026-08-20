@@ -1,0 +1,76 @@
+name: Documentation CI
+
+on:
+  push:
+    branches: [developer, staging, master]
+    paths:
+      - 'website/**'
+      - 'docs/api/**'
+      - 'src/**'
+      - 'eng/build-docs.ps1'
+      - '.config/dotnet-tools.json'
+      - '.github/workflows/documentation.yml'
+  pull_request:
+    branches: [developer, staging, master]
+    paths:
+      - 'website/**'
+      - 'docs/api/**'
+      - 'src/**'
+      - 'eng/build-docs.ps1'
+      - '.config/dotnet-tools.json'
+      - '.github/workflows/documentation.yml'
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nodal-docs-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+env:
+  DOTNET_NOLOGO: true
+  DOTNET_CLI_TELEMETRY_OPTOUT: true
+
+jobs:
+  build:
+    name: Build guide and API reference
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+          fetch-depth: 0
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Install Node.js
+        uses: actions/setup-node@v6
+        with:
+          node-version: 24
+          cache: npm
+          cache-dependency-path: website/package-lock.json
+
+      - name: Restore .NET dependencies
+        run: dotnet restore Nodal.slnx
+
+      - name: Restore website dependencies
+        run: npm ci --prefix website
+
+      - name: Build documentation
+        shell: pwsh
+        run: ./eng/build-docs.ps1 -SkipDotNetRestore -SkipNodeInstall
+
+      - name: Upload static site
+        uses: actions/upload-artifact@v6
+        with:
+          name: nodal-documentation-${{ github.sha }}
+          path: website/build
+          if-no-files-found: error
+          retention-days: 14
