@@ -52,11 +52,32 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
 
         if (query.Projection == GraphQueryProjection.Path)
         {
-            builder.Append("SetAccum<VERTEX> @@nodal_sources; ListAccum<EDGE> @@nodal_relations; ");
+            builder.Append("ListAccum<EDGE> @@nodal_relations; ")
+                .Append(RenderSelection(query, "nodal_sources", query.Alias, collectRelations: true))
+                .Append(RenderSelection(query, "nodal_targets", query.ResultAlias, collectRelations: false))
+                .Append("PRINT nodal_sources, @@nodal_relations AS nodal_relations, nodal_targets; }");
+        }
+        else
+        {
+            builder.Append(RenderSelection(query, "result", query.ResultAlias, collectRelations: false))
+                .Append("PRINT result; }");
         }
 
-        builder.Append("result = SELECT ")
-            .Append(query.ResultAlias)
+        return new GraphCommand(
+            builder.ToString(),
+            query.Parameters.ToDictionary(parameter => parameter.Name, parameter => NormalizeValue(parameter.Value)));
+    }
+
+    private static string RenderSelection(
+        GraphQueryModel query,
+        string resultName,
+        string selectedAlias,
+        bool collectRelations)
+    {
+        var builder = new StringBuilder()
+            .Append(resultName)
+            .Append(" = SELECT ")
+            .Append(selectedAlias)
             .Append(" FROM ")
             .Append(query.NodeType)
             .Append(':')
@@ -84,12 +105,10 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
             builder.Append(" WHERE ").Append(string.Join(" AND ", filters));
         }
 
-        if (query.Projection == GraphQueryProjection.Path)
+        if (collectRelations)
         {
             var last = query.Traversals[^1];
-            builder.Append(" ACCUM @@nodal_sources += ")
-                .Append(last.SourceAlias)
-                .Append(", @@nodal_relations += ")
+            builder.Append(" ACCUM @@nodal_relations += ")
                 .Append(last.RelationAlias);
         }
 
@@ -98,13 +117,7 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
             builder.Append(" LIMIT ").Append(query.Limit.Value);
         }
 
-        builder.Append(query.Projection == GraphQueryProjection.Path
-            ? "; PRINT @@nodal_sources AS nodal_sources, @@nodal_relations AS nodal_relations, result AS nodal_targets; }"
-            : "; PRINT result; }");
-
-        return new GraphCommand(
-            builder.ToString(),
-            query.Parameters.ToDictionary(parameter => parameter.Name, parameter => NormalizeValue(parameter.Value)));
+        return builder.Append("; ").ToString();
     }
 
     private static string RenderPredicate(GraphPredicate predicate, string alias) => predicate switch

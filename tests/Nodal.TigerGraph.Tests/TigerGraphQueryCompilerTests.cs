@@ -99,7 +99,7 @@ public sealed class TigerGraphQueryCompilerTests
         var command = new TigerGraphQueryCompiler("SocialGraph").Compile(model);
 
         Assert.Equal(
-            "INTERPRET QUERY (INT p0) FOR GRAPH SocialGraph { SetAccum<VERTEX> @@nodal_sources; ListAccum<EDGE> @@nodal_relations; result = SELECT node1 FROM Person:node -(KNOWS:relation1)-> Person:node1 WHERE relation1.since_year >= p0 ACCUM @@nodal_sources += node, @@nodal_relations += relation1 LIMIT 2; PRINT @@nodal_sources AS nodal_sources, @@nodal_relations AS nodal_relations, result AS nodal_targets; }",
+            "INTERPRET QUERY (INT p0) FOR GRAPH SocialGraph { ListAccum<EDGE> @@nodal_relations; nodal_sources = SELECT node FROM Person:node -(KNOWS:relation1)-> Person:node1 WHERE relation1.since_year >= p0 ACCUM @@nodal_relations += relation1 LIMIT 2; nodal_targets = SELECT node1 FROM Person:node -(KNOWS:relation1)-> Person:node1 WHERE relation1.since_year >= p0 LIMIT 2; PRINT nodal_sources, @@nodal_relations AS nodal_relations, nodal_targets; }",
             command.Text);
     }
 
