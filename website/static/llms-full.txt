@@ -2,6 +2,16 @@
 
 Nodal Framework is a provider-based .NET 10 graph data access framework. Application code models nodes and relationship payloads as POCOs. Nodal.Core owns portable metadata, typed sets, expression translation, canonical results, identity resolution, change tracking, and unit-of-work planning. Nodal.Neo4j and Nodal.TigerGraph compile and execute the portable model through native transports. Nodal.Migrations expresses portable schema intent.
 
+## Installation and host integration
+
+- Install exactly one application provider with `dotnet add package Nodal.Neo4j --prerelease` or `dotnet add package Nodal.TigerGraph --prerelease`.
+- Provider packages include `Nodal.Core` transitively. Add `Nodal.Migrations` only when the host owns schema evolution.
+- Keep every explicit Nodal package on the same version during the alpha period.
+- Register a provider for the application lifetime. Register each `NodalContext` subclass as scoped or create one per explicit unit of work.
+- `Neo4jProvider` owns and asynchronously disposes the official pooled Bolt driver. `TigerGraphProvider` consumes an externally managed `HttpClient`.
+- Use standard .NET dependency injection; do not generate a new provider per request and do not share one tracked context across concurrent requests.
+- Full package and ASP.NET Core examples: https://nodalframework.pages.dev/docs/installation
+
 ## Graph analytics
 
 - Start from a typed node query, call `Analyze` with a same-node `RelationSet`, and select a named algorithm such as `PageRank`, `Betweenness`, `Louvain`, or `WeaklyConnectedComponents`.

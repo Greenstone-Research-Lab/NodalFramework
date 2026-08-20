@@ -13,6 +13,19 @@ Nodal Framework is a provider-based .NET graph data access prototype. It keeps t
 
 The initial alpha targets .NET 10. Package versions move together so provider and core contracts remain compatible during the pre-release period.
 
+Install one provider package; it brings `Nodal.Core` transitively. Add the
+migration package only when the application owns schema evolution:
+
+```bash
+dotnet add package Nodal.Neo4j --prerelease
+# or: dotnet add package Nodal.TigerGraph --prerelease
+dotnet add package Nodal.Migrations --prerelease
+```
+
+Pin all packages to the same version for reproducible builds, for example
+`0.1.0-alpha.2`. The complete console, worker, and ASP.NET Core setup is in the
+[installation guide](website/docs/installation.md).
+
 ## Compatibility and provider capabilities
 
 Nodal distinguishes vendor client compatibility from versions verified by this repository. The current live QA baselines are Neo4j 5.26 Community and TigerGraph 4.2.4 Community. `Nodal.Neo4j` uses `Neo4j.Driver` 6.3.0; the vendor states that driver 6.x connects to Neo4j 4.4.x, 5.x, 2025.x, and 2026.x, but those additional server families are not yet Nodal-certified. Neo4j 5.26 analytics require the vendor-matched GDS 2.13 release.

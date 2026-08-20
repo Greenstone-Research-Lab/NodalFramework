@@ -3,6 +3,7 @@ import type {SidebarsConfig} from '@docusaurus/plugin-content-docs';
 const sidebars: SidebarsConfig = {
   guideSidebar: [
     'intro',
+    'installation',
     'getting-started',
     {type: 'category', label: 'Core concepts', items: ['concepts/graph-model', 'concepts/context-and-sets']},
     {type: 'category', label: 'Querying', items: ['querying/query-engine', 'querying/traversals-and-paths', 'querying/graph-analytics', 'querying/compiled-and-native-queries']},

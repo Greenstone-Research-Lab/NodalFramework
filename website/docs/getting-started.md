@@ -1,9 +1,28 @@
 ---
-sidebar_position: 2
+sidebar_position: 3
 description: Define a graph model, create a Nodal context, and execute your first provider-neutral query.
 ---
 
 # Getting started
+
+This walkthrough assumes a .NET 10 project with either `Nodal.Neo4j` or
+`Nodal.TigerGraph` installed. Start with [Install and configure](./installation)
+for NuGet commands, reproducible package versions, dependency injection, and
+provider lifetime guidance.
+
+## 0. Add a provider package
+
+```bash title="Choose one provider"
+dotnet add package Nodal.Neo4j --prerelease
+# or
+dotnet add package Nodal.TigerGraph --prerelease
+```
+
+Add migrations only when this application owns graph schema changes:
+
+```bash
+dotnet add package Nodal.Migrations --prerelease
+```
 
 ## 1. Define the graph model
 
@@ -86,3 +105,45 @@ await context.SaveChangesAsync();
 ```
 
 Provider construction is the only part that changes. The model and application workflow stay the same.
+
+## 5. Apply the initial schema when needed
+
+Provider packages already include their migration dialect. The separate
+`Nodal.Migrations` package supplies migration definitions and orchestration:
+
+```csharp
+using Nodal.Migrations;
+
+public sealed class InitialSocialGraph : NodalMigration
+{
+    public override string Id => "20260821_001_initial_social_graph";
+
+    protected override void Up(MigrationBuilder migration) => migration
+        .CreateNode<Person>()
+        .CreateRelation<Knows, Person, Person>()
+        .CreateIndex<Person, string>(person => person.Name);
+
+    protected override void Down(MigrationBuilder migration) => migration
+        .DropRelation<Knows>()
+        .DropNode<Person>();
+}
+
+await context.Database.MigrateAsync([new InitialSocialGraph()]);
+```
+
+Neo4j migration execution is available directly. TigerGraph requires an
+explicit administrative transport because schema changes and installed-query
+management are privileged operations. See [Migrations](./migrations) before
+running schema changes in production.
+
+## 6. Verify the integration
+
+```bash
+dotnet restore
+dotnet build
+dotnet list package
+```
+
+Run one bounded query against a non-production graph before enabling writes.
+Use `AsNoTracking()` for read-only checks and keep credentials in the host's
+secret configuration rather than source control.
