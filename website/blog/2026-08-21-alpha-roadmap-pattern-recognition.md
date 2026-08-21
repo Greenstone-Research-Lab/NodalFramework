@@ -64,6 +64,32 @@ Canonical node labels, relationship types, direction, bounded property buckets,
 and temporal buckets form a stable path signature. Hashing and grouping discover
 exact repeats in linear time relative to the encoded path volume.
 
+For pairwise structural comparison, those features are also encoded as typed
+multi-hot bitsets. A path is not one category, so a single one-hot value would
+be insufficient. Separate feature families preserve meaning:
+
+- node-label and relationship-type presence;
+- direction-aware relationship types;
+- position-aware `(position, type)` tokens;
+- typed path n-grams;
+- bounded property and temporal buckets.
+
+The bitsets make several exact binary metrics inexpensive:
+
+```text
+difference      = popcount(A XOR B)
+intersection    = popcount(A AND B)
+union           = popcount(A OR B)
+hamming         = difference / featureCount
+jaccard         = intersection / union
+binary cosine   = intersection / sqrt(popcount(A) * popcount(B))
+```
+
+Presence-only bitsets are fast but discard order. Position-aware and n-gram
+families retain local order, while typed edit distance remains the exact fallback
+for variable-length sequences where shifting one hop should not invalidate every
+following position.
+
 ### Sparse heterogeneous lane
 
 Typed edge and node n-grams form sparse weighted features. An inverted index,
@@ -71,11 +97,34 @@ length buckets, endpoint types, and MinHash/LSH-style candidate generation avoid
 an all-pairs scan. Exact weighted Jaccard, typed edit distance, PathSim, or
 HeteSim-style scoring is applied only to candidates.
 
+Heterogeneous scoring keeps each feature family separate and combines normalized
+scores with explicit weights. This prevents a high-cardinality property family
+from overwhelming relationship direction or temporal shape. Alpha weights are
+configuration, recorded with every result, and never learned silently.
+
 ### Dense semantic lane
 
 Optional embeddings support semantic similarity through a top-k approximate
 nearest-neighbor index. This lane remains replaceable and opt-in; canonical
 exact results must never depend on a particular model or vector index.
+
+Dense vectors use cosine or dot-product kernels over contiguous spans. Sparse
+and dense representations therefore coexist: bitsets answer exact structural
+questions, while vectors retrieve semantically close candidates.
+
+### .NET execution paths
+
+The portable kernel stores dense bitsets as contiguous `ulong` words and exposes
+read-only span-based operations. The baseline uses `BitOperations.PopCount`,
+which uses hardware intrinsics when the runtime and processor support them.
+Candidate vector paths use the widest supported `Vector512`, `Vector256`, or
+`Vector128` bitwise operations and retain a scalar fallback.
+
+Vector width alone is not accepted as proof of speed. Popcount reduction,
+short-buffer overhead, alignment, density, and CPU architecture can make a
+narrower or scalar loop faster. Every execution path must return the same score
+and earn its dispatch threshold through benchmarks. Dense floating-point vector
+scoring is benchmarked separately from binary bitset scoring.
 
 All lanes produce a sparse similarity graph. Community detection runs over that
 graph rather than a dense similarity matrix. Every result records the metric,
@@ -93,6 +142,24 @@ Initial performance gates are:
   compared with an exact baseline;
 - identical canonical results across providers when their declared semantics
   match.
+
+The benchmark matrix covers:
+
+| Dimension | Initial values |
+| --- | --- |
+| Feature width | 256, 1,024, 4,096, and 16,384 bits |
+| Feature density | 0.5%, 5%, 25%, and 50% |
+| Path length | 2, 4, 8, and 16 hops |
+| Corpus size | 10,000, 100,000, and 1,000,000 paths |
+| Candidate count | exact all-pairs only for oracle-sized data; top-k candidate budgets for scale |
+| CPU path | scalar, unrolled popcount, Vector128, Vector256, and Vector512 when supported |
+
+Every optimized result is checked against a simple scalar oracle. Published
+results report comparisons per second, nanoseconds per comparison, allocation,
+bytes per path, index-build time, peak memory, top-k latency, and recall-at-k for
+approximate candidate strategies. Sparse sorted integers and a compressed bitmap
+candidate are benchmarked alongside dense bitsets so low-density paths do not
+pay for thousands of zero words.
 
 Native graph operations will be pushed down only when the provider can preserve
 the requested semantics. The portable .NET engine handles the remaining

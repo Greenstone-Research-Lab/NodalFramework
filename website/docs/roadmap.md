@@ -49,9 +49,12 @@ temporal behavior without changing the responsibilities of `Nodal.Core`.
 ### Discovery
 
 7. Implement canonical path signatures and stable hashing.
-8. Implement typed edit-distance and n-gram similarity kernels.
-9. Implement weighted heterogeneous PathSim/HeteSim-style similarity.
-10. Build a sparse top-k similarity graph without an all-pairs materialization.
+8. Implement typed positional multi-hot bitsets, XOR/popcount distance, and
+   n-gram similarity kernels with scalar and hardware-accelerated paths.
+9. Implement weighted heterogeneous PathSim/HeteSim-style similarity and dense
+   vector scoring as an optional lane.
+10. Build a sparse top-k similarity graph without an all-pairs materialization,
+    and benchmark exact and approximate candidate strategies.
 11. Detect path communities and select representative paths.
 12. Mine bounded frequent path and event-sequence patterns.
 
