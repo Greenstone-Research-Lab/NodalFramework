@@ -1,6 +1,6 @@
 # Nodal Framework — coding-agent context
 
-Nodal Framework is a provider-based .NET 10 graph data access framework. Application code models nodes and relationship payloads as POCOs. Nodal.Core owns portable metadata, typed sets, expression translation, canonical results, identity resolution, change tracking, and unit-of-work planning. Nodal.Neo4j and Nodal.TigerGraph compile and execute the portable model through native transports. Nodal.Migrations expresses portable schema intent.
+Nodal Framework is a provider-based .NET 10 graph data access framework. Application code models nodes and relationship payloads as POCOs. Nodal.Core owns portable metadata, typed sets, expression translation, canonical results, identity resolution, change tracking, and unit-of-work planning. Nodal.Neo4j and Nodal.TigerGraph compile and execute the portable model through native transports. Nodal.Migrations expresses portable schema intent. Nodal.PatternRecognition sits above Nodal.Core and database providers as an optional analytics shell. It consumes canonical graph paths, events, and capability declarations; provider-native pushdown is an optimization, while portable evidence and semantics remain stable.
 
 ## Installation and host integration
 

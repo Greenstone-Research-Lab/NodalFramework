@@ -4,9 +4,9 @@ title: "Alpha roadmap: pattern recognition and the next providers"
 authors: [ilker]
 tags: [roadmap, pattern-recognition, performance, providers]
 description: The P2, P3, and P4+ plan for Nodal Framework, including a performance-first similarity engine and the Memgraph and ArangoDB provider tracks.
-image: /img/journal/default-cover.svg
-image_alt: Abstract connected graph illustrating paths, similarity links, and provider expansion.
-image_caption: Nodal's alpha roadmap separates production hardening, pattern discovery, and longer-term learning research.
+image: /img/journal/pattern-recognition-analytics-shell.png
+image_alt: Two provider graph streams rise into a shared analytics shell where paths form communities and temporal transitions.
+image_caption: Nodal.PatternRecognition sits above providers as an optional analytics shell, turning canonical paths into explainable discoveries.
 ---
 
 Nodal Framework is still an alpha, which is exactly the right time to test its
@@ -17,6 +17,13 @@ engine.
 P2 remains the production-hardening track. P3 starts the optional
 `Nodal.PatternRecognition` package. P4+ records the research horizon so
 experimental ideas do not silently become compatibility promises.
+
+`Nodal.PatternRecognition` is not another database provider. It is an optional
+**analytics shell above every provider**: Neo4j, TigerGraph, and future engines
+keep their own query languages, transports, and native accelerators, while the
+shell consumes Nodal's canonical nodes, relationships, paths, events, and
+capability declarations. Provider pushdown is an optimization; the analysis
+contract and its evidence remain portable.
 
 <!-- truncate -->
 
@@ -50,6 +57,10 @@ It will not claim causal inference, unrestricted subgraph mining, or a trained
 temporal neural network.
 
 ## Performance-first similarity
+
+![Directed graph paths are encoded into typed multi-hot bitsets, compared through XOR and intersection kernels, then assembled into similarity communities.](/img/journal/pattern-recognition-similarity-lab.png)
+
+<small><em>The first experiment separates encoding, exact bitset kernels, candidate filtering, and community construction so every performance claim remains measurable.</em></small>
 
 A naive comparison of every path with every other path is quadratic. One
 million paths would imply roughly one trillion pair comparisons before useful
@@ -164,6 +175,23 @@ pay for thousands of zero words.
 Native graph operations will be pushed down only when the provider can preserve
 the requested semantics. The portable .NET engine handles the remaining
 canonicalization, candidate refinement, evidence, and explanation stages.
+
+## First experiment: scalar wins the opening round
+
+On August 21, 2026, the first executable P3 slice compared scalar, manually
+unrolled, and Vector256 kernels on .NET 10 using 256, 4,096, and 16,384-bit
+vectors at 5% and 25% density. All kernels returned identical exact scores and
+allocated zero bytes per comparison.
+
+The scalar `BitOperations.PopCount` loop was fastest in every measured case:
+approximately 8-10 ns at 256 bits, 66-74 ns at 4,096 bits, and 202-209 ns at
+16,384 bits. Manual unrolling was 1.2-2.4 times slower; the first Vector256
+lane-reduction candidate was 1.4-2.5 times slower. The result makes the scalar
+loop the initial production kernel and keeps SIMD as an evidence-gated research
+track rather than a marketing assumption.
+
+The [reproducible benchmark summary](https://github.com/Greenstone-Research-Lab/NodalFramework/blob/developer/benchmarks/results/first-bitset-similarity.md)
+records the machine, runtime, full matrix, limitations, and command.
 
 ## The next provider tracks
 
