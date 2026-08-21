@@ -1,0 +1,20 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <PackageId>Nodal.PatternRecognition</PackageId>
+    <Title>Nodal Framework Pattern Recognition</Title>
+    <Description>Provider-neutral path encoding, similarity, and pattern discovery analytics for Nodal Framework.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nodal.Core\Nodal.Core.csproj" />
+  </ItemGroup>
+
+  <ItemGroup>
+    <InternalsVisibleTo Include="Nodal.PatternRecognition.Benchmarks" />
+    <InternalsVisibleTo Include="Nodal.PatternRecognition.Tests" />
+  </ItemGroup>
+
+</Project>
