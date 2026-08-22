@@ -1,4 +1,4 @@
 using BenchmarkDotNet.Running;
-using Nodal.PatternRecognition.Benchmarks;
+using Nodal.Analytics.Benchmarks;
 
 BenchmarkRunner.Run<BitsetSimilarityBenchmarks>();

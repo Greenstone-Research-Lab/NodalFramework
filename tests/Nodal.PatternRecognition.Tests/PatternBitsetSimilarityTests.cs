@@ -1,6 +1,6 @@
-using Nodal.PatternRecognition.Similarity;
+using Nodal.Analytics.Similarity;
 
-namespace Nodal.PatternRecognition.Tests;
+namespace Nodal.Analytics.Tests;
 
 public sealed class PatternBitsetSimilarityTests
 {

@@ -9,7 +9,8 @@ Nodal Framework is a provider-based .NET graph data access prototype. It keeps t
 | `Nodal.Core` | Provider-neutral model, LINQ query surface, tracking, and unit of work |
 | `Nodal.Migrations` | Portable graph schema migration contracts and planning |
 | `Nodal.Neo4j` | Neo4j/Cypher provider using the official pooled Bolt driver |
-| `Nodal.PatternRecognition` | Experimental provider-neutral analytics shell for path similarity and pattern discovery |
+| `Nodal.Analytics` | Provider-neutral analytics shell for path similarity and pattern discovery |
+| `Nodal.PatternRecognition` | Deprecated alpha package; use `Nodal.Analytics` for new projects |
 | `Nodal.TigerGraph` | TigerGraph/GSQL provider using REST++ and an optional administrative transport |
 
 The initial alpha targets .NET 10. Package versions move together so provider and core contracts remain compatible during the pre-release period.
@@ -23,7 +24,9 @@ dotnet add package Nodal.Neo4j --prerelease
 dotnet add package Nodal.Migrations --prerelease
 ```
 
-`Nodal.PatternRecognition` is the optional P3 analytics shell above providers.
+`Nodal.Analytics` is the optional analytics shell above providers. The former
+`Nodal.PatternRecognition` package is retained as a deprecated alpha transition
+package; use `Nodal.Analytics` for new projects.
 Its first executable alpha slice includes exact allocation-free bitset similarity;
 community, sequence, and temporal-transition surfaces remain experimental roadmap work.
 
@@ -399,11 +402,11 @@ Package verification can also be run independently:
 powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-packages.ps1
 ```
 
-The package gate produces all five `.nupkg` and `.snupkg` artifacts, then inspects their manifests and contents for the MIT expression, repository metadata, README, license, IntelliSense XML, target framework, and required package dependencies.
+The package gate produces all six `.nupkg` and `.snupkg` artifacts, then inspects their manifests and contents for the MIT expression, repository metadata, README, license, IntelliSense XML, target framework, and required package dependencies.
 
 ## Publishing
 
-Alpha packages are published only after a pull request promotes `developer` to `staging`. The `Publish Alpha Packages` workflow assigns one immutable `0.1.0-alpha.<run>` version to all five packages, runs the complete QA gate, exchanges GitHub's OIDC identity for a short-lived NuGet credential, and publishes `Nodal.Core` before its dependent packages. No long-lived NuGet API key is stored by the repository.
+Alpha packages are published only after a pull request promotes `developer` to `staging`. The `Publish Alpha Packages` workflow assigns one immutable `0.1.0-alpha.<run>` version to all six packages, runs the complete QA gate, exchanges GitHub's OIDC identity for a short-lived NuGet credential, and publishes `Nodal.Core` before its dependent packages. No long-lived NuGet API key is stored by the repository.
 
 The GitHub `staging` environment must define `NUGET_USER` as the NuGet profile name. NuGet Trusted Publishing must match repository owner `Greenstone-Research-Lab`, repository `NodalFramework`, workflow file `publish-alpha.yml`, and environment `staging`. Publishing deliberately does not use `--skip-duplicate`, ensuring package conflicts and reserved identifiers fail visibly.
 
