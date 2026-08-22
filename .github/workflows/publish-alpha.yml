@@ -55,7 +55,7 @@ jobs:
         run: ./eng/verify.ps1 -PackageVersion $env:PACKAGE_VERSION
 
       - name: Upload verified package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v7
         with:
           name: nodal-${{ env.PACKAGE_VERSION }}
           path: |
