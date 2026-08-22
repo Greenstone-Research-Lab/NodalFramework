@@ -1,0 +1,19 @@
+<Project Sdk="Microsoft.NET.Sdk">
+
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Nodal.Analytics</AssemblyName>
+    <PackageId>Nodal.Analytics</PackageId>
+    <Title>Nodal Framework Analytics</Title>
+    <Description>Provider-neutral graph similarity, pattern discovery, community, sequence, and temporal analytics for Nodal Framework.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+
+  <ItemGroup>
+    <ProjectReference Include="..\Nodal.Core\Nodal.Core.csproj" />
+    <Compile Include="..\Nodal.PatternRecognition\Similarity\PatternSimilarityScore.cs" Link="PatternRecognition\Similarity\PatternSimilarityScore.cs" />
+    <Compile Include="..\Nodal.PatternRecognition\Similarity\PatternBitVector.cs" Link="PatternRecognition\Similarity\PatternBitVector.cs" />
+    <Compile Include="..\Nodal.PatternRecognition\Similarity\PatternBitsetSimilarity.cs" Link="PatternRecognition\Similarity\PatternBitsetSimilarity.cs" />
+  </ItemGroup>
+
+</Project>

@@ -2,7 +2,7 @@
 
 > Provider-neutral, strongly typed graph data access for .NET 10. Nodal Framework maps POCO nodes and relationship payloads, translates fluent queries to native provider languages, normalizes results, tracks changes, commits mutation plans, and applies portable migration intent.
 
-`Nodal.PatternRecognition` is the optional provider-neutral analytics shell for path similarity, communities, sequences, and temporal transitions. It consumes canonical results above the provider layer; native pushdown is an optimization rather than a change in semantics.
+`Nodal.Analytics` is the optional provider-neutral analytics shell for path similarity, communities, sequences, and temporal transitions. It consumes canonical results above the provider layer; native pushdown is an optimization rather than a change in semantics. `Nodal.PatternRecognition` is the deprecated alpha package name.
 
 Canonical documentation: https://nodalframework.pages.dev/docs/intro
 Source repository: https://github.com/Greenstone-Research-Lab/NodalFramework

@@ -1,7 +1,7 @@
 using System.Text.Json;
 using Nodal.Core.Analytics;
 using Nodal.Core.Providers;
-using Nodal.PatternRecognition.Similarity;
+using Nodal.Analytics.Similarity;
 
 namespace Nodal.ArchitectureTests;
 

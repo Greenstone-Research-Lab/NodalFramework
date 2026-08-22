@@ -1,11 +1,11 @@
 ---
 title: Pattern Recognition analytics shell
-description: Understand how Nodal.PatternRecognition adds portable path similarity and pattern discovery above graph database providers.
+description: Understand how Nodal.Analytics adds portable path similarity and pattern discovery above graph database providers.
 ---
 
 # Pattern Recognition analytics shell
 
-`Nodal.PatternRecognition` is the provider-neutral analytics layer of Nodal
+`Nodal.Analytics` is the provider-neutral analytics layer of Nodal
 Framework. It sits above `Nodal.Core` and provider packages, consumes canonical
 graph results, and produces explainable similarity, community, sequence, and
 temporal-transition evidence.

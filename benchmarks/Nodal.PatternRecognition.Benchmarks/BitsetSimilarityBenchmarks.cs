@@ -1,7 +1,7 @@
 using BenchmarkDotNet.Attributes;
-using Nodal.PatternRecognition.Similarity;
+using Nodal.Analytics.Similarity;
 
-namespace Nodal.PatternRecognition.Benchmarks;
+namespace Nodal.Analytics.Benchmarks;
 
 [MemoryDiagnoser]
 [ShortRunJob]
