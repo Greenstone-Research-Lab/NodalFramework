@@ -1,6 +1,6 @@
 # Nodal Framework — coding-agent context
 
-Nodal Framework is a provider-based .NET 10 graph data access framework. Application code models nodes and relationship payloads as POCOs. Nodal.Core owns portable metadata, typed sets, expression translation, canonical results, identity resolution, change tracking, and unit-of-work planning. Nodal.Neo4j and Nodal.TigerGraph compile and execute the portable model through native transports. Nodal.Migrations expresses portable schema intent. Nodal.PatternRecognition sits above Nodal.Core and database providers as an optional analytics shell. It consumes canonical graph paths, events, and capability declarations; provider-native pushdown is an optimization, while portable evidence and semantics remain stable.
+Nodal Framework is a provider-based .NET 10 graph data access framework. Application code models nodes and relationship payloads as POCOs. Nodal.Core owns portable metadata, typed sets, expression translation, canonical results, identity resolution, change tracking, and unit-of-work planning. Nodal.Neo4j and Nodal.TigerGraph compile and execute the portable model through native transports. Nodal.Migrations expresses portable schema intent. Nodal.Analytics sits above Nodal.Core and database providers as an optional analytics shell. It consumes canonical graph paths, events, and capability declarations; provider-native pushdown is an optimization, while portable evidence and semantics remain stable. Nodal.PatternRecognition is the deprecated alpha package name.
 
 ## Installation and host integration
 
@@ -62,7 +62,7 @@ Nodal Framework is a provider-based .NET 10 graph data access framework. Applica
 ## Planned work
 
 - P2 hardens provider certification, samples, migrations, analytics write-back, event/outbox integration, capability metadata, and stable releases.
-- P3 plans the optional `Nodal.PatternRecognition` package for bounded path signatures, heterogeneous similarity, sparse path communities, frequent sequences, temporal transitions, and explainable evidence.
+- P3 delivers the optional `Nodal.Analytics` package for bounded path signatures, heterogeneous similarity, sparse path communities, frequent sequences, temporal transitions, and explainable evidence.
 - `Nodal.Memgraph` and `Nodal.ArangoDB` are provider expansion candidates, not shipped packages.
 - P4+ research items such as temporal graph neural networks and online model learning are not compatibility promises.
 - Roadmap: https://nodalframework.pages.dev/docs/roadmap

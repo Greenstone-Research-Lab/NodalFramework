@@ -69,7 +69,7 @@ export default function Home() {
           <div className={styles.analyticsCopy}>
             <small>EXPERIMENTAL · P3</small>
             <h2>Pattern intelligence above every provider.</h2>
-            <p><code>Nodal.PatternRecognition</code> is an optional analytics shell over canonical graph paths. It combines exact bitset similarity, sparse candidate search, communities, and temporal transitions while preserving provider-native acceleration.</p>
+            <p><code>Nodal.Analytics</code> is an optional analytics shell over canonical graph paths. It combines exact bitset similarity, sparse candidate search, communities, and temporal transitions while preserving provider-native acceleration.</p>
             <Link to="/docs/concepts/pattern-recognition-shell">Explore the analytics shell →</Link>
           </div>
         </section>

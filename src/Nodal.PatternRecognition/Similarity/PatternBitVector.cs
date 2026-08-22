@@ -1,6 +1,6 @@
 using System.Numerics;
 
-namespace Nodal.PatternRecognition.Similarity;
+namespace Nodal.Analytics.Similarity;
 
 /// <summary>
 /// Represents a fixed-width, typed multi-hot feature vector used to compare canonical graph paths.

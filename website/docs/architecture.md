@@ -12,7 +12,7 @@ flowchart TB
   Contract --> Neo["Nodal.Neo4j\nCypher · Bolt"]
   Contract --> Tiger["Nodal.TigerGraph\nGSQL · REST++"]
   Migrations["Nodal.Migrations\nportable schema intent"] --> Contract
-  Core --> Pattern["Nodal.PatternRecognition\noptional analytics shell"]
+  Core --> Pattern["Nodal.Analytics\noptional analytics shell"]
   Neo -. "capabilities and native pushdown" .-> Pattern
   Tiger -. "capabilities and native pushdown" .-> Pattern
 ```
@@ -32,7 +32,7 @@ This separation keeps native performance opportunities without making the domain
 
 ## The analytics shell
 
-`Nodal.PatternRecognition` is an optional layer above the provider boundary,
+`Nodal.Analytics` is an optional layer above the provider boundary,
 not a provider and not a dependency of provider packages. It consumes canonical
 graph paths and change events, builds typed feature representations, compares
 paths, discovers communities and temporal transitions, and returns versioned

@@ -1,6 +1,6 @@
 ---
 title: Roadmap
-description: Delivered foundations, the P2 hardening backlog, and the P3 Pattern Recognition program for Nodal Framework.
+description: Delivered foundations, the beta package correction, the P2 hardening backlog, and the P3 analytics program for Nodal Framework.
 ---
 
 # Roadmap
@@ -17,6 +17,26 @@ shortest paths, weighted GDS path compilers, TigerGraph installed-query
 execution, runtime capability discovery, Neo4j projection lifecycle management,
 typed options, and compiled analytics factories.
 
+## Completed - analytics package boundary correction
+
+1. Renamed the analytics package boundary to `Nodal.Analytics` before the beta line.
+   The current similarity kernel and future path, community, centrality,
+   pattern, temporal, vector, and execution surfaces under the broader analytics
+   boundary. Preserve `Nodal.PatternRecognition` as a temporary transition
+   package, mark it deprecated on NuGet with `Nodal.Analytics` as its suggested
+   replacement, and update source, tests, benchmarks, samples, documentation,
+   capability metadata, and publishing workflows together. Treat
+   `Nodal.Semantics` as a separate future package for ontology, taxonomy, entity
+   resolution, inference, provenance, and knowledge-graph concerns rather than
+   overloading the analytics package.
+## Next - Sonar quality gate
+
+1. Add SonarCloud/SonarQube analysis to the protected CI path. Import the
+   Coverlet coverage report, configure a repository quality profile and quality
+   gate, publish the result on pull requests, and make the gate a required branch
+   check alongside formatting, tests, coverage, package validation, and live
+   provider smoke tests.
+
 ## P2 - production hardening
 
 - Certify Neo4j GDS and TigerGraph installed-query behavior against explicit
@@ -32,7 +52,7 @@ typed options, and compiled analytics factories.
   agents.
 - Establish versioned documentation and a stable package promotion policy.
 
-## P3 - Nodal.PatternRecognition alpha
+## P3 - Nodal.Analytics alpha
 
 P3 introduces an optional package for discovering repeated structures and
 temporal behavior without changing the responsibilities of `Nodal.Core`.
@@ -40,7 +60,8 @@ temporal behavior without changing the responsibilities of `Nodal.Core`.
 ### Foundation
 
 1. Record the package boundaries and execution architecture in an ADR.
-2. Create the `Nodal.PatternRecognition` package and dependency rules.
+2. Complete the `Nodal.Analytics` package and dependency rules after the beta
+   boundary correction.
 3. Define canonical path, pattern, observation, and result contracts.
 4. Define event time, observation time, validity time, sessions, and windows.
 5. Add a provider-neutral pattern DSL and canonical analysis plan.
