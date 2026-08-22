@@ -3,6 +3,7 @@
     <Project Path="src/Nodal.Core/Nodal.Core.csproj" />
     <Project Path="src/Nodal.Migrations/Nodal.Migrations.csproj" />
     <Project Path="src/Nodal.Neo4j/Nodal.Neo4j.csproj" />
+    <Project Path="src/Nodal.Analytics/Nodal.Analytics.csproj" />
     <Project Path="src/Nodal.PatternRecognition/Nodal.PatternRecognition.csproj" />
     <Project Path="src/Nodal.TigerGraph/Nodal.TigerGraph.csproj" />
   </Folder>

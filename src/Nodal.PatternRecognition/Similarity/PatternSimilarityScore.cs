@@ -1,4 +1,4 @@
-namespace Nodal.PatternRecognition.Similarity;
+namespace Nodal.Analytics.Similarity;
 
 /// <summary>
 /// Contains explainable binary similarity measurements for two path feature vectors.

@@ -1,7 +1,7 @@
 using System.Numerics;
 using System.Runtime.Intrinsics;
 
-namespace Nodal.PatternRecognition.Similarity;
+namespace Nodal.Analytics.Similarity;
 
 /// <summary>
 /// Computes allocation-free structural similarity over equally shaped path feature vectors.
