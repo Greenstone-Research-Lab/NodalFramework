@@ -15,8 +15,11 @@ public sealed class TigerGraphMigrationExecutorTests
 
         Assert.False(plain.SupportsMigrationExecution);
         Assert.Throws<NotSupportedException>(() => plain.MigrationExecutor);
+        Assert.Throws<NotSupportedException>(() => plain.MigrationHistory);
         Assert.True(configured.SupportsMigrationExecution);
         Assert.IsType<TigerGraphMigrationExecutor>(configured.MigrationExecutor);
+        Assert.IsType<TigerGraphMigrationHistoryStore>(configured.MigrationHistory);
+        Assert.Equal("tigergraph:SocialGraph", configured.MigrationHistoryScope);
     }
 
     [Fact]
@@ -80,6 +83,81 @@ public sealed class TigerGraphMigrationExecutorTests
         Assert.Equal(3, transport.Commands.Count);
         Assert.StartsWith("DROP JOB", transport.Commands[^1].Text, StringComparison.Ordinal);
         Assert.Single(handler.Requests);
+    }
+
+    [Fact]
+    public async Task StatefulHistoryStoreReadsWritesAndRemovesEntries()
+    {
+        var handler = new QueueHandler(
+        [
+            """{"error":false,"results":{"VertexTypes":[{"Name":"__NodalMigration"}]}}""",
+        """
+        {
+          "error": false,
+          "results": [
+            {
+              "v_id": "001_stateful",
+              "attributes": {
+                "Checksum": "checksum-001",
+                "State": "Applying",
+                "StartedAt": "2026-08-23T10:00:00.0000000+00:00",
+                "CompletedAt": "",
+                "FailureMessage": "",
+                "FailureType": "",
+                "FailureAt": ""
+              }
+            }
+          ]
+        }
+        """,
+        """{"error":false,"results":[{"accepted_vertices":1}]}""",
+        """{"error":false,"results":[{"deleted_vertices":1}]}"""
+        ]);
+
+        using var client = new HttpClient(handler);
+        var transport = new RecordingTransport();
+
+        var store = new TigerGraphMigrationHistoryStore(
+            client,
+            Options(),
+            "SocialGraph",
+            transport);
+
+        var history = await store.GetMigrationHistoryAsync();
+
+        Assert.Single(history);
+        Assert.Equal(
+            MigrationExecutionState.Applying,
+            history["001_stateful"].State);
+        Assert.Equal(
+            "checksum-001",
+            history["001_stateful"].Checksum);
+
+        var entry = new MigrationHistoryEntry(
+            "001_stateful",
+            "checksum-001",
+            MigrationExecutionState.Applied,
+            DateTimeOffset.UnixEpoch,
+            DateTimeOffset.UnixEpoch.AddMinutes(1));
+
+        await store.SaveMigrationHistoryAsync(entry);
+        await store.RemoveMigrationHistoryAsync("001_stateful");
+
+        Assert.Equal(4, handler.Requests.Count);
+        Assert.Equal(HttpMethod.Get, handler.Requests[0].Method);
+        Assert.Equal(HttpMethod.Get, handler.Requests[1].Method);
+        Assert.Equal(HttpMethod.Post, handler.Requests[2].Method);
+        Assert.Equal(HttpMethod.Delete, handler.Requests[3].Method);
+
+        Assert.Contains(
+            "\"State\":{\"value\":\"Applied\"}",
+            handler.Requests[2].Content,
+            StringComparison.Ordinal);
+
+        Assert.EndsWith(
+            "/__NodalMigration/001_stateful",
+            handler.Requests[3].Uri,
+            StringComparison.Ordinal);
     }
 
     private static MigrationExecution Execution() => new(

@@ -67,6 +67,34 @@ public sealed class MigrationRunnerTests
     }
 
     [Fact]
+    public async Task ProviderNoOpCommandsStillDetectChangedSchemaOperations()
+    {
+        var provider = new RecordingProvider(new NoOpDialect());
+        var runner = new MigrationRunner(provider);
+        await runner.MigrateAsync([new FirstMigration()]);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await runner.PlanAsync([new ChangedFirstMigration()]));
+    }
+
+    [Fact]
+    public async Task MigrationUsesProviderLockAndReleasesLease()
+    {
+        var provider = new LockingProvider();
+        var runner = new MigrationRunner(provider);
+
+        var plan = await runner.MigrateAsync([new FirstMigration()]);
+
+        Assert.Single(plan.Executions);
+        Assert.Equal(
+            ["neo4j://localhost:7687/database/neo4j"],
+            provider.Lock.AcquiredScopes);
+        Assert.Equal(1, provider.Lock.AcquisitionCount);
+        Assert.Equal(1, provider.Lock.ReleaseCount);
+        Assert.Equal(0, provider.Lock.ActiveLeaseCount);
+    }
+
+    [Fact]
     public async Task ContextDatabaseFacadeExposesDryRunAndExecutionExtensions()
     {
         var provider = new RecordingProvider();
@@ -106,13 +134,94 @@ public sealed class MigrationRunnerTests
 
     private sealed class EmptyContext(IGraphProvider provider) : NodalContext(provider);
 
+    private sealed class LockingProvider :
+    IGraphMigrationProvider,
+    IGraphMigrationLockProvider,
+    IGraphProvider
+    {
+        public LockingProvider()
+        {
+            MigrationExecutor = new RecordingExecutor();
+            MigrationDialect = new RecordingDialect();
+            Lock = new RecordingMigrationLock();
+        }
+
+        public bool SupportsMigrationExecution => true;
+
+        public IGraphMigrationDialect MigrationDialect { get; }
+
+        public IGraphMigrationExecutor MigrationExecutor { get; }
+
+        public IGraphMigrationLock MigrationLock => Lock;
+
+        public string MigrationLockScope =>
+            "neo4j://localhost:7687/database/neo4j";
+
+        public RecordingMigrationLock Lock { get; }
+
+        public IGraphQueryCompiler QueryCompiler =>
+            throw new NotSupportedException();
+
+        public IGraphCommandExecutor CommandExecutor =>
+            throw new NotSupportedException();
+
+        public IGraphResultMaterializer ResultMaterializer =>
+            throw new NotSupportedException();
+    }
+
+    private sealed class RecordingMigrationLock : IGraphMigrationLock
+    {
+        public List<string> AcquiredScopes { get; } = [];
+
+        public int AcquisitionCount { get; private set; }
+
+        public int ReleaseCount { get; private set; }
+
+        public int ActiveLeaseCount { get; private set; }
+
+        public ValueTask<IAsyncDisposable> AcquireAsync(
+            string scope,
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+
+            AcquiredScopes.Add(scope);
+            AcquisitionCount++;
+            ActiveLeaseCount++;
+
+            return ValueTask.FromResult<IAsyncDisposable>(
+                new Lease(this));
+        }
+
+        private sealed class Lease(RecordingMigrationLock owner) : IAsyncDisposable
+        {
+            private int disposed;
+
+            public ValueTask DisposeAsync()
+            {
+                if (Interlocked.Exchange(ref disposed, 1) == 0)
+                {
+                    owner.ActiveLeaseCount--;
+                    owner.ReleaseCount++;
+                }
+
+                return ValueTask.CompletedTask;
+            }
+        }
+    }
+
     private sealed class RecordingProvider : IGraphMigrationProvider, IGraphProvider
     {
         public bool SupportsMigrationExecution => true;
 
-        public IGraphMigrationDialect MigrationDialect { get; } = new RecordingDialect();
+        public IGraphMigrationDialect MigrationDialect { get; }
 
         public RecordingExecutor Executor { get; } = new();
+
+        public RecordingProvider(IGraphMigrationDialect? dialect = null)
+        {
+            MigrationDialect = dialect ?? new RecordingDialect();
+        }
 
         IGraphMigrationExecutor IGraphMigrationProvider.MigrationExecutor => Executor;
 
@@ -127,6 +236,11 @@ public sealed class MigrationRunnerTests
     {
         public IReadOnlyList<MigrationCommand> Compile(IReadOnlyList<MigrationOperation> operations) =>
             operations.Select(operation => new MigrationCommand(operation.GetType().Name, true)).ToArray();
+    }
+
+    private sealed class NoOpDialect : IGraphMigrationDialect
+    {
+        public IReadOnlyList<MigrationCommand> Compile(IReadOnlyList<MigrationOperation> operations) => [];
     }
 
     private sealed class RecordingExecutor : IGraphMigrationExecutor

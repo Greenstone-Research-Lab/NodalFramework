@@ -9,16 +9,20 @@ namespace Nodal.TigerGraph;
 /// <summary>
 /// Provides the complete Nodal query pipeline for a TigerGraph graph.
 /// </summary>
-public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider, IGraphMigrationProvider,
+public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider, IGraphMigrationProvider, IGraphMigrationHistoryProvider,
     IGraphAnalyticsProvider, IGraphAnalyticsRuntimeProvider
 {
     private readonly IGraphMigrationExecutor? migrationExecutor;
+    private readonly IGraphMigrationHistoryStore? migrationHistory;
+    private readonly string graphName;
+
 
     /// <summary>
     /// Initializes a provider using an externally managed HTTP client.
     /// </summary>
     public TigerGraphProvider(HttpClient httpClient, TigerGraphOptions options, string graphName)
     {
+        this.graphName = graphName;
         QueryCompiler = new TigerGraphQueryCompiler(graphName);
         CommandExecutor = new TigerGraphCommandExecutor(httpClient, options);
         MutationExecutor = new TigerGraphMutationExecutor(httpClient, options, graphName);
@@ -66,6 +70,11 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider,
             options,
             graphName,
             administrativeTransport);
+        migrationHistory = new TigerGraphMigrationHistoryStore(
+            httpClient,
+            options,
+            graphName,
+            administrativeTransport);
     }
 
     /// <inheritdoc />
@@ -98,6 +107,18 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider,
     /// <inheritdoc />
     public IGraphMigrationExecutor MigrationExecutor => migrationExecutor ?? throw new NotSupportedException(
         "TigerGraph migration execution requires an ITigerGraphAdministrativeTransport.");
+
+
+    /// <inheritdoc />
+    public IGraphMigrationHistoryStore MigrationHistory =>
+        migrationHistory
+        ?? throw new NotSupportedException(
+            "TigerGraph stateful migration history requires " +
+            "an ITigerGraphAdministrativeTransport.");
+
+    /// <inheritdoc />
+    public string MigrationHistoryScope =>
+        $"tigergraph:{graphName}";
 
     /// <inheritdoc />
     public GraphProviderCapabilities Capabilities { get; } = new()

@@ -48,19 +48,112 @@ public sealed class MigrationRunner(IGraphMigrationProvider provider)
         return new MigrationPlan(executions);
     }
 
-    /// <summary>Applies each pending migration in declaration order.</summary>
+    /// <summary>
+    /// Applies each pending migration in declaration order.
+    /// </summary>
+    /// <remarks>
+    /// When the provider exposes migration locking, the complete migration
+    /// application runs under one provider-scoped lease. Planning remains
+    /// side-effect free and does not acquire a lock.
+    /// </remarks>
     public async ValueTask<MigrationPlan> MigrateAsync(
         IEnumerable<NodalMigration> migrations,
         CancellationToken cancellationToken = default)
     {
-        var plan = await PlanAsync(migrations, cancellationToken).ConfigureAwait(false);
+        ArgumentNullException.ThrowIfNull(migrations);
+
+        var ordered = migrations.ToArray();
+
+        if (provider is not IGraphMigrationLockProvider lockProvider)
+        {
+            return await MigrateCoreAsync(ordered, cancellationToken)
+                .ConfigureAwait(false);
+        }
+
+        await using var lease = await lockProvider.MigrationLock
+            .AcquireAsync(
+                lockProvider.MigrationLockScope,
+                cancellationToken)
+            .ConfigureAwait(false);
+
+        return await MigrateCoreAsync(ordered, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask<MigrationPlan> MigrateCoreAsync(
+        IReadOnlyList<NodalMigration> migrations,
+        CancellationToken cancellationToken)
+    {
+        var plan = await PlanAsync(migrations, cancellationToken)
+            .ConfigureAwait(false);
+
+        var history = provider is IGraphMigrationHistoryProvider historyProvider
+            ? historyProvider.MigrationHistory
+            : null;
+
         foreach (var execution in plan.Executions)
         {
-            await provider.MigrationExecutor.ApplyAsync(execution, cancellationToken).ConfigureAwait(false);
+            cancellationToken.ThrowIfCancellationRequested();
+
+            var startedAt = DateTimeOffset.UtcNow;
+
+            if (history is not null)
+            {
+                await history.SaveMigrationHistoryAsync(
+                    new MigrationHistoryEntry(
+                        execution.Id,
+                        execution.Checksum,
+                        MigrationExecutionState.Applying,
+                        StartedAt: startedAt),
+                    cancellationToken).ConfigureAwait(false);
+            }
+
+            try
+            {
+                await provider.MigrationExecutor
+                    .ApplyAsync(execution, cancellationToken)
+                    .ConfigureAwait(false);
+
+                if (history is not null)
+                {
+                    await history.SaveMigrationHistoryAsync(
+                        new MigrationHistoryEntry(
+                            execution.Id,
+                            execution.Checksum,
+                            MigrationExecutionState.Applied,
+                            StartedAt: startedAt,
+                            CompletedAt: DateTimeOffset.UtcNow),
+                        cancellationToken).ConfigureAwait(false);
+                }
+            }
+            catch (Exception exception)
+            {
+                if (history is not null)
+                {
+                    var failure = new MigrationExecutionFailure(
+                        exception.Message,
+                        exception.GetType().FullName
+                        ?? exception.GetType().Name,
+                        DateTimeOffset.UtcNow);
+
+                    await history.SaveMigrationHistoryAsync(
+                        new MigrationHistoryEntry(
+                            execution.Id,
+                            execution.Checksum,
+                            MigrationExecutionState.Failed,
+                            StartedAt: startedAt,
+                            CompletedAt: DateTimeOffset.UtcNow,
+                            Failure: failure),
+                        cancellationToken).ConfigureAwait(false);
+                }
+
+                throw;
+            }
         }
 
         return plan;
     }
+
 
     /// <summary>Reverts one explicitly selected reversible migration.</summary>
     public async ValueTask<MigrationExecution> RevertAsync(
@@ -92,8 +185,7 @@ public sealed class MigrationRunner(IGraphMigrationProvider provider)
     private MigrationExecution BuildExecution(string id, IReadOnlyList<MigrationOperation> operations)
     {
         var commands = provider.MigrationDialect.Compile(operations);
-        var canonical = string.Join("\n", commands.Select(command =>
-            $"{command.Kind}|{command.IsTransactional}|{command.Text}"));
+        var canonical = MigrationCanonicalizer.Build(operations, commands);
         var checksum = Convert.ToHexString(SHA256.HashData(Encoding.UTF8.GetBytes(canonical))).ToLowerInvariant();
         return new MigrationExecution(id, checksum, commands);
     }

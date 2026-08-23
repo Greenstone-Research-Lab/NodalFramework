@@ -16,3 +16,6 @@ website/static/api/
 docs/api/.docfx/
 docs/api/api/*.yml
 docs/api/api/.manifest
+
+# Local product and experiment notes
+TODO/
