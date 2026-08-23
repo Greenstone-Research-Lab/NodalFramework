@@ -78,6 +78,28 @@ public sealed class MigrationRunnerTests
     }
 
     [Fact]
+    public async Task UnsupportedMigrationFailsBeforeProviderApply()
+    {
+        var provider = new RecordingProvider(
+            new RejectingDialect());
+
+        var runner = new MigrationRunner(provider);
+
+        var exception = await Assert.ThrowsAsync<
+            NodalCapabilityNotSupportedException>(
+            async () => await runner.MigrateAsync(
+            [
+                new FirstMigration()
+            ]));
+
+        Assert.Contains(
+            "NODAL-MIGRATION-UNSUPPORTED",
+            exception.Message);
+
+        Assert.Empty(provider.Executor.Applied);
+    }
+
+    [Fact]
     public async Task MigrationUsesProviderLockAndReleasesLease()
     {
         var provider = new LockingProvider();
@@ -131,6 +153,113 @@ public sealed class MigrationRunnerTests
         Assert.Throws<ArgumentException>(() =>
             new MigrationBuilder().CreateIndex<Person, int>(person => person.Email.Length));
     }
+
+    [Fact]
+    public async Task EmptyAndOutOfOrderMigrationIdentifiersAreRejected()
+    {
+        var runner = new MigrationRunner(
+            new RecordingProvider());
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await runner.PlanAsync(
+            [
+                new EmptyIdentifierMigration()
+            ]));
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await runner.PlanAsync(
+            [
+                new SecondMigration(),
+            new FirstMigration()
+            ]));
+    }
+
+    [Fact]
+    public async Task DestructiveMigrationRequiresExplicitApproval()
+    {
+        var provider = new RecordingProvider();
+        var runner = new MigrationRunner(provider);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await runner.MigrateAsync(
+            [
+                new DestructiveMigration()
+            ]));
+
+        Assert.Empty(provider.Executor.Applied);
+    }
+
+    [Fact]
+    public async Task DestructiveMigrationRunsWhenExplicitlyApproved()
+    {
+        var provider = new RecordingProvider();
+        var runner = new MigrationRunner(provider);
+
+        var result = await runner.MigrateAsync(
+            [
+                new DestructiveMigration()
+            ],
+            new MigrationExecutionOptions
+            {
+                AllowDestructiveOperations = true
+            });
+
+        Assert.Single(result.Executions);
+        Assert.Equal(
+            ["003_destructive"],
+            provider.Executor.Applied);
+    }
+
+    [Fact]
+    public async Task DryRunExposesPreflightFindings()
+    {
+        var provider = new RecordingProvider();
+        var runner = new MigrationRunner(provider);
+
+        var plan = await runner.PlanAsync(
+        [
+            new DestructiveMigration()
+        ]);
+
+        Assert.True(
+            plan.Preflight.ContainsKey("003_destructive"));
+
+        var result = plan.Preflight["003_destructive"];
+
+        Assert.True(result.RequiresApproval);
+        Assert.Contains(
+            result.Issues,
+            issue => issue.Kind is MigrationPreflightKind.Destructive);
+        Assert.Contains(
+            result.Issues,
+            issue => issue.Code == "NODAL-MIGRATION-SUPPORTED");
+    }
+
+    [Fact]
+    public async Task ProviderNoOpPlanReportsNativeSchemaWarning()
+    {
+        var provider = new RecordingProvider(
+            new NoOpDialect());
+
+        var runner = new MigrationRunner(provider);
+
+        var plan = await runner.PlanAsync(
+        [
+            new FirstMigration()
+        ]);
+
+        var result = plan.Preflight["001_first"];
+
+        Assert.True(result.IsValid);
+        Assert.True(result.HasWarnings);
+        Assert.Contains(
+            result.Issues,
+            issue => issue.Kind is MigrationPreflightKind.Warning);
+        Assert.Contains(
+            result.Issues,
+            issue => issue.Code == "NODAL-MIGRATION-NATIVE-SCHEMA");
+    }
+
 
     private sealed class EmptyContext(IGraphProvider provider) : NodalContext(provider);
 
@@ -314,4 +443,43 @@ public sealed class MigrationRunnerTests
 
     [GraphRelation("KNOWS")]
     private sealed record Knows(DateTime Since);
+
+
+    private sealed class EmptyIdentifierMigration : NodalMigration
+    {
+        public override string Id => string.Empty;
+
+        protected override void Up(MigrationBuilder migration)
+        {
+        }
+
+        protected override void Down(MigrationBuilder migration)
+        {
+        }
+    }
+
+    private sealed class RejectingDialect : IGraphMigrationDialect
+    {
+        public IReadOnlyList<MigrationCommand> Compile(
+            IReadOnlyList<MigrationOperation> operations)
+        {
+            throw new NotSupportedException(
+                "The provider does not support this migration operation.");
+        }
+    }
+
+    private sealed class DestructiveMigration : NodalMigration
+    {
+        public override string Id => "003_destructive";
+
+        protected override void Up(MigrationBuilder migration)
+        {
+            migration.DropNode<Person>();
+        }
+
+        protected override void Down(MigrationBuilder migration)
+        {
+            migration.CreateNode<Person>();
+        }
+    }
 }
