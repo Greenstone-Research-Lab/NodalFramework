@@ -174,6 +174,33 @@ public sealed class MigrationRunnerTests
     }
 
     [Fact]
+    public void BuilderCreatesIndexesConstraintsRenamesAndTypeChanges()
+    {
+        var builder = new MigrationBuilder()
+            .CreateUniqueConstraint<Person, string>(person => person.Email)
+            .DropIndex<Person, string>(person => person.Email)
+            .DropUniqueConstraint<Person, string>(person => person.Email)
+            .RenameNodeProperty<Person, string>(person => person.Email, "email")
+            .RenameRelationProperty<Knows, DateTime>(relation => relation.Since, "connected_at")
+            .AlterNodePropertyType<Person, string, Uri>(
+                person => person.Email,
+                MigrationPropertyTypeCompatibility.RequiresRewrite)
+            .AlterRelationPropertyType<Knows, DateTime, long>(
+                relation => relation.Since,
+                MigrationPropertyTypeCompatibility.Destructive);
+
+        Assert.Collection(
+            builder.Operations,
+            operation => Assert.IsType<CreateUniqueConstraintOperation>(operation),
+            operation => Assert.IsType<DropIndexOperation>(operation),
+            operation => Assert.IsType<DropUniqueConstraintOperation>(operation),
+            operation => Assert.IsType<RenameNodePropertyOperation>(operation),
+            operation => Assert.IsType<RenameRelationPropertyOperation>(operation),
+            operation => Assert.IsType<AlterNodePropertyTypeOperation>(operation),
+            operation => Assert.IsType<AlterRelationPropertyTypeOperation>(operation));
+    }
+
+    [Fact]
     public async Task BackfillExecutorHonorsBoundedBatchesAndContinuation()
     {
         var executor = new BoundedMigrationBackfillExecutor();
@@ -322,6 +349,16 @@ public sealed class MigrationRunnerTests
         Assert.Contains(
             result.Issues,
             issue => issue.Code == "NODAL-MIGRATION-NATIVE-SCHEMA");
+    }
+
+    [Fact]
+    public async Task PlanCanonicalizesCompletePropertyEvolution()
+    {
+        var plan = await new MigrationRunner(new RecordingProvider())
+            .PlanAsync([new CompleteEvolutionMigration()]);
+
+        var execution = Assert.Single(plan.Executions);
+        Assert.Equal(64, execution.Checksum.Length);
     }
 
 
@@ -544,6 +581,37 @@ public sealed class MigrationRunnerTests
         protected override void Down(MigrationBuilder migration)
         {
             migration.CreateNode<Person>();
+        }
+    }
+
+    private sealed class CompleteEvolutionMigration : NodalMigration
+    {
+        public override string Id => "005_complete_evolution";
+
+        protected override void Up(MigrationBuilder migration)
+        {
+            migration
+                .CreateUniqueConstraint<Person, string>(person => person.Email)
+                .CreateIndex<Person, string>(person => person.Email)
+                .AddNodeProperty<Person, string>(person => person.Email)
+                .AddRelationProperty<Knows, DateTime>(relation => relation.Since)
+                .RenameNodeProperty<Person, string>(person => person.Email, "email_address")
+                .RenameRelationProperty<Knows, DateTime>(relation => relation.Since, "connected_at")
+                .AlterNodePropertyType<Person, string, Uri>(
+                    person => person.Email,
+                    MigrationPropertyTypeCompatibility.RequiresRewrite)
+                .AlterRelationPropertyType<Knows, DateTime, long>(
+                    relation => relation.Since,
+                    MigrationPropertyTypeCompatibility.Destructive);
+            migration
+                .DropIndex<Person, string>(person => person.Email)
+                .DropUniqueConstraint<Person, string>(person => person.Email)
+                .DropNodeProperty<Person, string>(person => person.Email)
+                .DropRelationProperty<Knows, DateTime>(relation => relation.Since);
+        }
+
+        protected override void Down(MigrationBuilder migration)
+        {
         }
     }
 

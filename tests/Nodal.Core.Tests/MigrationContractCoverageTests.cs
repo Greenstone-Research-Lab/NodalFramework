@@ -48,6 +48,25 @@ public sealed class MigrationContractCoverageTests
         Assert.Equal(
             MigrationPropertyTypeCompatibility.Destructive,
             ((AlterRelationPropertyTypeOperation)operations[10]).Compatibility);
+
+        Assert.Equal(typeof(string), property.ClrType);
+        Assert.Equal("Person", ((CreateUniqueConstraintOperation)operations[0]).NodeType);
+        Assert.Equal("Person", ((DropIndexOperation)operations[1]).NodeType);
+        Assert.Equal("Person", ((DropUniqueConstraintOperation)operations[2]).NodeType);
+        Assert.Equal("Person", ((AddNodePropertyOperation)operations[3]).NodeType);
+        Assert.Equal("KNOWS", ((AddRelationPropertyOperation)operations[4]).RelationType);
+        Assert.Equal("Person", ((DropNodePropertyOperation)operations[5]).NodeType);
+        Assert.Equal("KNOWS", ((DropRelationPropertyOperation)operations[6]).RelationType);
+        Assert.Equal("name", ((RenameNodePropertyOperation)operations[7]).OldPropertyName);
+        Assert.Equal("label", ((RenameRelationPropertyOperation)operations[8]).NewPropertyName);
+        Assert.Equal(typeof(int), ((AlterNodePropertyTypeOperation)operations[9]).OldClrType);
+        Assert.Equal(typeof(long), ((AlterNodePropertyTypeOperation)operations[9]).NewClrType);
+        Assert.Equal(typeof(int), ((AlterRelationPropertyTypeOperation)operations[10]).OldClrType);
+        Assert.Equal(typeof(double), ((AlterRelationPropertyTypeOperation)operations[10]).NewClrType);
+
+        var dropSchema = new DropSchemaObjectOperation("ix_person_name", MigrationSchemaObjectKind.Index);
+        Assert.Equal("ix_person_name", dropSchema.Name);
+        Assert.Equal(MigrationSchemaObjectKind.Index, dropSchema.Kind);
     }
 
     [Fact]
@@ -84,6 +103,11 @@ public sealed class MigrationContractCoverageTests
 
         var legacy = new NodalCapabilityNotSupportedException("legacy");
         Assert.Equal("Unknown", legacy.ProviderName);
+
+        var inner = new InvalidOperationException("provider failure");
+        var legacyWithInner = new NodalCapabilityNotSupportedException("legacy", inner);
+        Assert.Same(inner, legacyWithInner.InnerException);
+        Assert.Equal("NODAL-CAPABILITY-UNSPECIFIED", legacyWithInner.CapabilityCode);
     }
 
     [Fact]
@@ -111,5 +135,39 @@ public sealed class MigrationContractCoverageTests
             result.ThrowIfInvalid);
         Assert.Equal("Neo4jMigrationDialect", exception.ProviderName);
         Assert.Equal("NODAL-MIGRATION-UNSUPPORTED", exception.CapabilityCode);
+
+        var valid = new MigrationPreflightResult([], "TigerGraph");
+        valid.ThrowIfInvalid();
+        Assert.True(valid.IsValid);
+        Assert.False(valid.RequiresApproval);
+        Assert.False(valid.HasWarnings);
+    }
+
+    [Fact]
+    public void MigrationStateContractsExposeLifecycleAndFailureMetadata()
+    {
+        var occurred = DateTimeOffset.UtcNow;
+        var failure = new MigrationExecutionFailure(
+            "safe message", "InvalidOperationException", occurred);
+        var history = new MigrationHistoryEntry(
+            "M001", "checksum", MigrationExecutionState.Failed, occurred, occurred, failure);
+        var options = new MigrationExecutionOptions { AllowDestructiveOperations = true };
+        var batch = new MigrationBackfillBatchResult(4, "next", false);
+        var lockError = new MigrationLockUnavailableException(
+            "neo4j://local", "lock unavailable", innerException: null);
+
+        Assert.Equal("safe message", failure.Message);
+        Assert.Equal("InvalidOperationException", failure.ErrorType);
+        Assert.Equal(occurred, failure.OccurredAt);
+        Assert.Equal("M001", history.Id);
+        Assert.Equal("checksum", history.Checksum);
+        Assert.Equal(MigrationExecutionState.Failed, history.State);
+        Assert.Equal(occurred, history.StartedAt);
+        Assert.Equal(occurred, history.CompletedAt);
+        Assert.Same(failure, history.Failure);
+        Assert.True(options.AllowDestructiveOperations);
+        Assert.Equal(4, batch.Processed);
+        Assert.Equal("next", batch.ContinuationToken);
+        Assert.Equal("neo4j://local", lockError.Scope);
     }
 }
