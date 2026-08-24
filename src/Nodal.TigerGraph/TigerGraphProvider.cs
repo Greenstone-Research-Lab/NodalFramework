@@ -3,6 +3,7 @@ using Nodal.Core.Execution;
 using Nodal.Core.Migrations;
 using Nodal.Core.Mutations;
 using Nodal.Core.Providers;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Nodal.TigerGraph;
 
@@ -148,6 +149,7 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider,
     };
 }
 
+[ExcludeFromCodeCoverage]
 internal sealed class UnavailableTigerGraphSchemaIntrospector : IGraphSchemaIntrospector
 {
     public ValueTask<NodalSchemaSnapshot> CaptureAsync(CancellationToken cancellationToken = default) =>

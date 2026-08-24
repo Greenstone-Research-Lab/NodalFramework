@@ -1,8 +1,10 @@
 using System.Collections.Immutable;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Nodal.Core.Migrations;
 
 /// <summary>Represents a versioned, provider-neutral persisted graph schema.</summary>
+[ExcludeFromCodeCoverage]
 public sealed record NodalSchemaSnapshot(
     int FormatVersion,
     IReadOnlyList<NodalNodeSnapshot> Nodes,
@@ -47,6 +49,7 @@ public sealed record NodalSchemaSnapshot(
 }
 
 /// <summary>Describes one graph node in a schema snapshot.</summary>
+[ExcludeFromCodeCoverage]
 public sealed record NodalNodeSnapshot(
     string Name,
     string ClrTypeName,
@@ -63,6 +66,7 @@ public sealed record NodalNodeSnapshot(
 }
 
 /// <summary>Describes one graph relationship in a schema snapshot.</summary>
+[ExcludeFromCodeCoverage]
 public sealed record NodalRelationSnapshot(
     string Name,
     string ClrTypeName,
@@ -81,6 +85,7 @@ public sealed record NodalRelationSnapshot(
 }
 
 /// <summary>Describes a persisted graph property and its CLR semantics.</summary>
+[ExcludeFromCodeCoverage]
 public sealed record NodalPropertySnapshot(
     string Name,
     string ClrName,
@@ -91,6 +96,7 @@ public sealed record NodalPropertySnapshot(
     string? ProviderStorageType = null);
 
 /// <summary>Describes a provider schema index or constraint.</summary>
+[ExcludeFromCodeCoverage]
 public sealed record NodalSchemaObjectSnapshot(
     string Name,
     string ObjectType,

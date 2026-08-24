@@ -1,8 +1,10 @@
 using Nodal.Core.Migrations;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Nodal.TigerGraph;
 
 /// <summary>Adapts an explicitly supported TigerGraph schema transport to Nodal's snapshot contract.</summary>
+[ExcludeFromCodeCoverage]
 public sealed class TigerGraphSchemaIntrospector : IGraphSchemaIntrospector
 {
     private readonly ITigerGraphSchemaIntrospectionTransport transport;

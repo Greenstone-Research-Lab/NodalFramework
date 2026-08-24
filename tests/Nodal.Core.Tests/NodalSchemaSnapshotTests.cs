@@ -154,6 +154,39 @@ public sealed class NodalSchemaSnapshotTests
         Assert.True(plan.RequiresManualReview);
     }
 
+    [Fact]
+    public void MapperCreatesAndRemovesNodeAndRelationOperations()
+    {
+        var before = new NodalSchemaSnapshot(
+            1,
+            [new NodalNodeSnapshot("obsolete", "System.Object", "id", [])],
+            [new NodalRelationSnapshot("OLD", "System.Object", "obsolete", "obsolete", true, [])]);
+        var after = new NodalSchemaSnapshot(
+            1,
+            [new NodalNodeSnapshot("current", "System.Object", "id", [
+                new NodalPropertySnapshot("name", "Name", "System.String", true, false, [])])],
+            [new NodalRelationSnapshot("NEW", "System.Object", "current", "current", true, [])]);
+
+        var plan = NodalSchemaMigrationMapper.Map(
+            before,
+            after,
+            typeResolver: name => name switch
+            {
+                "System.Object" => typeof(object),
+                "System.String" => typeof(string),
+                _ => null,
+            });
+
+        Assert.Contains(plan.Operations, operation => operation is CreateNodeTypeOperation);
+        Assert.Contains(plan.Operations, operation => operation is DropNodeTypeOperation);
+        Assert.Contains(plan.Operations, operation => operation is CreateRelationTypeOperation);
+        Assert.Contains(plan.Operations, operation => operation is DropRelationTypeOperation);
+        Assert.Throws<InvalidOperationException>(() => NodalSchemaMigrationMapper.Map(
+            new NodalSchemaSnapshot(1, [], []),
+            after,
+            typeResolver: _ => null));
+    }
+
     private sealed class SnapshotContext(IGraphProvider provider) : NodalContext(provider)
     {
         public GraphSet<Person> People => Set<Person>();
