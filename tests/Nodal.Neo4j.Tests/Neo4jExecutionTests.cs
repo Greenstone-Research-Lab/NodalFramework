@@ -13,6 +13,48 @@ namespace Nodal.Neo4j.Tests;
 public sealed class Neo4jExecutionTests
 {
     [Fact]
+    public async Task SchemaIntrospectorCapturesProviderNeutralObjects()
+    {
+        var driver = Substitute.For<IDriver>();
+        var session = Substitute.For<IAsyncSession>();
+        var runner = Substitute.For<IAsyncQueryRunner>();
+        driver.AsyncSession(Arg.Any<Action<SessionConfigBuilder>>()).Returns(session);
+
+        var nodeCursor = Cursor(Record(("nodeLabels", new object[] { "Food" }), ("propertyName", "Name"), ("propertyTypes", new object[] { "STRING" }), ("mandatory", false)));
+        var relationCursor = Cursor(Record(("relType", "SERVES"), ("propertyName", "Since"), ("propertyTypes", new object[] { "INTEGER" }), ("mandatory", false)));
+        var indexCursor = Cursor(Record(("name", "food_name"), ("type", "RANGE"), ("entityType", "NODE"), ("labelsOrTypes", new object[] { "Food" }), ("properties", new object[] { "Name" })));
+        var constraintCursor = Cursor(Record(("name", "food_id"), ("type", "NODE_KEY"), ("entityType", "NODE"), ("labelsOrTypes", new object[] { "Food" }), ("properties", new object[] { "Id" })));
+        runner.RunAsync(Arg.Any<string>()).Returns(nodeCursor, relationCursor, indexCursor, constraintCursor);
+        session.ExecuteReadAsync(
+                Arg.Any<Func<IAsyncQueryRunner, Task<List<IRecord>>>>(), Arg.Any<Action<TransactionConfigBuilder>>())
+            .Returns(call => call.ArgAt<Func<IAsyncQueryRunner, Task<List<IRecord>>>>(0)(runner));
+
+        var snapshot = await new Neo4jSchemaIntrospector(driver, "neo4j").CaptureAsync();
+
+        Assert.Equal("Neo4j", snapshot.ProviderName);
+        Assert.Equal("Food", Assert.Single(snapshot.Nodes).Name);
+        Assert.Equal("SERVES", Assert.Single(snapshot.Relations).Name);
+        Assert.Equal("food_name", Assert.Single(snapshot.Indexes!).Name);
+        Assert.Equal("food_id", Assert.Single(snapshot.Constraints!).Name);
+        await session.Received(1).DisposeAsync();
+    }
+
+    private static IResultCursor Cursor(IRecord record)
+    {
+        var cursor = Substitute.For<IResultCursor>();
+        cursor.GetAsyncEnumerator(Arg.Any<CancellationToken>())
+            .Returns(_ => new TestAsyncEnumerator<IRecord>([record]));
+        return cursor;
+    }
+
+    private static IRecord Record(params (string Name, object Value)[] values)
+    {
+        var record = Substitute.For<IRecord>();
+        record.Values.Returns(values.ToDictionary(value => value.Name, value => value.Value));
+        return record;
+    }
+
+    [Fact]
     public async Task CommandExecutorRunsParameterizedReadAndNormalizesGraphValues()
     {
         var driver = Substitute.For<IDriver>();
