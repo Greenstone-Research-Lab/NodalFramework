@@ -74,6 +74,26 @@ public sealed class NodalSchemaSnapshotTests
     }
 
     [Fact]
+    public void SnapshotSerializationRoundTripsAndRejectsUnknownVersions()
+    {
+        var snapshot = NodalSchemaSnapshotFactory.FromModel(
+            new SnapshotContext(new EmptyProvider()).Model,
+            "TigerGraph",
+            "4.2");
+        var json = NodalSchemaSnapshotSerializer.Serialize(snapshot);
+
+        var loaded = NodalSchemaSnapshotSerializer.Deserialize(json);
+
+        Assert.Equal(json, NodalSchemaSnapshotSerializer.Serialize(loaded));
+        var exception = Assert.Throws<NodalSchemaSnapshotVersionException>(() =>
+            NodalSchemaSnapshotSerializer.Deserialize(
+                "{\"formatVersion\":2,\"nodes\":[],\"relations\":[]}"));
+        Assert.Equal(2, exception.ActualVersion);
+        Assert.Equal(NodalSchemaSnapshot.CurrentFormatVersion, exception.SupportedVersion);
+        Assert.Throws<ArgumentException>(() => NodalSchemaSnapshotSerializer.Deserialize(" "));
+    }
+
+    [Fact]
     public void DifferReportsSchemaChangesWithoutGuessingRenames()
     {
         var before = new NodalSchemaSnapshot(
@@ -185,6 +205,104 @@ public sealed class NodalSchemaSnapshotTests
             new NodalSchemaSnapshot(1, [], []),
             after,
             typeResolver: _ => null));
+    }
+
+    [Fact]
+    public void DifferMapsIndexesAndConstraintsAndRendersReviewablePlans()
+    {
+        var before = new NodalSchemaSnapshot(
+            1,
+            [],
+            [],
+            Indexes:
+            [
+                new NodalSchemaObjectSnapshot("ix-old", "Index", "people", ["old"]),
+                new NodalSchemaObjectSnapshot("ix-changed", "Index", "people", ["name"]),
+            ],
+            Constraints:
+            [
+                new NodalSchemaObjectSnapshot("uq-old", "Constraint", "people", ["id"], true),
+            ]);
+        var after = new NodalSchemaSnapshot(
+            1,
+            [],
+            [],
+            Indexes:
+            [
+                new NodalSchemaObjectSnapshot("ix-new", "Index", "people", ["email"]),
+                new NodalSchemaObjectSnapshot("ix-composite", "Index", "people", ["tenant", "email"]),
+                new NodalSchemaObjectSnapshot("ix-changed", "Index", "people", ["display_name"]),
+            ],
+            Constraints:
+            [
+                new NodalSchemaObjectSnapshot("uq-new", "Constraint", "people", ["external_id"], true),
+            ]);
+
+        var diff = NodalSchemaDiffer.Compare(before, after);
+        var plan = NodalSchemaMigrationMapper.Map(before, after);
+
+        Assert.Contains(diff.Changes, change => change.Kind is NodalSchemaChangeKind.IndexAdded);
+        Assert.Contains(diff.Changes, change => change.Kind is NodalSchemaChangeKind.IndexRemoved);
+        Assert.Contains(diff.Changes, change => change.Kind is NodalSchemaChangeKind.IndexChanged);
+        Assert.Contains(diff.Changes, change => change.Kind is NodalSchemaChangeKind.ConstraintAdded);
+        Assert.Contains(diff.Changes, change => change.Kind is NodalSchemaChangeKind.ConstraintRemoved);
+        Assert.Contains(plan.Operations, operation => operation is CreateIndexOperation);
+        Assert.Contains(plan.Operations, operation => operation is CreateUniqueConstraintOperation);
+        Assert.Equal(2, plan.Operations.Count(operation => operation is DropSchemaObjectOperation));
+        Assert.True(plan.RequiresManualReview);
+
+        var machine = NodalSchemaMigrationPlanSerializer.Serialize(plan);
+        var markdown = NodalSchemaMigrationPlanSerializer.ToMarkdown(plan);
+        Assert.Contains("Create index people.email", machine, StringComparison.Ordinal);
+        Assert.Contains("# Nodal schema migration plan", markdown, StringComparison.Ordinal);
+        Assert.Contains("IndexChanged: ix-changed", markdown, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EmptyPlanRendersExplicitEmptySections()
+    {
+        var plan = new NodalSchemaMigrationPlan([], []);
+
+        var markdown = NodalSchemaMigrationPlanSerializer.ToMarkdown(plan);
+
+        Assert.Equal(2, markdown.Split("- None", StringSplitOptions.None).Length - 1);
+        Assert.Throws<ArgumentNullException>(() => NodalSchemaMigrationPlanSerializer.Serialize(null!));
+        Assert.Throws<ArgumentNullException>(() => NodalSchemaMigrationPlanSerializer.ToMarkdown(null!));
+    }
+
+    [Fact]
+    public void PlanRendererDescribesEveryProviderNeutralOperation()
+    {
+        MigrationOperation[] operations =
+        [
+            new CreateNodeTypeOperation("people"),
+            new CreateRelationTypeOperation("KNOWS", "people", "people", true),
+            new CreateUniqueConstraintOperation("people", "id"),
+            new CreateIndexOperation("people", "email"),
+            new DropIndexOperation("people", "old_email"),
+            new DropUniqueConstraintOperation("people", "old_id"),
+            new DropNodeTypeOperation("obsolete"),
+            new DropRelationTypeOperation("OLD_RELATION"),
+            new DropSchemaObjectOperation("ix_named", MigrationSchemaObjectKind.Index),
+            new AddNodePropertyOperation("people", new GraphSchemaProperty("age", typeof(int))),
+            new AddRelationPropertyOperation("KNOWS", new GraphSchemaProperty("since", typeof(int))),
+            new DropNodePropertyOperation("people", "legacy"),
+            new DropRelationPropertyOperation("KNOWS", "legacy"),
+            new RenameNodePropertyOperation("people", "name", "display_name"),
+            new RenameRelationPropertyOperation("KNOWS", "date", "since"),
+            new AlterNodePropertyTypeOperation(
+                "people", "age", typeof(int), typeof(long), MigrationPropertyTypeCompatibility.RequiresRewrite),
+            new AlterRelationPropertyTypeOperation(
+                "KNOWS", "since", typeof(int), typeof(long), MigrationPropertyTypeCompatibility.RequiresRewrite),
+        ];
+
+        var markdown = NodalSchemaMigrationPlanSerializer.ToMarkdown(
+            new NodalSchemaMigrationPlan(operations, []));
+
+        Assert.Contains("Create node people", markdown, StringComparison.Ordinal);
+        Assert.Contains("Alter relation property KNOWS.since", markdown, StringComparison.Ordinal);
+        Assert.Contains("Rename node property people.name to display_name", markdown, StringComparison.Ordinal);
+        Assert.Contains("Drop Index ix_named", markdown, StringComparison.Ordinal);
     }
 
     private sealed class SnapshotContext(IGraphProvider provider) : NodalContext(provider)

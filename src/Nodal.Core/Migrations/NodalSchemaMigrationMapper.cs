@@ -16,14 +16,18 @@ public static class NodalSchemaMigrationMapper
         ArgumentNullException.ThrowIfNull(before);
         ArgumentNullException.ThrowIfNull(after);
 
-        var diff = NodalSchemaDiffer.Compare(before, after, options);
+        var previous = before.Normalize();
+        var current = after.Normalize();
+        var diff = NodalSchemaDiffer.Compare(previous, current, options);
         var resolver = typeResolver ?? Type.GetType;
         var operations = new List<MigrationOperation>();
         var manualReview = new List<NodalSchemaChange>();
-        var oldNodes = before.Normalize().Nodes.ToDictionary(node => node.Name, StringComparer.Ordinal);
-        var newNodes = after.Normalize().Nodes.ToDictionary(node => node.Name, StringComparer.Ordinal);
-        var oldRelations = before.Normalize().Relations.ToDictionary(relation => relation.Name, StringComparer.Ordinal);
-        var newRelations = after.Normalize().Relations.ToDictionary(relation => relation.Name, StringComparer.Ordinal);
+        var oldNodes = previous.Nodes.ToDictionary(node => node.Name, StringComparer.Ordinal);
+        var newNodes = current.Nodes.ToDictionary(node => node.Name, StringComparer.Ordinal);
+        var oldRelations = previous.Relations.ToDictionary(relation => relation.Name, StringComparer.Ordinal);
+        var newRelations = current.Relations.ToDictionary(relation => relation.Name, StringComparer.Ordinal);
+        var newIndexes = (current.Indexes ?? []).ToDictionary(item => item.Name, StringComparer.Ordinal);
+        var newConstraints = (current.Constraints ?? []).ToDictionary(item => item.Name, StringComparer.Ordinal);
 
         foreach (var change in diff.Changes)
         {
@@ -82,10 +86,58 @@ public static class NodalSchemaMigrationMapper
                 case NodalSchemaChangeKind.RelationShapeChanged:
                     manualReview.Add(change);
                     break;
+                case NodalSchemaChangeKind.IndexAdded:
+                    AddSchemaObject(
+                        newIndexes[change.ObjectName],
+                        unique: false,
+                        change,
+                        operations,
+                        manualReview);
+                    break;
+                case NodalSchemaChangeKind.IndexRemoved:
+                    operations.Add(new DropSchemaObjectOperation(
+                        change.ObjectName,
+                        MigrationSchemaObjectKind.Index));
+                    break;
+                case NodalSchemaChangeKind.ConstraintAdded:
+                    AddSchemaObject(
+                        newConstraints[change.ObjectName],
+                        unique: true,
+                        change,
+                        operations,
+                        manualReview);
+                    break;
+                case NodalSchemaChangeKind.ConstraintRemoved:
+                    operations.Add(new DropSchemaObjectOperation(
+                        change.ObjectName,
+                        MigrationSchemaObjectKind.Constraint));
+                    break;
+                case NodalSchemaChangeKind.IndexChanged:
+                case NodalSchemaChangeKind.ConstraintChanged:
+                    manualReview.Add(change);
+                    break;
             }
         }
 
         return new NodalSchemaMigrationPlan(operations, manualReview);
+    }
+
+    private static void AddSchemaObject(
+        NodalSchemaObjectSnapshot schemaObject,
+        bool unique,
+        NodalSchemaChange change,
+        List<MigrationOperation> operations,
+        List<NodalSchemaChange> manualReview)
+    {
+        if (schemaObject.Properties.Count != 1 || (unique && !schemaObject.IsUnique))
+        {
+            manualReview.Add(change);
+            return;
+        }
+
+        operations.Add(unique
+            ? new CreateUniqueConstraintOperation(schemaObject.EntityName, schemaObject.Properties[0])
+            : new CreateIndexOperation(schemaObject.EntityName, schemaObject.Properties[0]));
     }
 
     private static CreateNodeTypeOperation CreateNode(

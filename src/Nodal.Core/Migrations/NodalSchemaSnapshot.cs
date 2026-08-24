@@ -45,6 +45,7 @@ public sealed record NodalSchemaSnapshot(
         (objects ?? [])
             .OrderBy(item => item.Name, StringComparer.Ordinal)
             .ThenBy(item => item.ObjectType, StringComparer.Ordinal)
+            .Select(item => item.Normalize())
             .ToImmutableArray();
 }
 
@@ -102,4 +103,15 @@ public sealed record NodalSchemaObjectSnapshot(
     string ObjectType,
     string EntityName,
     IReadOnlyList<string> Properties,
-    bool IsUnique = false);
+    bool IsUnique = false)
+{
+    /// <summary>Returns this schema object with deterministic property ordering.</summary>
+    public NodalSchemaObjectSnapshot Normalize()
+    {
+        ArgumentNullException.ThrowIfNull(Properties);
+        return this with
+        {
+            Properties = Properties.Order(StringComparer.Ordinal).ToImmutableArray(),
+        };
+    }
+}
