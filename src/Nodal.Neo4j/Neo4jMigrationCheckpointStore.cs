@@ -5,18 +5,15 @@ using Nodal.Core.Migrations;
 namespace Nodal.Neo4j;
 
 /// <summary>Persists bounded backfill checkpoints as dedicated Neo4j metadata nodes.</summary>
-public sealed class Neo4jMigrationCheckpointStore : IMigrationBackfillCheckpointStore
+/// <param name="driver">The shared Neo4j driver used to execute checkpoint operations.</param>
+/// <param name="database">The optional Neo4j database name.</param>
+public sealed class Neo4jMigrationCheckpointStore(
+    IDriver driver,
+    string? database = null) : IMigrationBackfillCheckpointStore
 {
     private const string Label = "__NodalBackfillCheckpoint";
-    private readonly IDriver driver;
-    private readonly string? database;
-
-    /// <summary>Initializes a checkpoint store over the shared Neo4j driver.</summary>
-    public Neo4jMigrationCheckpointStore(IDriver driver, string? database = null)
-    {
-        this.driver = driver ?? throw new ArgumentNullException(nameof(driver));
-        this.database = database;
-    }
+    private readonly IDriver driver = driver ?? throw new ArgumentNullException(nameof(driver));
+    private readonly string? database = database;
 
     /// <inheritdoc />
     public async ValueTask<MigrationBackfillCheckpoint?> GetAsync(string backfillName, CancellationToken cancellationToken = default)
