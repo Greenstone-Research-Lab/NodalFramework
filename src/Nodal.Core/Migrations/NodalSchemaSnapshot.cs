@@ -8,7 +8,9 @@ public sealed record NodalSchemaSnapshot(
     IReadOnlyList<NodalNodeSnapshot> Nodes,
     IReadOnlyList<NodalRelationSnapshot> Relations,
     string? ProviderName = null,
-    string? ProviderVersion = null)
+    string? ProviderVersion = null,
+    IReadOnlyList<NodalSchemaObjectSnapshot>? Indexes = null,
+    IReadOnlyList<NodalSchemaObjectSnapshot>? Constraints = null)
 {
     /// <summary>Current snapshot format supported by this package.</summary>
     public const int CurrentFormatVersion = 1;
@@ -31,8 +33,17 @@ public sealed record NodalSchemaSnapshot(
                 .ThenBy(relation => relation.TargetNode, StringComparer.Ordinal)
                 .Select(relation => relation.Normalize())
                 .ToImmutableArray(),
+            Indexes = NormalizeObjects(Indexes),
+            Constraints = NormalizeObjects(Constraints),
         };
     }
+
+    private static ImmutableArray<NodalSchemaObjectSnapshot> NormalizeObjects(
+        IReadOnlyList<NodalSchemaObjectSnapshot>? objects) =>
+        (objects ?? [])
+            .OrderBy(item => item.Name, StringComparer.Ordinal)
+            .ThenBy(item => item.ObjectType, StringComparer.Ordinal)
+            .ToImmutableArray();
 }
 
 /// <summary>Describes one graph node in a schema snapshot.</summary>
@@ -78,3 +89,11 @@ public sealed record NodalPropertySnapshot(
     bool IsEnum,
     IReadOnlyList<string> EnumValues,
     string? ProviderStorageType = null);
+
+/// <summary>Describes a provider schema index or constraint.</summary>
+public sealed record NodalSchemaObjectSnapshot(
+    string Name,
+    string ObjectType,
+    string EntityName,
+    IReadOnlyList<string> Properties,
+    bool IsUnique = false);

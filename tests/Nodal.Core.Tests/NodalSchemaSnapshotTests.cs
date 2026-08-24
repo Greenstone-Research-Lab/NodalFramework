@@ -50,12 +50,23 @@ public sealed class NodalSchemaSnapshotTests
                     new NodalPropertySnapshot("z", "Z", "System.String", true, false, []),
                     new NodalPropertySnapshot("a", "A", "System.Int32", false, false, []),
                 ])],
-            []);
+            [],
+            Indexes:
+            [
+                new NodalSchemaObjectSnapshot("z-index", "Index", "people", ["name"]),
+                new NodalSchemaObjectSnapshot("a-index", "Index", "people", ["id"]),
+            ],
+            Constraints:
+            [
+                new NodalSchemaObjectSnapshot("uq-people-id", "Constraint", "people", ["id"], true),
+            ]);
 
         var normalized = snapshot.Normalize();
 
         Assert.Equal("a", normalized.Nodes[0].Properties[0].Name);
         Assert.Equal("z", normalized.Nodes[0].Properties[1].Name);
+        Assert.Equal("a-index", normalized.Indexes![0].Name);
+        Assert.True(normalized.Constraints![0].IsUnique);
         Assert.Throws<ArgumentNullException>(
             () => NodalSchemaSnapshotSerializer.Serialize(null!));
         Assert.Throws<ArgumentOutOfRangeException>(
