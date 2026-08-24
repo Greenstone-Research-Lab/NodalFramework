@@ -29,6 +29,18 @@ public enum NodalSchemaChangeKind
     RelationPropertyRenamed,
     /// <summary>A relation property persisted type changed.</summary>
     RelationPropertyTypeChanged,
+    /// <summary>An index was added.</summary>
+    IndexAdded,
+    /// <summary>An index was removed.</summary>
+    IndexRemoved,
+    /// <summary>An index definition changed while retaining its name.</summary>
+    IndexChanged,
+    /// <summary>A constraint was added.</summary>
+    ConstraintAdded,
+    /// <summary>A constraint was removed.</summary>
+    ConstraintRemoved,
+    /// <summary>A constraint definition changed while retaining its name.</summary>
+    ConstraintChanged,
 }
 
 /// <summary>Describes one deterministic schema change.</summary>
@@ -79,6 +91,20 @@ public static class NodalSchemaDiffer
 
         CompareNodes(previous, current, settings, changes);
         CompareRelations(previous, current, settings, changes);
+        CompareSchemaObjects(
+            previous.Indexes ?? [],
+            current.Indexes ?? [],
+            NodalSchemaChangeKind.IndexAdded,
+            NodalSchemaChangeKind.IndexRemoved,
+            NodalSchemaChangeKind.IndexChanged,
+            changes);
+        CompareSchemaObjects(
+            previous.Constraints ?? [],
+            current.Constraints ?? [],
+            NodalSchemaChangeKind.ConstraintAdded,
+            NodalSchemaChangeKind.ConstraintRemoved,
+            NodalSchemaChangeKind.ConstraintChanged,
+            changes);
 
         return new NodalSchemaDiffResult(changes
             .OrderBy(change => change.ObjectName, StringComparer.Ordinal)
@@ -86,6 +112,49 @@ public static class NodalSchemaDiffer
             .ThenBy(change => change.Kind)
             .ToArray());
     }
+
+    private static void CompareSchemaObjects(
+        IReadOnlyList<NodalSchemaObjectSnapshot> before,
+        IReadOnlyList<NodalSchemaObjectSnapshot> after,
+        NodalSchemaChangeKind addedKind,
+        NodalSchemaChangeKind removedKind,
+        NodalSchemaChangeKind changedKind,
+        List<NodalSchemaChange> changes)
+    {
+        var oldObjects = before.ToDictionary(item => item.Name, StringComparer.Ordinal);
+        var newObjects = after.ToDictionary(item => item.Name, StringComparer.Ordinal);
+
+        foreach (var item in oldObjects.Values)
+        {
+            if (!newObjects.ContainsKey(item.Name))
+            {
+                changes.Add(new(removedKind, item.Name, Detail: Describe(item)));
+            }
+        }
+
+        foreach (var item in newObjects.Values)
+        {
+            if (!oldObjects.TryGetValue(item.Name, out var previous))
+            {
+                changes.Add(new(addedKind, item.Name, Detail: Describe(item)));
+            }
+            else if (!Equivalent(previous, item))
+            {
+                changes.Add(new(changedKind, item.Name, Detail: Describe(item)));
+            }
+        }
+    }
+
+    private static bool Equivalent(
+        NodalSchemaObjectSnapshot left,
+        NodalSchemaObjectSnapshot right) =>
+        string.Equals(left.ObjectType, right.ObjectType, StringComparison.Ordinal) &&
+        string.Equals(left.EntityName, right.EntityName, StringComparison.Ordinal) &&
+        left.IsUnique == right.IsUnique &&
+        left.Properties.SequenceEqual(right.Properties, StringComparer.Ordinal);
+
+    private static string Describe(NodalSchemaObjectSnapshot item) =>
+        $"{item.EntityName}({string.Join(',', item.Properties)})";
 
     private static void CompareNodes(
         NodalSchemaSnapshot before,

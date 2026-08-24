@@ -32,6 +32,31 @@ MigrationPlan applied = await context.Database.MigrateAsync(migrations);
 
 Neo4j uses transactional Cypher and its migration history record. TigerGraph compiles schema operations into a deterministic job and requires an explicit administrative transport.
 
+## Schema snapshots and reviewable diffs
+
+`NodalSchemaSnapshotFactory` captures the registered model without connecting to a
+database. Snapshots have their own wire-format version, deterministic ordering and a
+stable SHA-256 hash. Provider introspectors can capture the live Neo4j or TigerGraph
+schema into the same contract while preserving provider name, version and storage
+types.
+
+```csharp
+NodalSchemaSnapshot desired = NodalSchemaSnapshotFactory.FromModel(context.Model);
+NodalSchemaSnapshot current = await provider.SchemaIntrospector.CaptureAsync();
+
+NodalSchemaMigrationPlan plan = NodalSchemaMigrationMapper.Map(current, desired);
+string review = NodalSchemaMigrationPlanSerializer.ToMarkdown(plan);
+string automation = NodalSchemaMigrationPlanSerializer.Serialize(plan);
+```
+
+Property renames are never inferred. Supply an explicit rename hint such as
+`node:people:name -> display_name`; otherwise the diff remains an add/drop pair.
+Relation shape changes, changed schema-object definitions and compound indexes that
+cannot be represented safely by the portable M1 operations are placed in
+`ManualReview`. Unknown snapshot format versions fail with
+`NodalSchemaSnapshotVersionException`; a future format must provide an explicit
+upgrade path instead of silently reinterpreting persisted metadata.
+
 ## Safe backfills and recovery
 
 Backfills must be bounded. Use `IMigrationBackfillCheckpointStore` when a backfill
