@@ -18,7 +18,7 @@
     <PackageProjectUrl>https://github.com/Greenstone-Research-Lab/NodalFramework</PackageProjectUrl>
     <RepositoryType>git</RepositoryType>
     <RepositoryUrl>https://github.com/Greenstone-Research-Lab/NodalFramework</RepositoryUrl>
-    <PackageLicenseExpression>MIT</PackageLicenseExpression>
+    <PackageLicenseExpression>MPL-2.0</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <PackageReadmeFile>README.md</PackageReadmeFile>
     <PackageReleaseNotes>https://github.com/Greenstone-Research-Lab/NodalFramework/releases</PackageReleaseNotes>

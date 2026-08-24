@@ -73,6 +73,18 @@ internal static class MigrationCanonicalizer
                     Token(index.NodeType),
                     Token(index.PropertyName)),
 
+            DropIndexOperation index =>
+                string.Join('|',
+                    "drop-index",
+                    Token(index.NodeType),
+                    Token(index.PropertyName)),
+
+            DropUniqueConstraintOperation constraint =>
+                string.Join('|',
+                    "drop-unique",
+                    Token(constraint.NodeType),
+                    Token(constraint.PropertyName)),
+
             DropNodeTypeOperation node =>
                 string.Join('|',
                     "drop-node",
@@ -88,6 +100,62 @@ internal static class MigrationCanonicalizer
                     "drop-schema-object",
                     Token(schemaObject.Name),
                     Token(schemaObject.Kind.ToString())),
+
+            AddNodePropertyOperation addNode =>
+                string.Join('|',
+                    "add-node-property",
+                    Token(addNode.NodeType),
+                    Property(addNode.Property)),
+
+            AddRelationPropertyOperation addRelation =>
+                string.Join('|',
+                    "add-relation-property",
+                    Token(addRelation.RelationType),
+                    Property(addRelation.Property)),
+
+            DropNodePropertyOperation dropNode =>
+                string.Join('|',
+                    "drop-node-property",
+                    Token(dropNode.NodeType),
+                    Token(dropNode.PropertyName)),
+
+            DropRelationPropertyOperation dropRelation =>
+                string.Join('|',
+                    "drop-relation-property",
+                    Token(dropRelation.RelationType),
+                    Token(dropRelation.PropertyName)),
+
+            RenameNodePropertyOperation renameNode =>
+                string.Join('|',
+                    "rename-node-property",
+                    Token(renameNode.NodeType),
+                    Token(renameNode.OldPropertyName),
+                    Token(renameNode.NewPropertyName)),
+
+            RenameRelationPropertyOperation renameRelation =>
+                string.Join('|',
+                    "rename-relation-property",
+                    Token(renameRelation.RelationType),
+                    Token(renameRelation.OldPropertyName),
+                    Token(renameRelation.NewPropertyName)),
+
+            AlterNodePropertyTypeOperation alterNode =>
+                string.Join('|',
+                    "alter-node-property-type",
+                    Token(alterNode.NodeType),
+                    Token(alterNode.PropertyName),
+                    Token(TypeName(alterNode.OldClrType)),
+                    Token(TypeName(alterNode.NewClrType)),
+                    Token(alterNode.Compatibility.ToString())),
+
+            AlterRelationPropertyTypeOperation alterRelation =>
+                string.Join('|',
+                    "alter-relation-property-type",
+                    Token(alterRelation.RelationType),
+                    Token(alterRelation.PropertyName),
+                    Token(TypeName(alterRelation.OldClrType)),
+                    Token(TypeName(alterRelation.NewClrType)),
+                    Token(alterRelation.Compatibility.ToString())),
 
             _ => throw new NotSupportedException(
                 $"Migration operation '{operation.GetType().Name}' cannot be canonicalized.")
@@ -108,6 +176,9 @@ internal static class MigrationCanonicalizer
             ordered.Select(property =>
                 $"{Token(property.Name)}:{Token(TypeName(property.ClrType))}"));
     }
+
+    private static string Property(GraphSchemaProperty property) =>
+        $"{Token(property.Name)}:{Token(TypeName(property.ClrType))}";
 
     private static string TypeName(Type? type) =>
         type?.AssemblyQualifiedName

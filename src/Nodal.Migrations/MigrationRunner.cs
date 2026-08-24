@@ -328,11 +328,12 @@ public sealed class MigrationRunner(IGraphMigrationProvider provider)
     }
 
     private MigrationExecution BuildExecution(
-    string id,
-    IReadOnlyList<MigrationOperation> operations)
+        string id,
+        IReadOnlyList<MigrationOperation> operations)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(id);
         ArgumentNullException.ThrowIfNull(operations);
+        MigrationOperationOrderingValidator.Validate(operations);
 
         var preflight = new MigrationPreflightAnalyzer(
             provider.MigrationDialect)

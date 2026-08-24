@@ -24,12 +24,24 @@ public sealed class Neo4jMigrationDialect : IGraphMigrationDialect
             Command($"CREATE INDEX {Escape(Name("ix", index.NodeType, index.PropertyName))} IF NOT EXISTS " +
                 $"FOR (`node`:{Escape(index.NodeType)}) ON (`node`.{Escape(index.PropertyName)})"),
         ],
+        DropIndexOperation index =>
+        [
+            Command($"DROP INDEX {Escape(Name("ix", index.NodeType, index.PropertyName))} IF EXISTS"),
+        ],
+        DropUniqueConstraintOperation constraint =>
+        [
+            Command($"DROP CONSTRAINT {Escape(Name("uq", constraint.NodeType, constraint.PropertyName))} IF EXISTS"),
+        ],
         DropSchemaObjectOperation drop =>
         [
             Command($"DROP {(drop.Kind == MigrationSchemaObjectKind.Index ? "INDEX" : "CONSTRAINT")} " +
                 $"{Escape(drop.Name)} IF EXISTS"),
         ],
-        CreateNodeTypeOperation or CreateRelationTypeOperation or DropNodeTypeOperation or DropRelationTypeOperation => [],
+        CreateNodeTypeOperation or CreateRelationTypeOperation or
+        DropNodeTypeOperation or DropRelationTypeOperation or
+        AddNodePropertyOperation or AddRelationPropertyOperation or
+        DropNodePropertyOperation or DropRelationPropertyOperation or
+        RenameNodePropertyOperation or RenameRelationPropertyOperation => [],
         _ => throw new NotSupportedException(
             $"Migration operation '{operation.GetType().Name}' is not supported by Neo4j."),
     };

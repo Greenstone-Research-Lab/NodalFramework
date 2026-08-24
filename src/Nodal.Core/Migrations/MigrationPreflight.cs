@@ -43,8 +43,10 @@ public sealed record MigrationPreflightIssue(
 /// Represents the result of validating a migration before execution.
 /// </summary>
 /// <param name="Issues">The findings produced during preflight.</param>
+/// <param name="ProviderName">The provider dialect name used for analysis.</param>
 public sealed record MigrationPreflightResult(
-    IReadOnlyList<MigrationPreflightIssue> Issues)
+    IReadOnlyList<MigrationPreflightIssue> Issues,
+    string ProviderName = "Unknown")
 {
     /// <summary>
     /// Gets whether the plan contains no unsupported operation.
@@ -87,7 +89,10 @@ public sealed record MigrationPreflightResult(
             unsupported.Select(issue =>
                 $"[{issue.Code}] {issue.Message}"));
 
+        var first = unsupported[0];
         throw new NodalCapabilityNotSupportedException(
+            ProviderName,
+            first.Code,
             $"Migration preflight failed:{Environment.NewLine}{message}");
     }
 }

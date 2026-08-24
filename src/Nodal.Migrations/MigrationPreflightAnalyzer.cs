@@ -52,7 +52,9 @@ public sealed class MigrationPreflightAnalyzer
             AnalyzeOperation(operation, issues);
         }
 
-        return new MigrationPreflightResult(issues);
+        return new MigrationPreflightResult(
+            issues,
+            dialect.GetType().Name);
     }
 
     private void AnalyzeOperation(
@@ -66,6 +68,19 @@ public sealed class MigrationPreflightAnalyzer
                 "NODAL-MIGRATION-DESTRUCTIVE",
                 $"Operation '{operation.GetType().Name}' " +
                 "may remove schema or data and requires explicit approval.",
+                operation.GetType()));
+        }
+
+        if (operation is AlterNodePropertyTypeOperation
+            or AlterRelationPropertyTypeOperation
+            {
+                Compatibility: MigrationPropertyTypeCompatibility.RequiresRewrite
+            })
+        {
+            issues.Add(new MigrationPreflightIssue(
+                MigrationPreflightKind.Warning,
+                "NODAL-MIGRATION-BACKFILL-REQUIRED",
+                "The property type change requires a controlled rewrite or backfill.",
                 operation.GetType()));
         }
 
@@ -112,5 +127,14 @@ public sealed class MigrationPreflightAnalyzer
         operation is
             DropNodeTypeOperation or
             DropRelationTypeOperation or
-            DropSchemaObjectOperation;
+            DropSchemaObjectOperation or
+            DropIndexOperation or
+            DropUniqueConstraintOperation or
+            DropNodePropertyOperation or
+            DropRelationPropertyOperation or
+            AlterNodePropertyTypeOperation
+            or AlterRelationPropertyTypeOperation
+            {
+                Compatibility: MigrationPropertyTypeCompatibility.Destructive
+            };
 }

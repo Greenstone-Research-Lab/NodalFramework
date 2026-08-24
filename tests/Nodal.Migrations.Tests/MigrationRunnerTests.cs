@@ -85,16 +85,20 @@ public sealed class MigrationRunnerTests
 
         var runner = new MigrationRunner(provider);
 
-        var exception = await Assert.ThrowsAsync<
-            NodalCapabilityNotSupportedException>(
+    var exception = await Assert.ThrowsAsync<
+        NodalCapabilityNotSupportedException>(
             async () => await runner.MigrateAsync(
             [
                 new FirstMigration()
             ]));
 
-        Assert.Contains(
-            "NODAL-MIGRATION-UNSUPPORTED",
-            exception.Message);
+    Assert.Contains(
+        "NODAL-MIGRATION-UNSUPPORTED",
+        exception.Message);
+    Assert.Equal("RejectingDialect", exception.ProviderName);
+    Assert.Equal(
+        "NODAL-MIGRATION-UNSUPPORTED",
+        exception.CapabilityCode);
 
         Assert.Empty(provider.Executor.Applied);
     }
@@ -152,6 +156,66 @@ public sealed class MigrationRunnerTests
         Assert.False(relation.Directed);
         Assert.Throws<ArgumentException>(() =>
             new MigrationBuilder().CreateIndex<Person, int>(person => person.Email.Length));
+    }
+
+    [Fact]
+    public void BuilderCreatesPropertyEvolutionOperations()
+    {
+        var builder = new MigrationBuilder()
+            .AddNodeProperty<Person, string>(person => person.Email)
+            .AddRelationProperty<Knows, DateTime>(relation => relation.Since)
+            .DropNodeProperty<Person, string>(person => person.Email)
+            .DropRelationProperty<Knows, DateTime>(relation => relation.Since);
+
+        Assert.IsType<AddNodePropertyOperation>(builder.Operations[0]);
+        Assert.IsType<AddRelationPropertyOperation>(builder.Operations[1]);
+        Assert.IsType<DropNodePropertyOperation>(builder.Operations[2]);
+        Assert.IsType<DropRelationPropertyOperation>(builder.Operations[3]);
+    }
+
+    [Fact]
+    public async Task BackfillExecutorHonorsBoundedBatchesAndContinuation()
+    {
+        var executor = new BoundedMigrationBackfillExecutor();
+        var tokens = new List<string?>();
+
+        await executor.ExecuteAsync(
+            new MigrationBackfillRequest("email-normalization", 2),
+            (context, _) =>
+            {
+                tokens.Add(context.ContinuationToken);
+                return ValueTask.FromResult(
+                    tokens.Count == 1
+                        ? new MigrationBackfillBatchResult(2, "page-2", false)
+                        : new MigrationBackfillBatchResult(1, null, true));
+            });
+
+        Assert.Equal([null, "page-2"], tokens);
+    }
+
+    [Fact]
+    public async Task BackfillExecutorRejectsInvalidBatchResult()
+    {
+        var executor = new BoundedMigrationBackfillExecutor();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await executor.ExecuteAsync(
+                new MigrationBackfillRequest("invalid", 2),
+                (_, _) => ValueTask.FromResult(
+                new MigrationBackfillBatchResult(3, null, true))));
+    }
+
+    [Fact]
+    public async Task CleanupOperationCannotPrecedeSchemaEvolution()
+    {
+        var provider = new RecordingProvider();
+        var runner = new MigrationRunner(provider);
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await runner.PlanAsync(
+            [
+                new MisorderedMigration()
+            ]));
     }
 
     [Fact]
@@ -480,6 +544,21 @@ public sealed class MigrationRunnerTests
         protected override void Down(MigrationBuilder migration)
         {
             migration.CreateNode<Person>();
+        }
+    }
+
+    private sealed class MisorderedMigration : NodalMigration
+    {
+        public override string Id => "004_misordered";
+
+        protected override void Up(MigrationBuilder migration)
+        {
+            migration.DropNode<Person>();
+            migration.CreateIndex<Person, string>(person => person.Email);
+        }
+
+        protected override void Down(MigrationBuilder migration)
+        {
         }
     }
 }

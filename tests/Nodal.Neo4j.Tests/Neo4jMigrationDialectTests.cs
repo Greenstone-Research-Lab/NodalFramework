@@ -34,5 +34,25 @@ public sealed class Neo4jMigrationDialectTests
         Assert.Throws<NotSupportedException>(() => dialect.Compile([new UnknownOperation()]));
     }
 
+    [Fact]
+    public void CompileHandlesTypedIndexRemovalAndFlexibleProperties()
+    {
+        var commands = new Neo4jMigrationDialect().Compile(
+        [
+            new DropIndexOperation("Person", "email"),
+            new DropUniqueConstraintOperation("Person", "person_id"),
+            new AddNodePropertyOperation(
+                "Person",
+                new GraphSchemaProperty("display_name", typeof(string))),
+            new RenameNodePropertyOperation("Person", "display_name", "name"),
+        ]);
+
+        Assert.Equal(2, commands.Count);
+        Assert.Contains("DROP INDEX", commands[0].Text, StringComparison.Ordinal);
+        Assert.Contains("nodal_ix_Person_email", commands[0].Text, StringComparison.Ordinal);
+        Assert.Contains("DROP CONSTRAINT", commands[1].Text, StringComparison.Ordinal);
+        Assert.Contains("nodal_uq_Person_person_id", commands[1].Text, StringComparison.Ordinal);
+    }
+
     private sealed record UnknownOperation : MigrationOperation;
 }
