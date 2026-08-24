@@ -114,6 +114,16 @@ public sealed class MigrationPreflightAnalyzer
             return;
         }
 
+        if (commands.Any(command => !command.IsTransactional))
+        {
+            issues.Add(new MigrationPreflightIssue(
+                MigrationPreflightKind.Warning,
+                "NODAL-MIGRATION-NONTRANSACTIONAL",
+                $"Provider '{dialect.GetType().Name}' emitted a non-transactional command for " +
+                $"'{operation.GetType().Name}'. Recovery must use the recorded migration state.",
+                operation.GetType()));
+        }
+
         issues.Add(new MigrationPreflightIssue(
             MigrationPreflightKind.Supported,
             "NODAL-MIGRATION-SUPPORTED",
