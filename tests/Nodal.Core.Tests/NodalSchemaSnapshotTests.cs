@@ -62,6 +62,63 @@ public sealed class NodalSchemaSnapshotTests
             () => new NodalSchemaSnapshot(0, [], []).Normalize());
     }
 
+    [Fact]
+    public void DifferReportsSchemaChangesWithoutGuessingRenames()
+    {
+        var before = new NodalSchemaSnapshot(
+            1,
+            [new NodalNodeSnapshot(
+                "people", "Person", "id",
+                [
+                    new NodalPropertySnapshot("name", "Name", "System.String", false, false, []),
+                    new NodalPropertySnapshot("age", "Age", "System.Int32", false, false, []),
+                ])],
+            [new NodalRelationSnapshot(
+                "KNOWS", "Knows", "people", "people", true,
+                [new NodalPropertySnapshot("since", "Since", "System.Int32", false, false, [])])]);
+        var after = new NodalSchemaSnapshot(
+            1,
+            [new NodalNodeSnapshot(
+                "people", "Person", "id",
+                [
+                    new NodalPropertySnapshot("display_name", "Name", "System.String", false, false, []),
+                    new NodalPropertySnapshot("age", "Age", "System.Int64", false, false, []),
+                ])],
+            [new NodalRelationSnapshot(
+                "KNOWS", "Knows", "people", "people", false,
+                [new NodalPropertySnapshot("since", "Since", "System.Int64", false, false, [])])]);
+
+        var raw = NodalSchemaDiffer.Compare(before, after);
+        Assert.Contains(raw.Changes, change =>
+            change.Kind is NodalSchemaChangeKind.NodePropertyRemoved &&
+            change.PropertyName == "name");
+        Assert.Contains(raw.Changes, change =>
+            change.Kind is NodalSchemaChangeKind.NodePropertyAdded &&
+            change.PropertyName == "display_name");
+        Assert.Contains(raw.Changes, change =>
+            change.Kind is NodalSchemaChangeKind.NodePropertyTypeChanged &&
+            change.PropertyName == "age");
+        Assert.Contains(raw.Changes, change =>
+            change.Kind is NodalSchemaChangeKind.RelationShapeChanged);
+        Assert.Contains(raw.Changes, change =>
+            change.Kind is NodalSchemaChangeKind.RelationPropertyTypeChanged);
+
+        var renamed = NodalSchemaDiffer.Compare(
+            before,
+            after,
+            new NodalSchemaDiffOptions(
+                new Dictionary<string, string>
+                {
+                    ["node:people:name"] = "display_name",
+                }));
+        Assert.Contains(renamed.Changes, change =>
+            change.Kind is NodalSchemaChangeKind.NodePropertyRenamed &&
+            change.NewPropertyName == "display_name");
+        Assert.DoesNotContain(renamed.Changes, change =>
+            change.Kind is NodalSchemaChangeKind.NodePropertyAdded &&
+            change.PropertyName == "display_name");
+    }
+
     private sealed class SnapshotContext(IGraphProvider provider) : NodalContext(provider)
     {
         public GraphSet<Person> People => Set<Person>();
