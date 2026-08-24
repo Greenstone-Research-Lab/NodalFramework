@@ -1,5 +1,5 @@
-using Nodal.Core.Migrations;
 using System.Diagnostics.CodeAnalysis;
+using Nodal.Core.Migrations;
 
 namespace Nodal.TigerGraph;
 

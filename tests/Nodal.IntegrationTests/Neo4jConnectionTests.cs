@@ -1,8 +1,8 @@
 using Neo4j.Driver;
 using Nodal.Core;
 using Nodal.Core.Metadata;
-using Nodal.Core.Query;
 using Nodal.Core.Migrations;
+using Nodal.Core.Query;
 using Nodal.Neo4j;
 
 namespace Nodal.IntegrationTests;

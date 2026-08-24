@@ -80,15 +80,29 @@ public sealed class MigrationContractCoverageTests
     public void BackfillContractsValidateAndExposeContinuationState()
     {
         var request = new MigrationBackfillRequest("normalize", 25);
-        var context = new MigrationBackfillContext("page-2", request.BatchSize);
+        var context = new MigrationBackfillContext("page-2", request.BatchSize, request.Name);
+        var unnamedContext = new MigrationBackfillContext(null, request.BatchSize);
         var pending = new MigrationBackfillBatchResult(25, "page-3", false);
         var complete = new MigrationBackfillBatchResult(3, null, true);
+        var updatedAt = DateTimeOffset.UtcNow;
+        var checkpoint = new MigrationBackfillCheckpoint(
+            request.Name,
+            context.ContinuationToken,
+            pending.Processed,
+            updatedAt);
 
         Assert.Equal("normalize", request.Name);
         Assert.Equal(25, context.BatchSize);
         Assert.Equal("page-2", context.ContinuationToken);
+        Assert.Equal("normalize", context.BackfillName);
+        Assert.NotEqual(context.IdempotencyKey, unnamedContext.IdempotencyKey);
+        Assert.Equal(64, context.IdempotencyKey.Length);
         Assert.True(pending.HasMore);
         Assert.False(complete.HasMore);
+        Assert.Equal("normalize", checkpoint.BackfillName);
+        Assert.Equal("page-2", checkpoint.ContinuationToken);
+        Assert.Equal(25, checkpoint.Processed);
+        Assert.Equal(updatedAt, checkpoint.UpdatedAt);
 
         Assert.Throws<ArgumentException>(
             () => new MigrationBackfillRequest(" ", 10));

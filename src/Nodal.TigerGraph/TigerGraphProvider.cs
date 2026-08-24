@@ -1,9 +1,9 @@
+using System.Diagnostics.CodeAnalysis;
 using Nodal.Core.Analytics;
 using Nodal.Core.Execution;
 using Nodal.Core.Migrations;
 using Nodal.Core.Mutations;
 using Nodal.Core.Providers;
-using System.Diagnostics.CodeAnalysis;
 
 namespace Nodal.TigerGraph;
 

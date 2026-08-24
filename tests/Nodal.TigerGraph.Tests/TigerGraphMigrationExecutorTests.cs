@@ -160,6 +160,43 @@ public sealed class TigerGraphMigrationExecutorTests
             StringComparison.Ordinal);
     }
 
+    [Fact]
+    public async Task StatefulHistoryStoreBootstrapsMissingInfrastructureOnce()
+    {
+        var handler = new QueueHandler(
+        [
+            """{"error":false,"results":{"VertexTypes":[]}}""",
+            """{"error":false,"results":[]}""",
+            """{"error":false,"results":[]}""",
+        ]);
+        using var client = new HttpClient(handler);
+        var transport = new RecordingTransport();
+        var store = new TigerGraphMigrationHistoryStore(
+            client,
+            Options(),
+            "SocialGraph",
+            transport);
+
+        var first = await store.GetMigrationHistoryAsync();
+        var second = await store.GetMigrationHistoryAsync();
+
+        Assert.Empty(first);
+        Assert.Empty(second);
+        Assert.Collection(
+            transport.Commands,
+            command => Assert.Contains(
+                "ADD VERTEX __NodalMigration",
+                command.Text,
+                StringComparison.Ordinal),
+            command => Assert.Equal(
+                "RUN SCHEMA_CHANGE JOB nodal_history_bootstrap",
+                command.Text),
+            command => Assert.Equal(
+                "DROP JOB nodal_history_bootstrap",
+                command.Text));
+        Assert.Equal(3, handler.Requests.Count);
+    }
+
     private static MigrationExecution Execution() => new(
         "001_initial",
         "checksum",
