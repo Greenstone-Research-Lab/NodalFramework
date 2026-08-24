@@ -3,6 +3,7 @@ using Nodal.Core.Execution;
 using Nodal.Core.Migrations;
 using Nodal.Core.Mutations;
 using Nodal.Core.Providers;
+using System.Diagnostics.CodeAnalysis;
 
 namespace Nodal.TigerGraph;
 
@@ -10,7 +11,7 @@ namespace Nodal.TigerGraph;
 /// Provides the complete Nodal query pipeline for a TigerGraph graph.
 /// </summary>
 public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider, IGraphMigrationProvider, IGraphMigrationHistoryProvider,
-    IGraphAnalyticsProvider, IGraphAnalyticsRuntimeProvider
+    IGraphAnalyticsProvider, IGraphAnalyticsRuntimeProvider, IGraphSchemaIntrospectionProvider
 {
     private readonly IGraphMigrationExecutor? migrationExecutor;
     private readonly IGraphMigrationHistoryStore? migrationHistory;
@@ -47,6 +48,7 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider,
                     SupportsWeights: options.WeightedAnalyticsAlgorithms.Contains(item.Key))),
         };
         AnalyticsRuntime = new TigerGraphAnalyticsRuntime(options.AnalyticsQueries);
+        SchemaIntrospector = new UnavailableTigerGraphSchemaIntrospector();
     }
 
     /// <summary>
@@ -75,6 +77,21 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider,
             options,
             graphName,
             administrativeTransport);
+        SchemaIntrospector = administrativeTransport is ITigerGraphSchemaIntrospectionTransport schemaTransport
+            ? new TigerGraphSchemaIntrospector(schemaTransport, graphName)
+            : new UnavailableTigerGraphSchemaIntrospector();
+    }
+
+    /// <summary>Initializes a provider with separate migration and schema administration channels.</summary>
+    public TigerGraphProvider(
+        HttpClient httpClient,
+        TigerGraphOptions options,
+        string graphName,
+        ITigerGraphAdministrativeTransport administrativeTransport,
+        ITigerGraphSchemaIntrospectionTransport schemaTransport)
+        : this(httpClient, options, graphName, administrativeTransport)
+    {
+        SchemaIntrospector = new TigerGraphSchemaIntrospector(schemaTransport, graphName);
     }
 
     /// <inheritdoc />
@@ -94,6 +111,9 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider,
 
     /// <inheritdoc />
     public IGraphAnalyticsRuntime AnalyticsRuntime { get; }
+
+    /// <inheritdoc />
+    public IGraphSchemaIntrospector SchemaIntrospector { get; }
 
     /// <inheritdoc />
     public IGraphMutationExecutor MutationExecutor { get; private set; }
@@ -127,4 +147,12 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider,
         SupportsAtomicBatch = true,
         TransactionScope = GraphTransactionScope.RequestOrQuery,
     };
+}
+
+[ExcludeFromCodeCoverage]
+internal sealed class UnavailableTigerGraphSchemaIntrospector : IGraphSchemaIntrospector
+{
+    public ValueTask<NodalSchemaSnapshot> CaptureAsync(CancellationToken cancellationToken = default) =>
+        ValueTask.FromException<NodalSchemaSnapshot>(new NotSupportedException(
+            "TigerGraph schema introspection requires an ITigerGraphSchemaIntrospectionTransport."));
 }

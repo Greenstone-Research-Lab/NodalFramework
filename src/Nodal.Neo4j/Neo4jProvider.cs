@@ -19,6 +19,7 @@ public sealed class Neo4jProvider :
     IGraphMigrationLockProvider,
     IGraphAnalyticsProvider,
     IGraphAnalyticsRuntimeProvider,
+    IGraphSchemaIntrospectionProvider,
     IAsyncDisposable
 {
     private readonly IDriver driver;
@@ -57,6 +58,7 @@ public sealed class Neo4jProvider :
             options.AnalyticsAlgorithms);
         AnalyticsRuntime = new Neo4jAnalyticsRuntime(
             driver, options.Database, AnalyticsCapabilities.Algorithms, options.AnalyticsDiscoveryCacheDuration);
+        SchemaIntrospector = new Neo4jSchemaIntrospector(driver, options.Database);
     }
 
     /// <summary>
@@ -91,6 +93,7 @@ public sealed class Neo4jProvider :
         AnalyticsCapabilities = CreateAnalyticsCapabilities(graphDataScienceEnabled, analyticsAlgorithms);
         AnalyticsRuntime = new Neo4jAnalyticsRuntime(
             driver, database, AnalyticsCapabilities.Algorithms, TimeSpan.FromMinutes(5));
+        SchemaIntrospector = new Neo4jSchemaIntrospector(driver, database);
     }
 
     /// <inheritdoc />
@@ -110,6 +113,9 @@ public sealed class Neo4jProvider :
 
     /// <inheritdoc />
     public IGraphAnalyticsRuntime AnalyticsRuntime { get; }
+
+    /// <inheritdoc />
+    public IGraphSchemaIntrospector SchemaIntrospector { get; }
 
     /// <inheritdoc />
     public IGraphMutationExecutor MutationExecutor { get; }
