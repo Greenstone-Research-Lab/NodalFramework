@@ -1,3 +1,4 @@
+using System.Globalization;
 using Neo4j.Driver;
 using Nodal.Core.Analytics;
 using Nodal.Core.ChangeTracking;
@@ -5,7 +6,6 @@ using Nodal.Core.Migrations;
 using Nodal.Core.Mutations;
 using Nodal.Core.Providers;
 using NSubstitute;
-using System.Globalization;
 
 namespace Nodal.Neo4j.Tests;
 
