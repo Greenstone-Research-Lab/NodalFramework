@@ -260,6 +260,21 @@ public sealed class MigrationRunnerTests
     }
 
     [Fact]
+    public async Task BackfillExecutorRejectsNullContracts()
+    {
+        var executor = new BoundedMigrationBackfillExecutor();
+        var request = new MigrationBackfillRequest("null-check", 1);
+        static ValueTask<MigrationBackfillBatchResult> Batch(
+            MigrationBackfillContext _, CancellationToken __) =>
+            ValueTask.FromResult(new MigrationBackfillBatchResult(0, null, true));
+
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            async () => await executor.ExecuteAsync(null!, Batch));
+        await Assert.ThrowsAsync<ArgumentNullException>(
+            async () => await executor.ExecuteAsync(request, null!));
+    }
+
+    [Fact]
     public async Task CleanupOperationCannotPrecedeSchemaEvolution()
     {
         var provider = new RecordingProvider();
