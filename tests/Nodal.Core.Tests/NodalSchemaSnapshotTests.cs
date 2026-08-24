@@ -117,6 +117,30 @@ public sealed class NodalSchemaSnapshotTests
         Assert.DoesNotContain(renamed.Changes, change =>
             change.Kind is NodalSchemaChangeKind.NodePropertyAdded &&
             change.PropertyName == "display_name");
+
+        var plan = NodalSchemaMigrationMapper.Map(
+            before,
+            after,
+            new NodalSchemaDiffOptions(
+                new Dictionary<string, string>
+                {
+                    ["node:people:name"] = "display_name",
+                }),
+            name => name switch
+            {
+                "System.String" => typeof(string),
+                "System.Int32" => typeof(int),
+                "System.Int64" => typeof(long),
+                _ => null,
+            });
+
+        Assert.Contains(plan.Operations, operation =>
+            operation is RenameNodePropertyOperation);
+        Assert.Contains(plan.Operations, operation =>
+            operation is AlterNodePropertyTypeOperation);
+        Assert.Contains(plan.Operations, operation =>
+            operation is AlterRelationPropertyTypeOperation);
+        Assert.True(plan.RequiresManualReview);
     }
 
     private sealed class SnapshotContext(IGraphProvider provider) : NodalContext(provider)
