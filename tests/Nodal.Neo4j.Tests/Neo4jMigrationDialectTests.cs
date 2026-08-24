@@ -54,5 +54,35 @@ public sealed class Neo4jMigrationDialectTests
         Assert.Contains("nodal_uq_Person_person_id", commands[1].Text, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void CompileTreatsRelationPropertiesAsFlexibleAndRejectsTypeAlterations()
+    {
+        var commands = new Neo4jMigrationDialect().Compile(
+        [
+            new CreateRelationTypeOperation("KNOWS", "Person", "Person", true),
+            new AddRelationPropertyOperation(
+                "KNOWS",
+                new GraphSchemaProperty("since", typeof(DateTime))),
+            new DropRelationPropertyOperation("KNOWS", "since"),
+            new RenameRelationPropertyOperation("KNOWS", "since", "connected_at"),
+        ]);
+
+        Assert.Empty(commands);
+
+        Assert.Throws<NotSupportedException>(() => new Neo4jMigrationDialect().Compile(
+        [
+            new AlterNodePropertyTypeOperation(
+                "Person", "age", typeof(int), typeof(long),
+                MigrationPropertyTypeCompatibility.RequiresRewrite),
+        ]));
+
+        Assert.Throws<NotSupportedException>(() => new Neo4jMigrationDialect().Compile(
+        [
+            new AlterRelationPropertyTypeOperation(
+                "KNOWS", "weight", typeof(int), typeof(double),
+                MigrationPropertyTypeCompatibility.Destructive),
+        ]));
+    }
+
     private sealed record UnknownOperation : MigrationOperation;
 }
