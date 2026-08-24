@@ -42,4 +42,11 @@ public interface IMigrationBackfillExecutor
         MigrationBackfillRequest request,
         Func<MigrationBackfillContext, CancellationToken, ValueTask<MigrationBackfillBatchResult>> executeBatch,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Executes a backfill while persisting checkpoints after each successful batch.</summary>
+    ValueTask ExecuteAsync(
+        MigrationBackfillRequest request,
+        Func<MigrationBackfillContext, CancellationToken, ValueTask<MigrationBackfillBatchResult>> executeBatch,
+        IMigrationBackfillCheckpointStore checkpointStore,
+        CancellationToken cancellationToken = default);
 }
