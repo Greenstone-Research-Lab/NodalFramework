@@ -22,7 +22,20 @@ public sealed record MigrationBackfillRequest
 /// <summary>Provides durable continuation information for one batch.</summary>
 public sealed record MigrationBackfillContext(
     string? ContinuationToken,
-    int BatchSize);
+    int BatchSize,
+    string? BackfillName = null)
+{
+    /// <summary>
+    /// Gets a deterministic key for this batch. Providers should use it as the
+    /// idempotency key for writes so a retry cannot apply the same batch twice.
+    /// </summary>
+    public string IdempotencyKey =>
+        Convert.ToHexString(
+                System.Security.Cryptography.SHA256.HashData(
+                    System.Text.Encoding.UTF8.GetBytes(
+                        $"{BackfillName ?? "<unnamed>"}|{ContinuationToken ?? "<initial>"}|{BatchSize}")))
+            .ToLowerInvariant();
+}
 
 /// <summary>Reports one completed backfill batch.</summary>
 public sealed record MigrationBackfillBatchResult(
@@ -41,5 +54,12 @@ public interface IMigrationBackfillExecutor
     ValueTask ExecuteAsync(
         MigrationBackfillRequest request,
         Func<MigrationBackfillContext, CancellationToken, ValueTask<MigrationBackfillBatchResult>> executeBatch,
+        CancellationToken cancellationToken = default);
+
+    /// <summary>Executes a backfill while persisting checkpoints after each successful batch.</summary>
+    ValueTask ExecuteAsync(
+        MigrationBackfillRequest request,
+        Func<MigrationBackfillContext, CancellationToken, ValueTask<MigrationBackfillBatchResult>> executeBatch,
+        IMigrationBackfillCheckpointStore checkpointStore,
         CancellationToken cancellationToken = default);
 }

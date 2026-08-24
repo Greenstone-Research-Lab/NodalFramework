@@ -12,11 +12,32 @@ public sealed class BoundedMigrationBackfillExecutor : IMigrationBackfillExecuto
         MigrationBackfillRequest request,
         Func<MigrationBackfillContext, CancellationToken, ValueTask<MigrationBackfillBatchResult>> executeBatch,
         CancellationToken cancellationToken = default)
+        => await ExecuteCoreAsync(request, executeBatch, checkpointStore: null, cancellationToken).ConfigureAwait(false);
+
+    /// <inheritdoc />
+    public async ValueTask ExecuteAsync(
+        MigrationBackfillRequest request,
+        Func<MigrationBackfillContext, CancellationToken, ValueTask<MigrationBackfillBatchResult>> executeBatch,
+        IMigrationBackfillCheckpointStore checkpointStore,
+        CancellationToken cancellationToken = default)
+    {
+        ArgumentNullException.ThrowIfNull(checkpointStore);
+        await ExecuteCoreAsync(request, executeBatch, checkpointStore, cancellationToken).ConfigureAwait(false);
+    }
+
+    private static async ValueTask ExecuteCoreAsync(
+        MigrationBackfillRequest request,
+        Func<MigrationBackfillContext, CancellationToken, ValueTask<MigrationBackfillBatchResult>> executeBatch,
+        IMigrationBackfillCheckpointStore? checkpointStore,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(request);
         ArgumentNullException.ThrowIfNull(executeBatch);
 
-        string? continuationToken = null;
+        var checkpoint = checkpointStore is null
+            ? null
+            : await checkpointStore.GetAsync(request.Name, cancellationToken).ConfigureAwait(false);
+        string? continuationToken = checkpoint?.ContinuationToken;
 
         while (true)
         {
@@ -25,7 +46,8 @@ public sealed class BoundedMigrationBackfillExecutor : IMigrationBackfillExecuto
             var result = await executeBatch(
                     new MigrationBackfillContext(
                         continuationToken,
-                        request.BatchSize),
+                        request.BatchSize,
+                        request.Name),
                     cancellationToken)
                 .ConfigureAwait(false);
 
@@ -38,6 +60,10 @@ public sealed class BoundedMigrationBackfillExecutor : IMigrationBackfillExecuto
 
             if (result.IsCompleted)
             {
+                if (checkpointStore is not null)
+                {
+                    await checkpointStore.RemoveAsync(request.Name, cancellationToken).ConfigureAwait(false);
+                }
                 return;
             }
 
@@ -49,6 +75,16 @@ public sealed class BoundedMigrationBackfillExecutor : IMigrationBackfillExecuto
             }
 
             continuationToken = result.ContinuationToken;
+            if (checkpointStore is not null)
+            {
+                await checkpointStore.SaveAsync(
+                    new MigrationBackfillCheckpoint(
+                        request.Name,
+                        continuationToken,
+                        result.Processed,
+                        DateTimeOffset.UtcNow),
+                    cancellationToken).ConfigureAwait(false);
+            }
         }
     }
 }

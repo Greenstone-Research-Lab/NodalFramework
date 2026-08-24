@@ -1,7 +1,7 @@
-using Neo4j.Driver;
-using Nodal.Core.Migrations;
 using System.Collections;
 using System.Globalization;
+using Neo4j.Driver;
+using Nodal.Core.Migrations;
 
 namespace Nodal.Neo4j;
 
