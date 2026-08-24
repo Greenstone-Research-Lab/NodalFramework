@@ -2,12 +2,39 @@ using Neo4j.Driver;
 using Nodal.Core;
 using Nodal.Core.Metadata;
 using Nodal.Core.Query;
+using Nodal.Core.Migrations;
 using Nodal.Neo4j;
 
 namespace Nodal.IntegrationTests;
 
 public sealed class Neo4jConnectionTests
 {
+    [Neo4jIntegrationFact]
+    [Trait("Category", "Integration")]
+    [Trait("Provider", "Neo4j")]
+    public async Task MigrationCheckpointRoundTripsThroughLiveBoltStore()
+    {
+        var settings = Settings.FromEnvironment();
+        await using var driver = GraphDatabase.Driver(
+            settings.Endpoint,
+            AuthTokens.Basic(settings.Username, settings.Password));
+        var store = new Neo4jMigrationCheckpointStore(driver, settings.Database);
+        var name = $"integration-{Guid.NewGuid():N}";
+        var checkpoint = new MigrationBackfillCheckpoint(
+            name, "page-2", 25, DateTimeOffset.UtcNow);
+
+        await store.SaveAsync(checkpoint);
+        var loaded = await store.GetAsync(name);
+
+        Assert.NotNull(loaded);
+        Assert.Equal(checkpoint.BackfillName, loaded!.BackfillName);
+        Assert.Equal(checkpoint.ContinuationToken, loaded.ContinuationToken);
+        Assert.Equal(checkpoint.Processed, loaded.Processed);
+
+        await store.RemoveAsync(name);
+        Assert.Null(await store.GetAsync(name));
+    }
+
     [Neo4jIntegrationFact]
     [Trait("Category", "Integration")]
     [Trait("Provider", "Neo4j")]
