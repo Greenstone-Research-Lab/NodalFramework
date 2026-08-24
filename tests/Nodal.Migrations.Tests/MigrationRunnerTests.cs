@@ -233,6 +233,33 @@ public sealed class MigrationRunnerTests
     }
 
     [Fact]
+    public async Task BackfillExecutorRequiresContinuationForIncompleteBatch()
+    {
+        var executor = new BoundedMigrationBackfillExecutor();
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await executor.ExecuteAsync(
+                new MigrationBackfillRequest("invalid-continuation", 2),
+                (_, _) => ValueTask.FromResult(
+                    new MigrationBackfillBatchResult(1, " ", false))));
+    }
+
+    [Fact]
+    public async Task BackfillExecutorHonorsCancellationBeforeFirstBatch()
+    {
+        var executor = new BoundedMigrationBackfillExecutor();
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAsync<OperationCanceledException>(
+            async () => await executor.ExecuteAsync(
+                new MigrationBackfillRequest("cancelled", 2),
+                (_, _) => ValueTask.FromResult(
+                    new MigrationBackfillBatchResult(0, null, true)),
+                cancellation.Token));
+    }
+
+    [Fact]
     public async Task CleanupOperationCannotPrecedeSchemaEvolution()
     {
         var provider = new RecordingProvider();

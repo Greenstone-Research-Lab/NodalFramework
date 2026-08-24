@@ -58,11 +58,18 @@ public sealed class MigrationContractCoverageTests
         Assert.Equal("Person", ((DropNodePropertyOperation)operations[5]).NodeType);
         Assert.Equal("KNOWS", ((DropRelationPropertyOperation)operations[6]).RelationType);
         Assert.Equal("name", ((RenameNodePropertyOperation)operations[7]).OldPropertyName);
+        Assert.Equal("Person", ((RenameNodePropertyOperation)operations[7]).NodeType);
         Assert.Equal("label", ((RenameRelationPropertyOperation)operations[8]).NewPropertyName);
+        Assert.Equal("KNOWS", ((RenameRelationPropertyOperation)operations[8]).RelationType);
+        Assert.Equal("name", ((RenameRelationPropertyOperation)operations[8]).OldPropertyName);
         Assert.Equal(typeof(int), ((AlterNodePropertyTypeOperation)operations[9]).OldClrType);
         Assert.Equal(typeof(long), ((AlterNodePropertyTypeOperation)operations[9]).NewClrType);
+        Assert.Equal("Person", ((AlterNodePropertyTypeOperation)operations[9]).NodeType);
+        Assert.Equal("age", ((AlterNodePropertyTypeOperation)operations[9]).PropertyName);
         Assert.Equal(typeof(int), ((AlterRelationPropertyTypeOperation)operations[10]).OldClrType);
         Assert.Equal(typeof(double), ((AlterRelationPropertyTypeOperation)operations[10]).NewClrType);
+        Assert.Equal("KNOWS", ((AlterRelationPropertyTypeOperation)operations[10]).RelationType);
+        Assert.Equal("weight", ((AlterRelationPropertyTypeOperation)operations[10]).PropertyName);
 
         var dropSchema = new DropSchemaObjectOperation("ix_person_name", MigrationSchemaObjectKind.Index);
         Assert.Equal("ix_person_name", dropSchema.Name);
@@ -155,6 +162,9 @@ public sealed class MigrationContractCoverageTests
         var batch = new MigrationBackfillBatchResult(4, "next", false);
         var lockError = new MigrationLockUnavailableException(
             "neo4j://local", "lock unavailable", innerException: null);
+        var lockCause = new InvalidOperationException("connection refused");
+        var lockErrorWithCause = new MigrationLockUnavailableException(
+            "neo4j://local", "lock unavailable", lockCause);
 
         Assert.Equal("safe message", failure.Message);
         Assert.Equal("InvalidOperationException", failure.ErrorType);
@@ -169,5 +179,8 @@ public sealed class MigrationContractCoverageTests
         Assert.Equal(4, batch.Processed);
         Assert.Equal("next", batch.ContinuationToken);
         Assert.Equal("neo4j://local", lockError.Scope);
+        Assert.Same(lockCause, lockErrorWithCause.InnerException);
+        Assert.Throws<ArgumentException>(
+            () => new MigrationLockUnavailableException(" ", "invalid"));
     }
 }
