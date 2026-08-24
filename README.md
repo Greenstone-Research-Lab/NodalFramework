@@ -1,3 +1,11 @@
+# NODAL FRAMEWORK IS OPEN SOURCE UNDER MPL-2.0.
+
+Documentation is licensed under CC BY 4.0. Nodal names, logos, and trademarks
+are not granted under the software license. Hosted services, premium models,
+datasets, commercial APIs, and enterprise support are governed by separate
+commercial terms. Contributions require acceptance of the Nodal Contributor
+License Agreement.
+
 # Nodal Framework
 
 Nodal Framework is a provider-based .NET graph data access prototype. It keeps the domain model and query API provider-neutral while Neo4j and TigerGraph packages compile and execute the same model through their native transports.
@@ -402,7 +410,7 @@ Package verification can also be run independently:
 powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-packages.ps1
 ```
 
-The package gate produces all six `.nupkg` and `.snupkg` artifacts, then inspects their manifests and contents for the MIT expression, repository metadata, README, license, IntelliSense XML, target framework, and required package dependencies.
+The package gate produces all six `.nupkg` and `.snupkg` artifacts, then inspects their manifests and contents for the MPL-2.0 expression, repository metadata, README, license, IntelliSense XML, target framework, and required package dependencies.
 
 ## Publishing
 
@@ -473,4 +481,6 @@ GitHub Actions runs the quality gate and a disposable Neo4j smoke environment fo
 
 ## License
 
-Nodal Framework is distributed under the [MIT License](LICENSE.txt).
+Nodal Framework source code is distributed under the [MPL-2.0 license](LICENSE.txt).
+Documentation is distributed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+Trademarks and hosted or commercial services are governed by the policies in this repository.

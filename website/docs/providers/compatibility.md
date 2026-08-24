@@ -50,6 +50,27 @@ Legend: **Yes** is implemented; **Conditional** requires the condition shown; **
 | Typed shortest-path result | Yes: native Cypher | Conditional: configured installed GSQL query |
 | Weighted shortest paths | Conditional: GDS Dijkstra, A*, Yen | Conditional: configured weighted installed query |
 
+## Migration evolution matrix
+
+Migration operations are analyzed before provider transport. A provider must
+compile an operation explicitly; Nodal never emulates an unsupported change by
+loading the graph into application memory.
+
+| Operation | Neo4j | TigerGraph |
+| --- | --- | --- |
+| Add node/relation property | Native graph flexibility; reported as a warning with no DDL | ALTER VERTEX/EDGE ADD ATTRIBUTE |
+| Drop node/relation property | Native graph flexibility; reported as a warning with no DDL | ALTER VERTEX/EDGE DROP ATTRIBUTE |
+| Rename property | Warning-only on Neo4j; application data rewrite remains explicit | Unsupported; use an explicit provider backfill |
+| Alter property type | Unsupported without an explicit backfill | Unsupported without an explicit backfill |
+| Drop index | Typed Cypher DROP INDEX | Explicitly unsupported across the certified server matrix |
+| Drop unique constraint | Typed Cypher DROP CONSTRAINT | Unsupported beyond primary IDs |
+| Destructive operations | Require AllowDestructiveOperations = true | Require AllowDestructiveOperations = true |
+
+Type rewrites and large data changes use the bounded backfill contract. Batch
+size, continuation tokens, cancellation, retry, and recovery behavior must be
+defined by the application/provider integration; no provider silently converts
+or deletes persisted values.
+
 ## Analytics algorithm matrix
 
 All algorithms below exist in the portable contract. “Compiler” does not mean that the optional database component has been installed or live-certified.

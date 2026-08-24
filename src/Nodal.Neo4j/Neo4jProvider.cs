@@ -11,8 +11,15 @@ namespace Nodal.Neo4j;
 /// Provides the complete Nodal query pipeline for Neo4j and owns the pooled driver
 /// when constructed from <see cref="Neo4jOptions"/>.
 /// </summary>
-public sealed class Neo4jProvider : IGraphProvider, IGraphMutationProvider, IGraphMigrationProvider,
-    IGraphAnalyticsProvider, IGraphAnalyticsRuntimeProvider, IAsyncDisposable
+public sealed class Neo4jProvider :
+    IGraphProvider,
+    IGraphMutationProvider,
+    IGraphMigrationProvider,
+    IGraphMigrationHistoryProvider,
+    IGraphMigrationLockProvider,
+    IGraphAnalyticsProvider,
+    IGraphAnalyticsRuntimeProvider,
+    IAsyncDisposable
 {
     private readonly IDriver driver;
     private readonly bool ownsDriver;
@@ -33,6 +40,16 @@ public sealed class Neo4jProvider : IGraphProvider, IGraphMutationProvider, IGra
         MutationExecutor = new Neo4jMutationExecutor(driver, options.Database);
         MigrationDialect = new Neo4jMigrationDialect();
         MigrationExecutor = new Neo4jMigrationExecutor(driver, options.Database);
+        MigrationHistory = new Neo4jMigrationHistoryStore(
+            driver,
+            options.Database);
+        MigrationHistoryScope =
+            $"neo4j:{options.Database ?? "default"}";
+        MigrationLock = new Neo4jMigrationLock(
+            driver,
+            options.Database);
+        MigrationLockScope =
+            $"neo4j:{options.Database ?? "default"}";
         ResultMaterializer = new JsonGraphResultMaterializer();
         AnalyticsCompiler = new Neo4jAnalyticsCompiler();
         AnalyticsCapabilities = CreateAnalyticsCapabilities(
@@ -59,6 +76,16 @@ public sealed class Neo4jProvider : IGraphProvider, IGraphMutationProvider, IGra
         MutationExecutor = new Neo4jMutationExecutor(driver, database);
         MigrationDialect = new Neo4jMigrationDialect();
         MigrationExecutor = new Neo4jMigrationExecutor(driver, database);
+        MigrationHistory = new Neo4jMigrationHistoryStore(
+                driver,
+                database);
+        MigrationHistoryScope =
+            $"neo4j:{database ?? "default"}";
+        MigrationLock = new Neo4jMigrationLock(
+            driver,
+            database);
+        MigrationLockScope =
+            $"neo4j:{database ?? "default"}";
         ResultMaterializer = new JsonGraphResultMaterializer();
         AnalyticsCompiler = new Neo4jAnalyticsCompiler();
         AnalyticsCapabilities = CreateAnalyticsCapabilities(graphDataScienceEnabled, analyticsAlgorithms);
@@ -92,6 +119,18 @@ public sealed class Neo4jProvider : IGraphProvider, IGraphMutationProvider, IGra
 
     /// <inheritdoc />
     public IGraphMigrationExecutor MigrationExecutor { get; }
+
+    /// <inheritdoc />
+    public IGraphMigrationHistoryStore MigrationHistory { get; }
+
+    /// <inheritdoc />
+    public string MigrationHistoryScope { get; }
+
+    /// <inheritdoc />
+    public IGraphMigrationLock MigrationLock { get; }
+
+    /// <inheritdoc />
+    public string MigrationLockScope { get; }
 
     /// <inheritdoc />
     public bool SupportsMigrationExecution => true;

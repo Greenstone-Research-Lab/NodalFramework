@@ -47,12 +47,32 @@ public sealed partial class TigerGraphMigrationDialect : IGraphMigrationDialect
         CreateIndexOperation index =>
             $"ALTER VERTEX {Identifier(index.NodeType)} ADD INDEX " +
             $"{Identifier($"nodal_ix_{index.NodeType}_{index.PropertyName}")} ON ({Identifier(index.PropertyName)});",
+        AddNodePropertyOperation property =>
+            $"ALTER VERTEX {Identifier(property.NodeType)} ADD ATTRIBUTE " +
+            $"({Identifier(property.Property.Name)} {MapType(property.Property.ClrType, primaryKey: false)});",
+        AddRelationPropertyOperation property =>
+            $"ALTER EDGE {Identifier(property.RelationType)} ADD ATTRIBUTE " +
+            $"({Identifier(property.Property.Name)} {MapType(property.Property.ClrType, primaryKey: false)});",
+        DropNodePropertyOperation property =>
+            $"ALTER VERTEX {Identifier(property.NodeType)} DROP ATTRIBUTE " +
+            $"{Identifier(property.PropertyName)};",
+        DropRelationPropertyOperation property =>
+            $"ALTER EDGE {Identifier(property.RelationType)} DROP ATTRIBUTE " +
+            $"{Identifier(property.PropertyName)};",
         DropNodeTypeOperation node => $"DROP VERTEX {Identifier(node.NodeType)};",
         DropRelationTypeOperation relation => $"DROP EDGE {Identifier(relation.RelationType)};",
         CreateUniqueConstraintOperation => throw new NotSupportedException(
             "TigerGraph supports uniqueness through vertex primary IDs; arbitrary unique constraints are not supported."),
         DropSchemaObjectOperation => throw new NotSupportedException(
             "TigerGraph index removal requires the owning vertex type. Use a provider-aware down migration until typed drop-index support is available."),
+        DropIndexOperation => throw new NotSupportedException(
+            "TigerGraph index removal is not portable across server versions."),
+        DropUniqueConstraintOperation => throw new NotSupportedException(
+            "TigerGraph does not expose arbitrary unique constraints beyond primary IDs."),
+        RenameNodePropertyOperation or RenameRelationPropertyOperation => throw new NotSupportedException(
+            "TigerGraph property rename requires a provider-specific backfill and is not implicit."),
+        AlterNodePropertyTypeOperation => throw new NotSupportedException(
+            "TigerGraph property type alteration requires an explicit provider-specific backfill."),
         _ => throw new NotSupportedException(
             $"Migration operation '{operation.GetType().Name}' is not supported by TigerGraph."),
     };

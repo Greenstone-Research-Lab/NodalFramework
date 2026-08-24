@@ -95,8 +95,8 @@ foreach ($packageId in $expectedPackages.Keys) {
             throw "Package identity mismatch. Expected '$packageId/$PackageVersion', found '$actualId/$actualVersion'."
         }
 
-        if ($license.type -ne 'expression' -or $license.InnerText -ne 'MIT') {
-            throw "Package '$packageId' must declare the MIT license expression."
+        if ($license.type -ne 'expression' -or $license.InnerText -ne 'MPL-2.0') {
+            throw "Package '$packageId' must declare the MPL-2.0 license expression."
         }
 
         if ($readme -ne 'README.md') {

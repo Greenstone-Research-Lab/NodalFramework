@@ -119,7 +119,16 @@ public sealed class TigerGraphMigrationExecutor : IGraphMigrationExecutor
             [
                 new MigrationCommand(
                     $"CREATE SCHEMA_CHANGE JOB nodal_history_bootstrap FOR GRAPH {graphName} {{ " +
-                    $"ADD VERTEX {HistoryType} (PRIMARY_ID Id STRING, Checksum STRING, AppliedAt DATETIME) " +
+                    $"ADD VERTEX {HistoryType} (" +
+                        "PRIMARY_ID Id STRING, " +
+                        "Checksum STRING, " +
+                        "AppliedAt DATETIME, " +
+                        "State STRING, " +
+                        "StartedAt DATETIME, " +
+                        "CompletedAt DATETIME, " +
+                        "FailureMessage STRING, " +
+                        "FailureType STRING, " +
+                        "FailureAt DATETIME) " +
                     "WITH primary_id_as_attribute=\"true\"; }",
                     false),
                 new MigrationCommand("RUN SCHEMA_CHANGE JOB nodal_history_bootstrap", false),
