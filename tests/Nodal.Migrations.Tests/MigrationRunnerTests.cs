@@ -85,20 +85,20 @@ public sealed class MigrationRunnerTests
 
         var runner = new MigrationRunner(provider);
 
-    var exception = await Assert.ThrowsAsync<
-        NodalCapabilityNotSupportedException>(
-            async () => await runner.MigrateAsync(
-            [
-                new FirstMigration()
-            ]));
+        var exception = await Assert.ThrowsAsync<
+            NodalCapabilityNotSupportedException>(
+                async () => await runner.MigrateAsync(
+                [
+                    new FirstMigration()
+                ]));
 
-    Assert.Contains(
-        "NODAL-MIGRATION-UNSUPPORTED",
-        exception.Message);
-    Assert.Equal("RejectingDialect", exception.ProviderName);
-    Assert.Equal(
-        "NODAL-MIGRATION-UNSUPPORTED",
-        exception.CapabilityCode);
+        Assert.Contains(
+            "NODAL-MIGRATION-UNSUPPORTED",
+            exception.Message);
+        Assert.Equal("RejectingDialect", exception.ProviderName);
+        Assert.Equal(
+            "NODAL-MIGRATION-UNSUPPORTED",
+            exception.CapabilityCode);
 
         Assert.Empty(provider.Executor.Applied);
     }
