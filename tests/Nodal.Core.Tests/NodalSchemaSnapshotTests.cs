@@ -1,7 +1,7 @@
+using Nodal.Core.Execution;
 using Nodal.Core.Metadata;
 using Nodal.Core.Migrations;
 using Nodal.Core.Providers;
-using Nodal.Core.Execution;
 using Nodal.Core.Query;
 
 namespace Nodal.Core.Tests;
