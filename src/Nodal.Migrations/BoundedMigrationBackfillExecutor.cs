@@ -46,7 +46,8 @@ public sealed class BoundedMigrationBackfillExecutor : IMigrationBackfillExecuto
             var result = await executeBatch(
                     new MigrationBackfillContext(
                         continuationToken,
-                        request.BatchSize),
+                        request.BatchSize,
+                        request.Name),
                     cancellationToken)
                 .ConfigureAwait(false);
 

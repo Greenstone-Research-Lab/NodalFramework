@@ -237,6 +237,28 @@ public sealed class MigrationRunnerTests
     }
 
     [Fact]
+    public async Task BackfillRetryUsesStableIdempotencyKeyForTheSameContinuation()
+    {
+        var executor = new BoundedMigrationBackfillExecutor();
+        var keys = new List<string>();
+
+        await executor.ExecuteAsync(
+            new MigrationBackfillRequest("idempotent", 2),
+            (context, _) =>
+            {
+                keys.Add(context.IdempotencyKey);
+                return ValueTask.FromResult(
+                    keys.Count == 1
+                        ? new MigrationBackfillBatchResult(2, "page-2", false)
+                        : new MigrationBackfillBatchResult(1, null, true));
+            });
+
+        var retryKey = new MigrationBackfillContext("page-2", 2, "idempotent").IdempotencyKey;
+        Assert.Equal(retryKey, keys[1]);
+        Assert.NotEqual(keys[0], keys[1]);
+    }
+
+    [Fact]
     public async Task BackfillExecutorRejectsInvalidBatchResult()
     {
         var executor = new BoundedMigrationBackfillExecutor();
