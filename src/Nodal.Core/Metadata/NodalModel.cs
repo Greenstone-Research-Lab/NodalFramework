@@ -17,6 +17,19 @@ public sealed class NodalModel
             relation => (relation.SourceType, relation.ClrType, relation.TargetType));
     }
 
+    /// <summary>Gets the registered node mappings in deterministic CLR-name order.</summary>
+    public IReadOnlyList<GraphNodeMetadata> Nodes => nodes.Values
+        .OrderBy(node => node.Name, StringComparer.Ordinal)
+        .ThenBy(node => node.ClrType.FullName, StringComparer.Ordinal)
+        .ToArray();
+
+    /// <summary>Gets the registered relationship mappings in deterministic name order.</summary>
+    public IReadOnlyList<GraphRelationMetadata> Relations => relations.Values
+        .OrderBy(relation => relation.Name, StringComparer.Ordinal)
+        .ThenBy(relation => relation.SourceType.FullName, StringComparer.Ordinal)
+        .ThenBy(relation => relation.TargetType.FullName, StringComparer.Ordinal)
+        .ToArray();
+
     /// <summary>Gets the metadata registered for a node type.</summary>
     public GraphNodeMetadata GetNode<TNode>() => GetNode(typeof(TNode));
 
