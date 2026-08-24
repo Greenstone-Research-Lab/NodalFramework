@@ -121,6 +121,22 @@ public sealed class MigrationRunnerTests
     }
 
     [Fact]
+    public async Task OptionsMigrationUsesProviderLockAndReleasesLease()
+    {
+        var provider = new LockingProvider();
+        var runner = new MigrationRunner(provider);
+
+        var plan = await runner.MigrateAsync(
+            [new FirstMigration()],
+            new MigrationExecutionOptions());
+
+        Assert.Single(plan.Executions);
+        Assert.Equal(1, provider.Lock.AcquisitionCount);
+        Assert.Equal(1, provider.Lock.ReleaseCount);
+        Assert.Equal(0, provider.Lock.ActiveLeaseCount);
+    }
+
+    [Fact]
     public async Task ContextDatabaseFacadeExposesDryRunAndExecutionExtensions()
     {
         var provider = new RecordingProvider();
