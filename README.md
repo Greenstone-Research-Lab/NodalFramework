@@ -20,6 +20,7 @@ Nodal Framework is a provider-based .NET graph data access prototype. It keeps t
 | `Nodal.Analytics` | Provider-neutral analytics shell for path similarity and pattern discovery |
 | `Nodal.PatternRecognition` | Deprecated alpha package; use `Nodal.Analytics` for new projects |
 | `Nodal.TigerGraph` | TigerGraph/GSQL provider using REST++ and an optional administrative transport |
+| `Nodal.Tool` | .NET global tool for deterministic migration snapshots, diffs, plans, and validation |
 
 The initial alpha targets .NET 10. Package versions move together so provider and core contracts remain compatible during the pre-release period.
 
@@ -31,6 +32,22 @@ dotnet add package Nodal.Neo4j --prerelease
 # or: dotnet add package Nodal.TigerGraph --prerelease
 dotnet add package Nodal.Migrations --prerelease
 ```
+
+Install the migration CLI separately as a .NET tool:
+
+```bash
+dotnet tool install --global Nodal.Tool --prerelease
+nodal migrations validate --snapshot nodal.snapshot.json
+```
+
+Immutable migration bundles capture provider identity, required capabilities,
+ordered up/down commands, execution channels, and destructive flags under a
+canonical SHA-256 checksum. `NodalMigrationBundleExecutor` provides idempotent,
+provider-neutral apply, rollback, dry-run, checksum-drift detection, explicit
+destructive approval, and optional exclusive provider locking. CLI `apply` and
+`rollback` load a trusted, provider-composed execution host named by environment
+variables; connection credentials remain inside that deployment host and never
+enter arguments, plans, bundles, or command output.
 
 `Nodal.Analytics` is the optional analytics shell above providers. The former
 `Nodal.PatternRecognition` package is retained as a deprecated alpha transition

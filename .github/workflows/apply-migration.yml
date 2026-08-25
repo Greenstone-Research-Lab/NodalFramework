@@ -1,0 +1,129 @@
+name: Apply Immutable Migration Bundle
+
+on:
+  workflow_dispatch:
+    inputs:
+      target:
+        description: Protected GitHub environment
+        required: true
+        type: choice
+        options: [staging, production]
+      action:
+        description: Migration action
+        required: true
+        type: choice
+        options: [apply, rollback]
+      artifact_run_id:
+        description: Workflow run containing the reviewed deployment artifact
+        required: true
+        type: string
+      artifact_name:
+        description: Reviewed deployment artifact name
+        required: true
+        type: string
+      bundle_path:
+        description: Bundle path inside the artifact
+        required: true
+        type: string
+      host_assembly_path:
+        description: Trusted host assembly path inside the artifact
+        required: true
+        type: string
+      host_type:
+        description: Public INodalMigrationBundleExecutionHost type
+        required: true
+        type: string
+      tool_version:
+        description: Exact published Nodal.Tool version
+        required: true
+        type: string
+      approve_destructive:
+        description: Explicitly approve destructive work
+        required: true
+        default: false
+        type: boolean
+
+permissions:
+  actions: read
+  contents: read
+  id-token: write
+
+concurrency:
+  group: nodal-migration-${{ inputs.target }}
+  cancel-in-progress: false
+
+jobs:
+  migrate:
+    name: ${{ inputs.action }} bundle in ${{ inputs.target }}
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: ${{ inputs.target }}
+    env:
+      NODAL_MIGRATION_HOST_CONFIGURATION: ${{ secrets.NODAL_MIGRATION_HOST_CONFIGURATION }}
+      NODAL_ACTION: ${{ inputs.action }}
+      NODAL_APPROVE_DESTRUCTIVE: ${{ inputs.approve_destructive }}
+      NODAL_ARTIFACT_ROOT: ${{ github.workspace }}/deployment
+      NODAL_BUNDLE_RELATIVE_PATH: ${{ inputs.bundle_path }}
+      NODAL_HOST_RELATIVE_PATH: ${{ inputs.host_assembly_path }}
+      NODAL_MIGRATION_HOST_TYPE: ${{ inputs.host_type }}
+      NODAL_TOOL_VERSION: ${{ inputs.tool_version }}
+
+    steps:
+      - name: Checkout workflow revision
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Download reviewed deployment artifact
+        uses: actions/download-artifact@v4
+        with:
+          github-token: ${{ github.token }}
+          run-id: ${{ inputs.artifact_run_id }}
+          name: ${{ inputs.artifact_name }}
+          path: deployment
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Install exact migration tool
+        shell: pwsh
+        run: dotnet tool install Nodal.Tool --tool-path ./.nodal --version $env:NODAL_TOOL_VERSION
+
+      - name: Validate paths and execute reviewed bundle
+        shell: pwsh
+        run: |
+          $root = [IO.Path]::GetFullPath($env:NODAL_ARTIFACT_ROOT)
+          $bundle = [IO.Path]::GetFullPath((Join-Path $root $env:NODAL_BUNDLE_RELATIVE_PATH))
+          $hostAssembly = [IO.Path]::GetFullPath((Join-Path $root $env:NODAL_HOST_RELATIVE_PATH))
+          $rootPrefix = $root.TrimEnd([IO.Path]::DirectorySeparatorChar) + [IO.Path]::DirectorySeparatorChar
+          if (-not $bundle.StartsWith($rootPrefix, [StringComparison]::Ordinal) -or
+              -not $hostAssembly.StartsWith($rootPrefix, [StringComparison]::Ordinal)) {
+            throw 'Bundle and host paths must remain inside the reviewed artifact.'
+          }
+          if (-not (Test-Path -LiteralPath $bundle -PathType Leaf) -or
+              -not (Test-Path -LiteralPath $hostAssembly -PathType Leaf)) {
+            throw 'The reviewed bundle or migration host assembly was not found.'
+          }
+
+          $env:NODAL_MIGRATION_HOST_ASSEMBLY = $hostAssembly
+          $arguments = @('migrations', $env:NODAL_ACTION, '--bundle', $bundle, '--format', 'github')
+          if ($env:NODAL_APPROVE_DESTRUCTIVE -eq 'true') {
+            $arguments += @('--approve-destructive', 'true')
+          }
+          & ./.nodal/nodal @arguments
+          if ($LASTEXITCODE -ne 0) {
+            throw "Migration tool failed with exit code $LASTEXITCODE."
+          }
+
+      - name: Write trace summary
+        if: always()
+        shell: pwsh
+        run: |
+          "### Nodal migration deployment" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "- Target: ${{ inputs.target }}" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "- Action: ${{ inputs.action }}" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "- Artifact run: ${{ inputs.artifact_run_id }}" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "- Tool version: ${{ inputs.tool_version }}" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "- Commit: ${{ github.sha }}" | Out-File $env:GITHUB_STEP_SUMMARY -Append
