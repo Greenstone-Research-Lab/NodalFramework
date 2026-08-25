@@ -1,6 +1,7 @@
 using System.Text;
 using System.Text.Json;
 using System.Text.Json.Nodes;
+using System.Globalization;
 using Nodal.Core.Migrations;
 
 namespace Nodal.TigerGraph;
@@ -11,13 +12,10 @@ namespace Nodal.TigerGraph;
 public sealed class TigerGraphMigrationHistoryStore :
     IGraphMigrationHistoryStore
 {
-    private const string HistoryType = "__NodalMigration";
-
     private readonly HttpClient httpClient;
     private readonly TigerGraphOptions options;
     private readonly string graphName;
-    private readonly ITigerGraphAdministrativeTransport administrativeTransport;
-    private bool infrastructureReady;
+    private readonly TigerGraphMigrationInfrastructure infrastructure;
 
     /// <summary>
     /// Initializes a TigerGraph migration history store.
@@ -26,7 +24,26 @@ public sealed class TigerGraphMigrationHistoryStore :
         HttpClient httpClient,
         TigerGraphOptions options,
         string graphName,
-        ITigerGraphAdministrativeTransport administrativeTransport)
+        ITigerGraphAdministrativeControlPlane administrativeTransport)
+        : this(
+            httpClient,
+            options,
+            graphName,
+            administrativeTransport,
+            new TigerGraphMigrationInfrastructure(
+                httpClient,
+                options,
+                graphName,
+                administrativeTransport))
+    {
+    }
+
+    internal TigerGraphMigrationHistoryStore(
+        HttpClient httpClient,
+        TigerGraphOptions options,
+        string graphName,
+        ITigerGraphAdministrativeControlPlane administrativeTransport,
+        TigerGraphMigrationInfrastructure infrastructure)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(options);
@@ -38,7 +55,7 @@ public sealed class TigerGraphMigrationHistoryStore :
         this.httpClient = httpClient;
         this.options = options;
         this.graphName = graphName;
-        this.administrativeTransport = administrativeTransport;
+        this.infrastructure = infrastructure;
     }
 
     /// <inheritdoc />
@@ -53,7 +70,7 @@ public sealed class TigerGraphMigrationHistoryStore :
         using var request = CreateRequest(
             HttpMethod.Get,
             $"restpp/graph/{Uri.EscapeDataString(graphName)}" +
-            $"/vertices/{HistoryType}");
+            $"/vertices/{TigerGraphMigrationInfrastructure.HistoryType}");
 
         using var response = await httpClient
             .SendAsync(request, cancellationToken)
@@ -82,25 +99,31 @@ public sealed class TigerGraphMigrationHistoryStore :
         await EnsureInfrastructureAsync(cancellationToken)
             .ConfigureAwait(false);
 
+        var attributes = new JsonObject
+        {
+            ["Checksum"] = Value(entry.Checksum),
+            ["State"] = Value(entry.State.ToString()),
+            ["StartedAt"] = Value(Format(entry.StartedAt)),
+            ["FailureMessage"] = Value(entry.Failure?.Message),
+            ["FailureType"] = Value(entry.Failure?.ErrorType)
+        };
+        if (entry.CompletedAt.HasValue)
+        {
+            attributes["CompletedAt"] = Value(Format(entry.CompletedAt));
+        }
+
+        if (entry.Failure is not null)
+        {
+            attributes["FailureAt"] = Value(Format(entry.Failure.OccurredAt));
+        }
+
         var root = new JsonObject
         {
             ["vertices"] = new JsonObject
             {
-                [HistoryType] = new JsonObject
+                [TigerGraphMigrationInfrastructure.HistoryType] = new JsonObject
                 {
-                    [entry.Id] = new JsonObject
-                    {
-                        ["Checksum"] = Value(entry.Checksum),
-                        ["State"] = Value(entry.State.ToString()),
-                        ["StartedAt"] = Value(Format(entry.StartedAt)),
-                        ["CompletedAt"] = Value(Format(entry.CompletedAt)),
-                        ["FailureMessage"] = Value(
-                            entry.Failure?.Message),
-                        ["FailureType"] = Value(
-                            entry.Failure?.ErrorType),
-                        ["FailureAt"] = Value(
-                            Format(entry.Failure?.OccurredAt))
-                    }
+                    [entry.Id] = attributes
                 }
             }
         };
@@ -141,7 +164,7 @@ public sealed class TigerGraphMigrationHistoryStore :
         using var request = CreateRequest(
             HttpMethod.Delete,
             $"restpp/graph/{Uri.EscapeDataString(graphName)}" +
-            $"/vertices/{HistoryType}/" +
+            $"/vertices/{TigerGraphMigrationInfrastructure.HistoryType}/" +
             Uri.EscapeDataString(migrationId));
 
         using var response = await httpClient
@@ -156,72 +179,7 @@ public sealed class TigerGraphMigrationHistoryStore :
     private async ValueTask EnsureInfrastructureAsync(
         CancellationToken cancellationToken)
     {
-        if (infrastructureReady)
-        {
-            return;
-        }
-
-        using var request = CreateRequest(
-            HttpMethod.Get,
-            $"gsql/v1/schema?graph={Uri.EscapeDataString(graphName)}");
-
-        using var response = await httpClient
-            .SendAsync(request, cancellationToken)
-            .ConfigureAwait(false);
-
-        var payload = await ReadSuccessAsync(
-            response,
-            cancellationToken).ConfigureAwait(false);
-
-        using var document = JsonDocument.Parse(payload);
-
-        if (!ContainsNamedType(document.RootElement, HistoryType))
-        {
-            MigrationCommand[] bootstrap =
-            [
-                new MigrationCommand(
-                    $"CREATE SCHEMA_CHANGE JOB " +
-                    $"nodal_history_bootstrap FOR GRAPH {graphName} {{ " +
-                    $"ADD VERTEX {HistoryType} (" +
-                    "PRIMARY_ID Id STRING, " +
-                    "Checksum STRING, " +
-                    "AppliedAt DATETIME, " +
-                    "State STRING, " +
-                    "StartedAt DATETIME, " +
-                    "CompletedAt DATETIME, " +
-                    "FailureMessage STRING, " +
-                    "FailureType STRING, " +
-                    "FailureAt DATETIME) " +
-                    "WITH primary_id_as_attribute=\"true\"; }",
-                    false),
-
-                new MigrationCommand(
-                    "RUN SCHEMA_CHANGE JOB nodal_history_bootstrap",
-                    false),
-
-                new MigrationCommand(
-                    "DROP JOB nodal_history_bootstrap",
-                    false)
-            ];
-
-            await ExecuteCommandsAsync(
-                bootstrap,
-                cancellationToken).ConfigureAwait(false);
-        }
-
-        infrastructureReady = true;
-    }
-
-    private async ValueTask ExecuteCommandsAsync(
-        IReadOnlyList<MigrationCommand> commands,
-        CancellationToken cancellationToken)
-    {
-        foreach (var command in commands)
-        {
-            await administrativeTransport
-                .ExecuteAsync(command, cancellationToken)
-                .ConfigureAwait(false);
-        }
+        await infrastructure.EnsureAsync(cancellationToken).ConfigureAwait(false);
     }
 
     private HttpRequestMessage CreateRequest(
@@ -241,14 +199,7 @@ public sealed class TigerGraphMigrationHistoryStore :
             .ReadAsStringAsync(cancellationToken)
             .ConfigureAwait(false);
 
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new HttpRequestException(
-                $"TigerGraph migration history endpoint returned HTTP " +
-                $"{(int)response.StatusCode}: {payload}",
-                null,
-                response.StatusCode);
-        }
+        TigerGraphAdministrativeResponse.EnsureSuccess(response, payload, "migration history endpoint");
 
         return payload;
     }
@@ -360,6 +311,8 @@ public sealed class TigerGraphMigrationHistoryStore :
 
         return DateTimeOffset.TryParse(
             value,
+            CultureInfo.InvariantCulture,
+            DateTimeStyles.AssumeUniversal,
             out var timestamp)
             ? timestamp
             : null;
@@ -375,28 +328,4 @@ public sealed class TigerGraphMigrationHistoryStore :
             ["value"] = value ?? string.Empty
         };
 
-    private static bool ContainsNamedType(
-        JsonElement element,
-        string name)
-    {
-        if (element.ValueKind == JsonValueKind.Object)
-        {
-            if (element.TryGetProperty(
-                    "Name",
-                    out var typeName) &&
-                typeName.GetString() == name)
-            {
-                return true;
-            }
-
-            return element.EnumerateObject()
-                .Any(property =>
-                    ContainsNamedType(property.Value, name));
-        }
-
-        return element.ValueKind == JsonValueKind.Array &&
-            element.EnumerateArray()
-                .Any(item =>
-                    ContainsNamedType(item, name));
-    }
 }

@@ -1,5 +1,6 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
+using Nodal.Core.Migrations;
 using Nodal.Core;
 using Nodal.Core.Metadata;
 using Nodal.Core.Query;
@@ -9,6 +10,78 @@ namespace Nodal.IntegrationTests;
 
 public sealed class TigerGraphConnectionTests
 {
+    [TigerGraphMigrationIntegrationFact]
+    [Trait("Category", "Integration")]
+    [Trait("Provider", "TigerGraph")]
+    public async Task MigrationJobIsAppliedCleanedRestartSafeAndRevertedOnLiveServer()
+    {
+        var endpoint = new Uri(Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_ENDPOINT")!, UriKind.Absolute);
+        var graphName = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GRAPH")!;
+        var options = CreateOptions(endpoint);
+        using var faultHandler = new MigrationHistoryFaultHandler(new HttpClientHandler());
+        using var httpClient = new HttpClient(faultHandler) { BaseAddress = endpoint };
+        var processOptions = new TigerGraphGsqlProcessOptions
+        {
+            FileName = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GSQL_FILE")!,
+            PrefixArguments = JsonSerializer.Deserialize<string[]>(
+                Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GSQL_PREFIX")!)!,
+            Username = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_USERNAME"),
+            Password = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_PASSWORD"),
+            AccessToken = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_ACCESS_TOKEN"),
+            GraphName = graphName,
+            VerifiedServerVersion = "4.2.4 Community",
+        };
+        var controlPlane = new CountingControlPlane(new TigerGraphGsqlProcessTransport(processOptions));
+        var executor = new TigerGraphMigrationExecutor(httpClient, options, graphName, controlPlane);
+        var suffix = Guid.NewGuid().ToString("N")[..12];
+        var vertexType = $"NodalM4_{suffix}";
+        var dialect = new TigerGraphMigrationDialect(graphName);
+        var upCommands = dialect.Compile(
+            [new CreateNodeTypeOperation(vertexType, "Id", typeof(string), [new GraphSchemaProperty("Score", typeof(double))])]);
+        var downCommands = dialect.Compile([new DropNodeTypeOperation(vertexType)]);
+        var up = new MigrationExecution($"m4_{suffix}", $"checksum_{suffix}", upCommands);
+        var down = new MigrationExecution(up.Id, up.Checksum, downCommands);
+
+        try
+        {
+            controlPlane.CancelNextRun = true;
+            await Assert.ThrowsAnyAsync<OperationCanceledException>(
+                async () => await executor.ApplyAsync(up));
+            Assert.False(await controlPlane.SchemaJobExistsAsync(graphName, JobName(upCommands)));
+            await new TigerGraphMigrationRecovery(executor.Journal)
+                .ConfirmSchemaNotAppliedAsync(up.Id);
+
+            faultHandler.FailNextHistoryWrite = true;
+            await Assert.ThrowsAsync<HttpRequestException>(
+                async () => await executor.ApplyAsync(up));
+            Assert.True(await SchemaContainsAsync(httpClient, options, graphName, vertexType));
+            Assert.False(await controlPlane.SchemaJobExistsAsync(graphName, JobName(upCommands)));
+            var schemaRunsAfterHistoryFailure = controlPlane.ExecutedSchemaRuns;
+
+            await executor.ApplyAsync(up);
+            Assert.Equal(schemaRunsAfterHistoryFailure, controlPlane.ExecutedSchemaRuns);
+            var callsAfterApply = controlPlane.ExecutedCommands;
+
+            var restarted = new TigerGraphMigrationExecutor(httpClient, options, graphName, controlPlane);
+            await restarted.ApplyAsync(up);
+            Assert.Equal(callsAfterApply, controlPlane.ExecutedCommands);
+
+            await restarted.RevertAsync(down);
+            Assert.False(await SchemaContainsAsync(httpClient, options, graphName, vertexType));
+            Assert.False(await controlPlane.SchemaJobExistsAsync(graphName, JobName(downCommands)));
+        }
+        finally
+        {
+            if (await SchemaContainsAsync(httpClient, options, graphName, vertexType))
+            {
+                foreach (var command in downCommands)
+                {
+                    try { await controlPlane.ExecuteAsync(command); }
+                    catch (InvalidOperationException) { }
+                }
+            }
+        }
+    }
     [TigerGraphIntegrationFact]
     [Trait("Category", "Integration")]
     [Trait("Provider", "TigerGraph")]
@@ -150,6 +223,25 @@ public sealed class TigerGraphConnectionTests
         Password = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_PASSWORD"),
     };
 
+    private static string JobName(IReadOnlyList<MigrationCommand> commands) =>
+        commands[1].Text.Split(' ', StringSplitOptions.RemoveEmptyEntries).Last();
+
+    private static async Task<bool> SchemaContainsAsync(
+        HttpClient httpClient,
+        TigerGraphOptions options,
+        string graphName,
+        string typeName)
+    {
+        using var request = new HttpRequestMessage(
+            HttpMethod.Get,
+            $"gsql/v1/schema?graph={Uri.EscapeDataString(graphName)}");
+        ApplyAuthentication(request, options);
+        using var response = await httpClient.SendAsync(request);
+        response.EnsureSuccessStatusCode();
+        var payload = await response.Content.ReadAsStringAsync();
+        return payload.Contains($"\"Name\":\"{typeName}\"", StringComparison.Ordinal);
+    }
+
     private static async Task DeleteVertexAsync(
         HttpClient httpClient,
         TigerGraphOptions options,
@@ -250,4 +342,73 @@ public sealed class TigerGraphConnectionTests
 
     [GraphRelation("NODAL_INTENTIONALLY_MISSING_EDGE")]
     private sealed class MissingRelation;
+
+    private sealed class CountingControlPlane(ITigerGraphAdministrativeControlPlane inner)
+        : ITigerGraphAdministrativeControlPlane
+    {
+        public int ExecutedCommands { get; private set; }
+        public int ExecutedSchemaRuns { get; private set; }
+        public bool CancelNextRun { get; set; }
+
+        public ValueTask<TigerGraphAdministrativeCapabilities> DiscoverCapabilitiesAsync(
+            string graphName,
+            CancellationToken cancellationToken = default) =>
+            inner.DiscoverCapabilitiesAsync(graphName, cancellationToken);
+
+        public ValueTask<bool> SchemaJobExistsAsync(
+            string graphName,
+            string jobName,
+            CancellationToken cancellationToken = default) =>
+            inner.SchemaJobExistsAsync(graphName, jobName, cancellationToken);
+
+        public ValueTask<IAsyncDisposable> AcquireMigrationLockAsync(
+            string graphName,
+            CancellationToken cancellationToken = default) =>
+            inner.AcquireMigrationLockAsync(graphName, cancellationToken);
+
+        public async ValueTask ExecuteAsync(
+            MigrationCommand command,
+            CancellationToken cancellationToken = default)
+        {
+            if (CancelNextRun &&
+                command.Text.StartsWith("RUN SCHEMA_CHANGE JOB", StringComparison.Ordinal))
+            {
+                CancelNextRun = false;
+                throw new OperationCanceledException(cancellationToken);
+            }
+
+            ExecutedCommands++;
+            await inner.ExecuteAsync(command, cancellationToken);
+            if (command.Text.StartsWith("RUN SCHEMA_CHANGE JOB", StringComparison.Ordinal))
+            {
+                ExecutedSchemaRuns++;
+            }
+        }
+    }
+
+    private sealed class MigrationHistoryFaultHandler(HttpMessageHandler innerHandler)
+        : DelegatingHandler(innerHandler)
+    {
+        public bool FailNextHistoryWrite { get; set; }
+
+        protected override async Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            if (FailNextHistoryWrite &&
+                request.Method == HttpMethod.Post &&
+                request.Content is not null &&
+                (await request.Content.ReadAsStringAsync(cancellationToken))
+                    .Contains("__NodalMigration", StringComparison.Ordinal))
+            {
+                FailNextHistoryWrite = false;
+                return new HttpResponseMessage(System.Net.HttpStatusCode.InternalServerError)
+                {
+                    Content = new StringContent("injected history failure"),
+                };
+            }
+
+            return await base.SendAsync(request, cancellationToken);
+        }
+    }
 }

@@ -353,12 +353,18 @@ Plans contain deterministic SHA-256 checksums and provider-specific commands. Ne
 TigerGraph migration execution is enabled only when the host supplies an administrative transport appropriate to its deployment. Self-managed and local Docker installations can use the included documented GSQL process transport:
 
 ```csharp
-ITigerGraphAdministrativeTransport administration = new TigerGraphGsqlProcessTransport(
+ITigerGraphAdministrativeControlPlane administration = new TigerGraphGsqlProcessTransport(
     new TigerGraphGsqlProcessOptions
     {
         FileName = "docker",
-        PrefixArguments = ["exec", "nodal-tigergraph", "gsql"],
-        GraphName = "SocialGraph"
+        PrefixArguments =
+        [
+            "exec",
+            "nodal-tigergraph",
+            "/home/tigergraph/tigergraph/app/4.2.4/cmd/gsql"
+        ],
+        GraphName = "SocialGraph",
+        VerifiedServerVersion = "4.2.4 Community"
     });
 var provider = new TigerGraphProvider(
     httpClient,
@@ -367,7 +373,9 @@ var provider = new TigerGraphProvider(
     administration);
 ```
 
-The migration executor bootstraps the `__NodalMigration` vertex type when necessary, records checksums through an atomic REST++ upsert, and removes temporary schema jobs even when job execution fails. The same administrative channel enables lazy installation of transactional mutation queries required by delete-containing units of work. Without it, querying and atomic create/update batches remain available while migrations and delete plans report an explicit unsupported-capability error. Because mutation dictionaries currently carry runtime values rather than declared property metadata, a null property in a delete-containing compiled plan is rejected instead of guessing an unsafe GSQL parameter type.
+Migration support is advertised only after the control plane verifies schema read/write, job inspection, cleanup, and graph-scoped locking. The executor bootstraps `__NodalMigration` plus an independent `__NodalSchemaJob` journal, records every irreversible phase, and performs temporary-job cleanup with a bounded token independent from caller cancellation. A restart resumes cleanup or history persistence without replaying a schema change known to have succeeded. A cancelled RUN has an unknown outcome and throws `TigerGraphMigrationRecoveryRequiredException` until an operator inspects the graph and calls `provider.MigrationRecovery.ConfirmSchemaAppliedAsync(...)` or `ConfirmSchemaNotAppliedAsync(...)`.
+
+The same administrative channel enables lazy installation of transactional mutation queries required by delete-containing units of work. Without it, querying and atomic create/update batches remain available while migrations and delete plans report an explicit unsupported-capability error. Because mutation dictionaries currently carry runtime values rather than declared property metadata, a null property in a delete-containing compiled plan is rejected instead of guessing an unsafe GSQL parameter type.
 
 ## Documentation
 

@@ -36,7 +36,32 @@ required by Neo4j: schema modifications and graph writes cannot share one
 transaction. Nodal writes `Applying` first and uses idempotent DDL plus
 `Applied`/`Failed` history to make an interrupted migration reviewable and
 retryable. TigerGraph compiles schema operations into a deterministic job and
-requires an explicit administrative transport.
+requires a verified `ITigerGraphAdministrativeControlPlane`.
+
+## TigerGraph durable job lifecycle
+
+TigerGraph schema jobs are not a REST++ data transaction. Nodal therefore keeps
+two independent metadata records: `__NodalMigration` is authoritative applied
+history, while `__NodalSchemaJob` journals creation, execution, cleanup, and
+history reconciliation. Cleanup uses its own bounded cancellation token.
+
+If a process restarts after schema success, the journal resumes cleanup and
+history persistence without running the schema job again. If cancellation makes
+the RUN outcome unknowable, automatic replay stops with
+`TigerGraphMigrationRecoveryRequiredException`:
+
+```csharp
+TigerGraphSchemaJobJournalEntry? state =
+    await provider.MigrationRecovery.InspectAsync(migrationId);
+
+// Call exactly one after independently inspecting the live schema.
+await provider.MigrationRecovery.ConfirmSchemaAppliedAsync(migrationId);
+// await provider.MigrationRecovery.ConfirmSchemaNotAppliedAsync(migrationId);
+```
+
+The next ordinary migration run finishes the selected recovery path. Changing
+the checksum, direction, or deterministic job envelope during an unfinished
+recovery is rejected as journal drift.
 
 ## Schema snapshots and reviewable diffs
 

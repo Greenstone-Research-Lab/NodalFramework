@@ -21,7 +21,7 @@ Nodal does not infer that a feature exists merely because a driver can connect t
 | Neo4j driver | `Neo4j.Driver` 6.3.0 | Driver 6.x supports Neo4j 4.4.x, 5.x, 2025.x, and 2026.x | Package and compiler tests |
 | Neo4j database | Neo4j 5.26 Community | Wider connectivity follows the official driver policy | Live query, mutation, and rollback baseline; migration compiler/unit verified |
 | Neo4j GDS | GDS 2.13 is the official match for Neo4j 5.26 | GDS must match the server according to Neo4j's compatibility matrix | Current procedure compiler verified; per-algorithm 2.13 live certification pending |
-| TigerGraph | TigerGraph 4.2.4 Community | No wider Nodal compatibility promise yet | Live REST++ mutation/query baseline; analytics endpoint contract verified |
+| TigerGraph | TigerGraph 4.2.4 Community | No wider Nodal compatibility promise yet | Live REST++ query/mutation plus GSQL migration apply, cleanup, restart, history, and revert baseline; analytics endpoint contract verified |
 
 References: [Neo4j .NET Driver compatibility](https://neo4j.com/docs/dotnet-manual/current/install/) and [Neo4j–GDS compatibility matrix](https://neo4j.com/docs/graph-data-science/current/installation/supported-neo4j-versions/).
 
@@ -42,7 +42,7 @@ Legend: **Yes** is implemented; **Conditional** requires the condition shown; **
 | Vertex-simple variable-depth path | Yes | No: intermediate aliases are unavailable |
 | Client-managed multi-command transaction | Yes | No: request or installed-query boundary |
 | Atomic mutation plan | Yes | Conditional: REST++ or installed mutation query |
-| Migration execution | Yes | Conditional: administrative transport |
+| Migration execution | Yes | Conditional: verified administrative control plane and graph lock |
 | Centrality/community analytics | Conditional: compatible GDS and named projection | Conditional: configured installed GSQL query |
 | Weighted analytics | Algorithm-specific GDS capability | Explicitly declared per installed query |
 | Analytics deployment discovery | Live GDS discovery with bounded cache | Configured installed-query snapshot |
@@ -62,7 +62,7 @@ loading the graph into application memory.
 | Drop node/relation property | Native graph flexibility; reported as a warning with no DDL | ALTER VERTEX/EDGE DROP ATTRIBUTE |
 | Rename property | Warning-only on Neo4j; application data rewrite remains explicit | Unsupported; use an explicit provider backfill |
 | Alter property type | Unsupported without an explicit backfill | Unsupported without an explicit backfill |
-| Drop index | Typed Cypher DROP INDEX | Explicitly unsupported across the certified server matrix |
+| Drop index | Typed Cypher DROP INDEX | Typed `ALTER VERTEX ... DROP INDEX` |
 | Drop unique constraint | Typed Cypher DROP CONSTRAINT | Unsupported beyond primary IDs |
 | Destructive operations | Require AllowDestructiveOperations = true | Require AllowDestructiveOperations = true |
 
