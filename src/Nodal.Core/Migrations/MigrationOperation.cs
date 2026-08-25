@@ -53,6 +53,42 @@ public sealed record DropUniqueConstraintOperation(
     string NodeType,
     string PropertyName) : MigrationOperation;
 
+/// <summary>Identifies the graph element targeted by a property constraint.</summary>
+public enum GraphSchemaEntityKind
+{
+    /// <summary>The constraint targets graph nodes.</summary>
+    Node,
+
+    /// <summary>The constraint targets graph relationships.</summary>
+    Relation,
+}
+
+/// <summary>Requests that a property must exist on the selected graph element type.</summary>
+public sealed record CreatePropertyExistenceConstraintOperation(
+    GraphSchemaEntityKind EntityKind,
+    string EntityType,
+    string PropertyName) : MigrationOperation;
+
+/// <summary>Requests removal of a property-existence constraint.</summary>
+public sealed record DropPropertyExistenceConstraintOperation(
+    GraphSchemaEntityKind EntityKind,
+    string EntityType,
+    string PropertyName) : MigrationOperation;
+
+/// <summary>Requests that a property must have the declared CLR-compatible storage type.</summary>
+public sealed record CreatePropertyTypeConstraintOperation(
+    GraphSchemaEntityKind EntityKind,
+    string EntityType,
+    string PropertyName,
+    Type ClrType) : MigrationOperation;
+
+/// <summary>Requests removal of a property-type constraint.</summary>
+public sealed record DropPropertyTypeConstraintOperation(
+    GraphSchemaEntityKind EntityKind,
+    string EntityType,
+    string PropertyName,
+    Type ClrType) : MigrationOperation;
+
 /// <summary>Requests removal of a graph node type.</summary>
 public sealed record DropNodeTypeOperation(string NodeType) : MigrationOperation;
 

@@ -30,7 +30,13 @@ MigrationPlan preview = await context.Database.PlanMigrationsAsync(migrations);
 MigrationPlan applied = await context.Database.MigrateAsync(migrations);
 ```
 
-Neo4j uses transactional Cypher and its migration history record. TigerGraph compiles schema operations into a deterministic job and requires an explicit administrative transport.
+Neo4j commits one homogeneous schema-command batch transactionally, then records
+its migration state in a separate graph-write transaction. This separation is
+required by Neo4j: schema modifications and graph writes cannot share one
+transaction. Nodal writes `Applying` first and uses idempotent DDL plus
+`Applied`/`Failed` history to make an interrupted migration reviewable and
+retryable. TigerGraph compiles schema operations into a deterministic job and
+requires an explicit administrative transport.
 
 ## Schema snapshots and reviewable diffs
 
@@ -84,3 +90,39 @@ uses `ITigerGraphBackfillCheckpointTransport`, because the supported administrat
 channel differs between self-managed and managed deployments. Non-transactional
 provider commands are surfaced during preflight with a warning and require the
 recorded history state plus the provider recovery procedure.
+
+## Neo4j schema boundaries
+
+Neo4j is schema-optional. Node labels, relationship types and ordinary properties
+can exist without DDL. Nodal therefore treats `CreateNode`, `CreateRelation` and
+flexible property add/remove operations as model metadata and emits no schema
+command for them. Indexes and uniqueness constraints are physical schema objects
+with deterministic Nodal names.
+
+The certified baseline is Neo4j 5.26 Community. Property-existence and
+property-type constraints are Enterprise Edition features, so the Community
+provider does not advertise or silently emulate them. Application-level validation
+is not presented as a database constraint. Enterprise deployments opt in explicitly:
+
+```csharp
+var provider = new Neo4jProvider(new Neo4jOptions
+{
+    Endpoint = new Uri("neo4j://localhost:7687"),
+    Username = "neo4j",
+    Password = configuration["Neo4j:Password"]!,
+    EnterpriseSchemaConstraintsEnabled = true,
+});
+```
+
+The portable migration API can then declare node or relationship constraints:
+
+```csharp
+migration
+    .CreateNodePropertyExistenceConstraint<Person, string>(person => person.Email)
+    .CreateNodePropertyTypeConstraint<Person, string>(person => person.Email)
+    .CreateRelationPropertyExistenceConstraint<Knows, DateTime>(relation => relation.Since);
+```
+
+Without the explicit capability, preflight reports the operation as unsupported
+before any command reaches Neo4j. This preserves portable intent while preventing
+Community and Enterprise deployments from silently diverging.

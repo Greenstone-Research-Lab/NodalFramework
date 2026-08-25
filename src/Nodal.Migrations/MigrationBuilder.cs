@@ -106,6 +106,46 @@ public sealed class MigrationBuilder
         return this;
     }
 
+    /// <summary>Declares that a node property must exist.</summary>
+    public MigrationBuilder CreateNodePropertyExistenceConstraint<TNode, TProperty>(
+        Expression<Func<TNode, TProperty>> property) =>
+        AddPropertyConstraint(property, GraphSchemaEntityKind.Node, GetGraphTypeName<TNode>(), true, false);
+
+    /// <summary>Declares removal of a node property-existence constraint.</summary>
+    public MigrationBuilder DropNodePropertyExistenceConstraint<TNode, TProperty>(
+        Expression<Func<TNode, TProperty>> property) =>
+        AddPropertyConstraint(property, GraphSchemaEntityKind.Node, GetGraphTypeName<TNode>(), false, false);
+
+    /// <summary>Declares that a relationship property must exist.</summary>
+    public MigrationBuilder CreateRelationPropertyExistenceConstraint<TRelation, TProperty>(
+        Expression<Func<TRelation, TProperty>> property) =>
+        AddPropertyConstraint(property, GraphSchemaEntityKind.Relation, GetRelationTypeName<TRelation>(), true, false);
+
+    /// <summary>Declares removal of a relationship property-existence constraint.</summary>
+    public MigrationBuilder DropRelationPropertyExistenceConstraint<TRelation, TProperty>(
+        Expression<Func<TRelation, TProperty>> property) =>
+        AddPropertyConstraint(property, GraphSchemaEntityKind.Relation, GetRelationTypeName<TRelation>(), false, false);
+
+    /// <summary>Declares the persisted type of a node property.</summary>
+    public MigrationBuilder CreateNodePropertyTypeConstraint<TNode, TProperty>(
+        Expression<Func<TNode, TProperty>> property) =>
+        AddPropertyConstraint(property, GraphSchemaEntityKind.Node, GetGraphTypeName<TNode>(), true, true);
+
+    /// <summary>Declares removal of a node property-type constraint.</summary>
+    public MigrationBuilder DropNodePropertyTypeConstraint<TNode, TProperty>(
+        Expression<Func<TNode, TProperty>> property) =>
+        AddPropertyConstraint(property, GraphSchemaEntityKind.Node, GetGraphTypeName<TNode>(), false, true);
+
+    /// <summary>Declares the persisted type of a relationship property.</summary>
+    public MigrationBuilder CreateRelationPropertyTypeConstraint<TRelation, TProperty>(
+        Expression<Func<TRelation, TProperty>> property) =>
+        AddPropertyConstraint(property, GraphSchemaEntityKind.Relation, GetRelationTypeName<TRelation>(), true, true);
+
+    /// <summary>Declares removal of a relationship property-type constraint.</summary>
+    public MigrationBuilder DropRelationPropertyTypeConstraint<TRelation, TProperty>(
+        Expression<Func<TRelation, TProperty>> property) =>
+        AddPropertyConstraint(property, GraphSchemaEntityKind.Relation, GetRelationTypeName<TRelation>(), false, true);
+
     /// <summary>Declares addition of a node property.</summary>
     public MigrationBuilder AddNodeProperty<TNode, TProperty>(
         Expression<Func<TNode, TProperty>> property)
@@ -261,6 +301,25 @@ public sealed class MigrationBuilder
             : throw new ArgumentException("A direct node property is required.", nameof(property));
     }
 
+    private MigrationBuilder AddPropertyConstraint<TElement, TProperty>(
+        Expression<Func<TElement, TProperty>> property,
+        GraphSchemaEntityKind kind,
+        string entityType,
+        bool create,
+        bool typeConstraint)
+    {
+        var member = GetDirectMember(property);
+        var propertyName = GetGraphName(member);
+        operations.Add((create, typeConstraint) switch
+        {
+            (true, false) => new CreatePropertyExistenceConstraintOperation(kind, entityType, propertyName),
+            (false, false) => new DropPropertyExistenceConstraintOperation(kind, entityType, propertyName),
+            (true, true) => new CreatePropertyTypeConstraintOperation(kind, entityType, propertyName, typeof(TProperty)),
+            (false, true) => new DropPropertyTypeConstraintOperation(kind, entityType, propertyName, typeof(TProperty)),
+        });
+        return this;
+    }
+
     private static GraphSchemaProperty[] DiscoverProperties(Type type) => type
         .GetProperties(BindingFlags.Instance | BindingFlags.Public)
         .Where(property => property.GetIndexParameters().Length == 0)
@@ -270,6 +329,9 @@ public sealed class MigrationBuilder
 
     private static string GetGraphTypeName<TNode>() =>
         typeof(TNode).GetCustomAttribute<GraphNodeAttribute>()?.Name ?? typeof(TNode).Name;
+
+    private static string GetRelationTypeName<TRelation>() =>
+        typeof(TRelation).GetCustomAttribute<GraphRelationAttribute>()?.Name ?? typeof(TRelation).Name;
 
     private static string GetGraphName(MemberInfo member) =>
         member.GetCustomAttribute<GraphPropertyAttribute>(true)?.Name ?? member.Name;

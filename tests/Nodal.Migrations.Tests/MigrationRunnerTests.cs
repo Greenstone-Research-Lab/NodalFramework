@@ -217,6 +217,48 @@ public sealed class MigrationRunnerTests
     }
 
     [Fact]
+    public void BuilderCreatesTypedPropertyConstraintsForNodesAndRelations()
+    {
+        var builder = new MigrationBuilder()
+            .CreateNodePropertyExistenceConstraint<Person, string>(person => person.Email)
+            .DropNodePropertyExistenceConstraint<Person, string>(person => person.Email)
+            .CreateRelationPropertyExistenceConstraint<Knows, DateTime>(relation => relation.Since)
+            .DropRelationPropertyExistenceConstraint<Knows, DateTime>(relation => relation.Since)
+            .CreateNodePropertyTypeConstraint<Person, string>(person => person.Email)
+            .DropNodePropertyTypeConstraint<Person, string>(person => person.Email)
+            .CreateRelationPropertyTypeConstraint<Knows, DateTime>(relation => relation.Since)
+            .DropRelationPropertyTypeConstraint<Knows, DateTime>(relation => relation.Since);
+
+        Assert.Collection(
+            builder.Operations,
+            operation => AssertConstraint<CreatePropertyExistenceConstraintOperation>(operation, GraphSchemaEntityKind.Node, "people", "email_address"),
+            operation => AssertConstraint<DropPropertyExistenceConstraintOperation>(operation, GraphSchemaEntityKind.Node, "people", "email_address"),
+            operation => AssertConstraint<CreatePropertyExistenceConstraintOperation>(operation, GraphSchemaEntityKind.Relation, "KNOWS", "Since"),
+            operation => AssertConstraint<DropPropertyExistenceConstraintOperation>(operation, GraphSchemaEntityKind.Relation, "KNOWS", "Since"),
+            operation => Assert.IsType<CreatePropertyTypeConstraintOperation>(operation),
+            operation => Assert.IsType<DropPropertyTypeConstraintOperation>(operation),
+            operation => Assert.IsType<CreatePropertyTypeConstraintOperation>(operation),
+            operation => Assert.IsType<DropPropertyTypeConstraintOperation>(operation));
+    }
+
+    private static void AssertConstraint<TConstraint>(
+        MigrationOperation operation,
+        GraphSchemaEntityKind expectedKind,
+        string expectedType,
+        string expectedProperty)
+        where TConstraint : MigrationOperation
+    {
+        var constraint = Assert.IsType<TConstraint>(operation);
+        var values = constraint switch
+        {
+            CreatePropertyExistenceConstraintOperation value => (value.EntityKind, value.EntityType, value.PropertyName),
+            DropPropertyExistenceConstraintOperation value => (value.EntityKind, value.EntityType, value.PropertyName),
+            _ => throw new InvalidOperationException("Unexpected constraint type."),
+        };
+        Assert.Equal((expectedKind, expectedType, expectedProperty), values);
+    }
+
+    [Fact]
     public async Task BackfillExecutorHonorsBoundedBatchesAndContinuation()
     {
         var executor = new BoundedMigrationBackfillExecutor();
@@ -673,6 +715,10 @@ public sealed class MigrationRunnerTests
             migration
                 .CreateUniqueConstraint<Person, string>(person => person.Email)
                 .CreateIndex<Person, string>(person => person.Email)
+                .CreateNodePropertyExistenceConstraint<Person, string>(person => person.Email)
+                .CreateRelationPropertyExistenceConstraint<Knows, DateTime>(relation => relation.Since)
+                .CreateNodePropertyTypeConstraint<Person, string>(person => person.Email)
+                .CreateRelationPropertyTypeConstraint<Knows, DateTime>(relation => relation.Since)
                 .AddNodeProperty<Person, string>(person => person.Email)
                 .AddRelationProperty<Knows, DateTime>(relation => relation.Since)
                 .RenameNodeProperty<Person, string>(person => person.Email, "email_address")
@@ -686,6 +732,10 @@ public sealed class MigrationRunnerTests
             migration
                 .DropIndex<Person, string>(person => person.Email)
                 .DropUniqueConstraint<Person, string>(person => person.Email)
+                .DropNodePropertyExistenceConstraint<Person, string>(person => person.Email)
+                .DropRelationPropertyExistenceConstraint<Knows, DateTime>(relation => relation.Since)
+                .DropNodePropertyTypeConstraint<Person, string>(person => person.Email)
+                .DropRelationPropertyTypeConstraint<Knows, DateTime>(relation => relation.Since)
                 .DropNodeProperty<Person, string>(person => person.Email)
                 .DropRelationProperty<Knows, DateTime>(relation => relation.Since);
         }

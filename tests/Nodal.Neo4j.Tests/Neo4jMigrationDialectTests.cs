@@ -22,7 +22,7 @@ public sealed class Neo4jMigrationDialectTests
         Assert.Contains("`Per``son`", commands[0].Text, StringComparison.Ordinal);
         Assert.Contains("IF NOT EXISTS", commands[1].Text, StringComparison.Ordinal);
         Assert.Equal("DROP INDEX `old_index` IF EXISTS", commands[2].Text);
-        Assert.All(commands, command => Assert.True(command.IsTransactional));
+        Assert.All(commands, command => Assert.False(command.IsTransactional));
     }
 
     [Fact]
@@ -81,6 +81,86 @@ public sealed class Neo4jMigrationDialectTests
             new AlterRelationPropertyTypeOperation(
                 "KNOWS", "weight", typeof(int), typeof(double),
                 MigrationPropertyTypeCompatibility.Destructive),
+        ]));
+    }
+
+    [Fact]
+    public void CommunityDialectRejectsEnterprisePropertyConstraintsDuringPreflight()
+    {
+        var dialect = new Neo4jMigrationDialect();
+
+        var exception = Assert.Throws<NotSupportedException>(() => dialect.Compile(
+        [
+            new CreatePropertyExistenceConstraintOperation(
+                GraphSchemaEntityKind.Node, "Person", "email"),
+        ]));
+
+        Assert.Contains("Enterprise Edition", exception.Message, StringComparison.Ordinal);
+        Assert.Throws<NotSupportedException>(() => dialect.Compile(
+        [
+            new DropPropertyTypeConstraintOperation(
+                GraphSchemaEntityKind.Relation, "KNOWS", "since", typeof(DateTime)),
+        ]));
+    }
+
+    [Fact]
+    public void EnterpriseDialectCompilesEscapedNodeAndRelationPropertyConstraints()
+    {
+        var commands = new Neo4jMigrationDialect(enterpriseSchemaConstraintsEnabled: true).Compile(
+        [
+            new CreatePropertyExistenceConstraintOperation(
+                GraphSchemaEntityKind.Node, "Per`son", "e`mail"),
+            new CreatePropertyTypeConstraintOperation(
+                GraphSchemaEntityKind.Relation, "KNOWS", "since", typeof(DateTimeOffset)),
+            new DropPropertyExistenceConstraintOperation(
+                GraphSchemaEntityKind.Node, "Per`son", "e`mail"),
+            new DropPropertyTypeConstraintOperation(
+                GraphSchemaEntityKind.Relation, "KNOWS", "since", typeof(DateTimeOffset)),
+        ]);
+
+        Assert.Equal(4, commands.Count);
+        Assert.Contains("FOR (`node`:`Per``son`)", commands[0].Text, StringComparison.Ordinal);
+        Assert.Contains("`node`.`e``mail` IS NOT NULL", commands[0].Text, StringComparison.Ordinal);
+        Assert.Contains("FOR ()-[`relation`:`KNOWS`]-()", commands[1].Text, StringComparison.Ordinal);
+        Assert.Contains("IS :: ZONED DATETIME", commands[1].Text, StringComparison.Ordinal);
+        Assert.StartsWith("DROP CONSTRAINT", commands[2].Text, StringComparison.Ordinal);
+        Assert.StartsWith("DROP CONSTRAINT", commands[3].Text, StringComparison.Ordinal);
+        Assert.All(commands, command => Assert.False(command.IsTransactional));
+    }
+
+    [Theory]
+    [InlineData(typeof(bool), "BOOLEAN")]
+    [InlineData(typeof(int), "INTEGER")]
+    [InlineData(typeof(double), "FLOAT")]
+    [InlineData(typeof(string), "STRING")]
+    [InlineData(typeof(DateOnly), "DATE")]
+    [InlineData(typeof(TimeOnly), "LOCAL TIME")]
+    [InlineData(typeof(TimeSpan), "DURATION")]
+    public void EnterpriseDialectMapsSupportedClrTypes(Type clrType, string storageType)
+    {
+        var command = Assert.Single(new Neo4jMigrationDialect(true).Compile(
+        [
+            new CreatePropertyTypeConstraintOperation(
+                GraphSchemaEntityKind.Node, "Person", "value", clrType),
+        ]));
+
+        Assert.EndsWith($"IS :: {storageType}", command.Text, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void EnterpriseDialectRejectsUnsupportedClrTypeAndEntityKind()
+    {
+        var dialect = new Neo4jMigrationDialect(true);
+
+        Assert.Throws<NotSupportedException>(() => dialect.Compile(
+        [
+            new CreatePropertyTypeConstraintOperation(
+                GraphSchemaEntityKind.Node, "Person", "payload", typeof(object)),
+        ]));
+        Assert.Throws<ArgumentOutOfRangeException>(() => dialect.Compile(
+        [
+            new CreatePropertyExistenceConstraintOperation(
+                (GraphSchemaEntityKind)99, "Person", "email"),
         ]));
     }
 

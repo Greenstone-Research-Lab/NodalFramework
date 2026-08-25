@@ -39,7 +39,7 @@ public sealed class Neo4jProvider :
         QueryCompiler = new Neo4jQueryCompiler();
         CommandExecutor = new Neo4jCommandExecutor(driver, options.Database);
         MutationExecutor = new Neo4jMutationExecutor(driver, options.Database);
-        MigrationDialect = new Neo4jMigrationDialect();
+        MigrationDialect = new Neo4jMigrationDialect(options.EnterpriseSchemaConstraintsEnabled);
         MigrationExecutor = new Neo4jMigrationExecutor(driver, options.Database);
         MigrationHistory = new Neo4jMigrationHistoryStore(
             driver,
@@ -69,14 +69,15 @@ public sealed class Neo4jProvider :
         IDriver driver,
         string? database = null,
         bool graphDataScienceEnabled = false,
-        IReadOnlySet<GraphAnalyticsAlgorithm>? analyticsAlgorithms = null)
+        IReadOnlySet<GraphAnalyticsAlgorithm>? analyticsAlgorithms = null,
+        bool enterpriseSchemaConstraintsEnabled = false)
     {
         ArgumentNullException.ThrowIfNull(driver);
         this.driver = driver;
         QueryCompiler = new Neo4jQueryCompiler();
         CommandExecutor = new Neo4jCommandExecutor(driver, database);
         MutationExecutor = new Neo4jMutationExecutor(driver, database);
-        MigrationDialect = new Neo4jMigrationDialect();
+        MigrationDialect = new Neo4jMigrationDialect(enterpriseSchemaConstraintsEnabled);
         MigrationExecutor = new Neo4jMigrationExecutor(driver, database);
         MigrationHistory = new Neo4jMigrationHistoryStore(
                 driver,

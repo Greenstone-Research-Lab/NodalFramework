@@ -140,6 +140,8 @@ public sealed class MigrationPreflightAnalyzer
             DropSchemaObjectOperation or
             DropIndexOperation or
             DropUniqueConstraintOperation or
+            DropPropertyExistenceConstraintOperation or
+            DropPropertyTypeConstraintOperation or
             DropNodePropertyOperation or
             DropRelationPropertyOperation or
             AlterNodePropertyTypeOperation
