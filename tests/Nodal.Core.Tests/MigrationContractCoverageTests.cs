@@ -13,6 +13,14 @@ public sealed class MigrationContractCoverageTests
             new CreateUniqueConstraintOperation("Person", "id"),
             new DropIndexOperation("Person", "name"),
             new DropUniqueConstraintOperation("Person", "id"),
+            new CreatePropertyExistenceConstraintOperation(
+                GraphSchemaEntityKind.Node, "Person", "email"),
+            new DropPropertyExistenceConstraintOperation(
+                GraphSchemaEntityKind.Node, "Person", "email"),
+            new CreatePropertyTypeConstraintOperation(
+                GraphSchemaEntityKind.Relation, "KNOWS", "since", typeof(DateTime)),
+            new DropPropertyTypeConstraintOperation(
+                GraphSchemaEntityKind.Relation, "KNOWS", "since", typeof(DateTime)),
             new AddNodePropertyOperation("Person", property),
             new AddRelationPropertyOperation("KNOWS", property),
             new DropNodePropertyOperation("Person", "name"),
@@ -36,40 +44,44 @@ public sealed class MigrationContractCoverageTests
         Assert.Equal("id", ((CreateUniqueConstraintOperation)operations[0]).PropertyName);
         Assert.Equal("name", ((DropIndexOperation)operations[1]).PropertyName);
         Assert.Equal("id", ((DropUniqueConstraintOperation)operations[2]).PropertyName);
-        Assert.Equal("name", ((AddNodePropertyOperation)operations[3]).Property.Name);
-        Assert.Equal("KNOWS", ((AddRelationPropertyOperation)operations[4]).RelationType);
-        Assert.Equal("name", ((DropNodePropertyOperation)operations[5]).PropertyName);
-        Assert.Equal("name", ((DropRelationPropertyOperation)operations[6]).PropertyName);
-        Assert.Equal("display_name", ((RenameNodePropertyOperation)operations[7]).NewPropertyName);
-        Assert.Equal("label", ((RenameRelationPropertyOperation)operations[8]).NewPropertyName);
+        Assert.Equal(GraphSchemaEntityKind.Node, ((CreatePropertyExistenceConstraintOperation)operations[3]).EntityKind);
+        Assert.Equal("email", ((DropPropertyExistenceConstraintOperation)operations[4]).PropertyName);
+        Assert.Equal(typeof(DateTime), ((CreatePropertyTypeConstraintOperation)operations[5]).ClrType);
+        Assert.Equal("KNOWS", ((DropPropertyTypeConstraintOperation)operations[6]).EntityType);
+        Assert.Equal("name", ((AddNodePropertyOperation)operations[7]).Property.Name);
+        Assert.Equal("KNOWS", ((AddRelationPropertyOperation)operations[8]).RelationType);
+        Assert.Equal("name", ((DropNodePropertyOperation)operations[9]).PropertyName);
+        Assert.Equal("name", ((DropRelationPropertyOperation)operations[10]).PropertyName);
+        Assert.Equal("display_name", ((RenameNodePropertyOperation)operations[11]).NewPropertyName);
+        Assert.Equal("label", ((RenameRelationPropertyOperation)operations[12]).NewPropertyName);
         Assert.Equal(
             MigrationPropertyTypeCompatibility.RequiresRewrite,
-            ((AlterNodePropertyTypeOperation)operations[9]).Compatibility);
+            ((AlterNodePropertyTypeOperation)operations[13]).Compatibility);
         Assert.Equal(
             MigrationPropertyTypeCompatibility.Destructive,
-            ((AlterRelationPropertyTypeOperation)operations[10]).Compatibility);
+            ((AlterRelationPropertyTypeOperation)operations[14]).Compatibility);
 
         Assert.Equal(typeof(string), property.ClrType);
         Assert.Equal("Person", ((CreateUniqueConstraintOperation)operations[0]).NodeType);
         Assert.Equal("Person", ((DropIndexOperation)operations[1]).NodeType);
         Assert.Equal("Person", ((DropUniqueConstraintOperation)operations[2]).NodeType);
-        Assert.Equal("Person", ((AddNodePropertyOperation)operations[3]).NodeType);
-        Assert.Equal("KNOWS", ((AddRelationPropertyOperation)operations[4]).RelationType);
-        Assert.Equal("Person", ((DropNodePropertyOperation)operations[5]).NodeType);
-        Assert.Equal("KNOWS", ((DropRelationPropertyOperation)operations[6]).RelationType);
-        Assert.Equal("name", ((RenameNodePropertyOperation)operations[7]).OldPropertyName);
-        Assert.Equal("Person", ((RenameNodePropertyOperation)operations[7]).NodeType);
-        Assert.Equal("label", ((RenameRelationPropertyOperation)operations[8]).NewPropertyName);
-        Assert.Equal("KNOWS", ((RenameRelationPropertyOperation)operations[8]).RelationType);
-        Assert.Equal("name", ((RenameRelationPropertyOperation)operations[8]).OldPropertyName);
-        Assert.Equal(typeof(int), ((AlterNodePropertyTypeOperation)operations[9]).OldClrType);
-        Assert.Equal(typeof(long), ((AlterNodePropertyTypeOperation)operations[9]).NewClrType);
-        Assert.Equal("Person", ((AlterNodePropertyTypeOperation)operations[9]).NodeType);
-        Assert.Equal("age", ((AlterNodePropertyTypeOperation)operations[9]).PropertyName);
-        Assert.Equal(typeof(int), ((AlterRelationPropertyTypeOperation)operations[10]).OldClrType);
-        Assert.Equal(typeof(double), ((AlterRelationPropertyTypeOperation)operations[10]).NewClrType);
-        Assert.Equal("KNOWS", ((AlterRelationPropertyTypeOperation)operations[10]).RelationType);
-        Assert.Equal("weight", ((AlterRelationPropertyTypeOperation)operations[10]).PropertyName);
+        Assert.Equal("Person", ((AddNodePropertyOperation)operations[7]).NodeType);
+        Assert.Equal("KNOWS", ((AddRelationPropertyOperation)operations[8]).RelationType);
+        Assert.Equal("Person", ((DropNodePropertyOperation)operations[9]).NodeType);
+        Assert.Equal("KNOWS", ((DropRelationPropertyOperation)operations[10]).RelationType);
+        Assert.Equal("name", ((RenameNodePropertyOperation)operations[11]).OldPropertyName);
+        Assert.Equal("Person", ((RenameNodePropertyOperation)operations[11]).NodeType);
+        Assert.Equal("label", ((RenameRelationPropertyOperation)operations[12]).NewPropertyName);
+        Assert.Equal("KNOWS", ((RenameRelationPropertyOperation)operations[12]).RelationType);
+        Assert.Equal("name", ((RenameRelationPropertyOperation)operations[12]).OldPropertyName);
+        Assert.Equal(typeof(int), ((AlterNodePropertyTypeOperation)operations[13]).OldClrType);
+        Assert.Equal(typeof(long), ((AlterNodePropertyTypeOperation)operations[13]).NewClrType);
+        Assert.Equal("Person", ((AlterNodePropertyTypeOperation)operations[13]).NodeType);
+        Assert.Equal("age", ((AlterNodePropertyTypeOperation)operations[13]).PropertyName);
+        Assert.Equal(typeof(int), ((AlterRelationPropertyTypeOperation)operations[14]).OldClrType);
+        Assert.Equal(typeof(double), ((AlterRelationPropertyTypeOperation)operations[14]).NewClrType);
+        Assert.Equal("KNOWS", ((AlterRelationPropertyTypeOperation)operations[14]).RelationType);
+        Assert.Equal("weight", ((AlterRelationPropertyTypeOperation)operations[14]).PropertyName);
 
         var dropSchema = new DropSchemaObjectOperation("ix_person_name", MigrationSchemaObjectKind.Index);
         Assert.Equal("ix_person_name", dropSchema.Name);

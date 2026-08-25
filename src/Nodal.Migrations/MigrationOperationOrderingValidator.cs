@@ -39,6 +39,8 @@ internal static class MigrationOperationOrderingValidator
             DropSchemaObjectOperation or
             DropIndexOperation or
             DropUniqueConstraintOperation or
+            DropPropertyExistenceConstraintOperation or
+            DropPropertyTypeConstraintOperation or
             DropNodePropertyOperation or
             DropRelationPropertyOperation;
 }

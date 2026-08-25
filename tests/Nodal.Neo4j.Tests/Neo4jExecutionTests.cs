@@ -200,10 +200,48 @@ public sealed class Neo4jExecutionTests
 
         Assert.Equal("abc", applied["001_initial"]);
         await runner.Received().RunAsync(
-            Arg.Is<string>(text => text.StartsWith("MERGE", StringComparison.Ordinal)),
+            Arg.Is<string>(text =>
+                text.Contains("`migration`.`State` IS NULL", StringComparison.Ordinal) &&
+                text.Contains("`migration`.`State` = 'Applied'", StringComparison.Ordinal)));
+        await runner.Received().RunAsync(
+            Arg.Is<string>(text =>
+                text.StartsWith("MERGE", StringComparison.Ordinal) &&
+                text.Contains("`migration`.`State` = 'Applied'", StringComparison.Ordinal)),
             Arg.Any<IDictionary<string, object>>());
         await runner.Received().RunAsync(
             Arg.Is<string>(text => text.StartsWith("MATCH", StringComparison.Ordinal) && text.EndsWith("DELETE `migration`", StringComparison.Ordinal)),
+            Arg.Any<IDictionary<string, object>>());
+    }
+
+    [Fact]
+    public async Task MigrationExecutorSeparatesSchemaCommandsFromHistoryWrites()
+    {
+        var driver = Substitute.For<IDriver>();
+        var session = Substitute.For<IAsyncSession>();
+        var runner = Substitute.For<IAsyncQueryRunner>();
+        var cursor = Substitute.For<IResultCursor>();
+        driver.AsyncSession(Arg.Any<Action<SessionConfigBuilder>>()).Returns(session);
+        session.ExecuteWriteAsync(
+                Arg.Any<Func<IAsyncQueryRunner, Task>>(),
+                Arg.Any<Action<TransactionConfigBuilder>>())
+            .Returns(call => call.ArgAt<Func<IAsyncQueryRunner, Task>>(0)(runner));
+        runner.RunAsync(Arg.Any<string>()).Returns(cursor);
+        runner.RunAsync(Arg.Any<string>(), Arg.Any<IDictionary<string, object>>()).Returns(cursor);
+        cursor.ConsumeAsync().Returns(Substitute.For<IResultSummary>());
+        var executor = new Neo4jMigrationExecutor(driver, "neo4j");
+        var execution = new MigrationExecution(
+            "002_schema",
+            "def",
+            [new MigrationCommand("CREATE INDEX sample", false)]);
+
+        await executor.ApplyAsync(execution);
+
+        await session.Received(2).ExecuteWriteAsync(
+            Arg.Any<Func<IAsyncQueryRunner, Task>>(),
+            Arg.Any<Action<TransactionConfigBuilder>>());
+        await runner.Received().RunAsync("CREATE INDEX sample");
+        await runner.Received().RunAsync(
+            Arg.Is<string>(text => text.StartsWith("MERGE", StringComparison.Ordinal)),
             Arg.Any<IDictionary<string, object>>());
     }
 
@@ -298,19 +336,22 @@ public sealed class Neo4jExecutionTests
     }
 
     [Fact]
-    public async Task MigrationExecutorRejectsInvalidExecutions()
+    public async Task MigrationExecutorRejectsInvalidAndMixedExecutions()
     {
         var driver = Substitute.For<IDriver>();
         var executor = new Neo4jMigrationExecutor(driver);
-        var nonTransactional = new MigrationExecution(
+        var mixed = new MigrationExecution(
             "001_initial",
             "abc",
-            [new MigrationCommand("CREATE DATABASE", false)]);
+            [
+                new MigrationCommand("CREATE INDEX", false),
+                new MigrationCommand("CREATE NODE", true),
+            ]);
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
         await Assert.ThrowsAsync<ArgumentNullException>(async () => await executor.ApplyAsync(null!));
-        await Assert.ThrowsAsync<NotSupportedException>(async () => await executor.ApplyAsync(nonTransactional));
+        await Assert.ThrowsAsync<NotSupportedException>(async () => await executor.ApplyAsync(mixed));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             async () => await executor.GetAppliedMigrationsAsync(cancellation.Token));
     }

@@ -85,6 +85,18 @@ internal static class MigrationCanonicalizer
                     Token(constraint.NodeType),
                     Token(constraint.PropertyName)),
 
+            CreatePropertyExistenceConstraintOperation constraint =>
+                PropertyConstraint("create-existence", constraint.EntityKind, constraint.EntityType, constraint.PropertyName),
+
+            DropPropertyExistenceConstraintOperation constraint =>
+                PropertyConstraint("drop-existence", constraint.EntityKind, constraint.EntityType, constraint.PropertyName),
+
+            CreatePropertyTypeConstraintOperation constraint =>
+                PropertyConstraint("create-type", constraint.EntityKind, constraint.EntityType, constraint.PropertyName, constraint.ClrType),
+
+            DropPropertyTypeConstraintOperation constraint =>
+                PropertyConstraint("drop-type", constraint.EntityKind, constraint.EntityType, constraint.PropertyName, constraint.ClrType),
+
             DropNodeTypeOperation node =>
                 string.Join('|',
                     "drop-node",
@@ -160,6 +172,19 @@ internal static class MigrationCanonicalizer
             _ => throw new NotSupportedException(
                 $"Migration operation '{operation.GetType().Name}' cannot be canonicalized.")
         };
+
+    private static string PropertyConstraint(
+        string operation,
+        GraphSchemaEntityKind kind,
+        string entityType,
+        string propertyName,
+        Type? clrType = null) =>
+        string.Join('|',
+            operation,
+            Token(kind.ToString()),
+            Token(entityType),
+            Token(propertyName),
+            Token(TypeName(clrType)));
 
     private static string Properties(IReadOnlyList<GraphSchemaProperty>? properties)
     {
