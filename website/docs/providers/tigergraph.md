@@ -20,7 +20,26 @@ var provider = new TigerGraphProvider(
 
 Fixed traversals use stable GSQL Syntax V1 paths. Repeated-hop queries switch to Syntax V2 only when required. Atomic upserts use REST++; delete-containing plans use deterministic installed GSQL mutation queries.
 
-Schema migrations and query installation require an `ITigerGraphAdministrativeTransport`. Self-managed deployments may use `TigerGraphGsqlProcessTransport`; managed environments can supply a transport suited to their control plane.
+Query installation requires `ITigerGraphAdministrativeTransport`. Migration execution has a stricter boundary: an `ITigerGraphAdministrativeControlPlane` must verify schema read/write, job inspection, cleanup, and graph-scoped locking. An execute-only transport never causes the provider to claim migration support.
+
+Self-managed deployments may use `TigerGraphGsqlProcessTransport`. The 4.2.4 Community Docker image does not place `gsql` on PATH, so the verified local prefix is:
+
+```csharp
+var administration = new TigerGraphGsqlProcessTransport(new TigerGraphGsqlProcessOptions
+{
+    FileName = "docker",
+    PrefixArguments =
+    [
+        "exec",
+        "nodal-tigergraph",
+        "/home/tigergraph/tigergraph/app/4.2.4/cmd/gsql"
+    ],
+    GraphName = "SocialGraph",
+    VerifiedServerVersion = "4.2.4 Community"
+});
+```
+
+Managed environments can implement the same control-plane contract without exposing their administrative API to provider-neutral code.
 
 Analytics use explicitly configured installed GSQL queries. `TigerGraphOptions.AnalyticsQueries` maps each available `GraphAnalyticsAlgorithm` to its installed query name. This makes the capability set truthful across TigerGraph editions and deployments instead of assuming that every algorithm library has been installed.
 

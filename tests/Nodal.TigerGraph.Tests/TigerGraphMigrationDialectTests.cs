@@ -71,8 +71,8 @@ public sealed class TigerGraphMigrationDialectTests
 
         Assert.Contains("ALTER VERTEX Person ADD ATTRIBUTE (display_name STRING)", commands[0].Text, StringComparison.Ordinal);
         Assert.Contains("ALTER EDGE KNOWS ADD ATTRIBUTE (since DATETIME)", commands[0].Text, StringComparison.Ordinal);
-        Assert.Contains("ALTER VERTEX Person DROP ATTRIBUTE display_name", commands[0].Text, StringComparison.Ordinal);
-        Assert.Contains("ALTER EDGE KNOWS DROP ATTRIBUTE since", commands[0].Text, StringComparison.Ordinal);
+        Assert.Contains("ALTER VERTEX Person DROP ATTRIBUTE (display_name)", commands[0].Text, StringComparison.Ordinal);
+        Assert.Contains("ALTER EDGE KNOWS DROP ATTRIBUTE (since)", commands[0].Text, StringComparison.Ordinal);
         Assert.Throws<NotSupportedException>(() =>
             dialect.Compile(
             [
@@ -86,6 +86,20 @@ public sealed class TigerGraphMigrationDialectTests
     }
 
     [Fact]
+    public void CompileProducesTypedSecondaryIndexDrop()
+    {
+        var command = Assert.Single(new TigerGraphMigrationDialect("SocialGraph").Compile(
+        [
+            new DropIndexOperation("Person", "email"),
+        ]).Take(1));
+
+        Assert.Contains(
+            "ALTER VERTEX Person DROP INDEX nodal_ix_Person_email;",
+            command.Text,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UnsupportedConstraintTypeAndUnsafeNamesAreRejected()
     {
         Assert.Throws<ArgumentException>(() => new TigerGraphMigrationDialect("bad;graph"));
@@ -94,6 +108,16 @@ public sealed class TigerGraphMigrationDialectTests
             dialect.Compile([new CreateUniqueConstraintOperation("Person", "email")]));
         Assert.Throws<NotSupportedException>(() =>
             dialect.Compile([new DropSchemaObjectOperation("old_index", MigrationSchemaObjectKind.Index)]));
+        Assert.Throws<NotSupportedException>(() =>
+            dialect.Compile([new CreatePropertyExistenceConstraintOperation(
+                GraphSchemaEntityKind.Node, "Person", "email")]));
+        Assert.Throws<NotSupportedException>(() =>
+            dialect.Compile([new CreatePropertyTypeConstraintOperation(
+                GraphSchemaEntityKind.Relation, "KNOWS", "since", typeof(DateTime))]));
+        Assert.Throws<NotSupportedException>(() =>
+            dialect.Compile([new AlterRelationPropertyTypeOperation(
+                "KNOWS", "since", typeof(int), typeof(long),
+                MigrationPropertyTypeCompatibility.RequiresRewrite)]));
         Assert.Throws<ArgumentException>(() =>
             dialect.Compile([new DropNodeTypeOperation("bad-name")]));
     }

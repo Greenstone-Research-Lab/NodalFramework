@@ -15,6 +15,8 @@ $env:NODAL_TIGERGRAPH_ACCESS_TOKEN = $null
 $env:NODAL_TIGERGRAPH_USERNAME = 'tigergraph'
 $env:NODAL_TIGERGRAPH_PASSWORD = 'tigergraph'
 $env:NODAL_TIGERGRAPH_GRAPH = 'NodalQa'
+$env:NODAL_TIGERGRAPH_GSQL_FILE = 'docker'
+$env:NODAL_TIGERGRAPH_GSQL_PREFIX = '["exec","nodal-tigergraph","/home/tigergraph/tigergraph/app/4.2.4/cmd/gsql"]'
 
 dotnet test "$repositoryRoot/tests/Nodal.IntegrationTests/Nodal.IntegrationTests.csproj" `
     --configuration Release

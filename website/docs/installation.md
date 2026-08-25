@@ -161,8 +161,10 @@ builder.Services.AddScoped<SocialGraphContext>();
 ```
 
 TigerGraph migration execution additionally requires an
-`ITigerGraphAdministrativeTransport`; ordinary query and mutation scenarios do
-not require that privileged channel.
+`ITigerGraphAdministrativeControlPlane` with verified schema, job lifecycle,
+cleanup, and graph-lock capabilities. Ordinary query and upsert scenarios do
+not require that privileged channel; an execute-only administrative transport
+does not advertise migrations.
 
 ## Keep credentials out of source control
 

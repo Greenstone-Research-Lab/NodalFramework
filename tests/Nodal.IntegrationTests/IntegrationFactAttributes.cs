@@ -19,7 +19,7 @@ internal sealed class Neo4jIntegrationFactAttribute : FactAttribute
     }
 }
 
-internal sealed class TigerGraphIntegrationFactAttribute : FactAttribute
+internal class TigerGraphIntegrationFactAttribute : FactAttribute
 {
     private static readonly string[] RequiredVariables =
     [
@@ -40,6 +40,23 @@ internal sealed class TigerGraphIntegrationFactAttribute : FactAttribute
         if (missingConnectionSetting || (!hasAccessToken && !hasUserCredentials))
         {
             Skip = "Set the TigerGraph endpoint and graph plus either token or user credentials.";
+        }
+    }
+}
+
+internal sealed class TigerGraphMigrationIntegrationFactAttribute : TigerGraphIntegrationFactAttribute
+{
+    public TigerGraphMigrationIntegrationFactAttribute()
+    {
+        if (Skip is not null)
+        {
+            return;
+        }
+
+        if (string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GSQL_FILE")) ||
+            string.IsNullOrWhiteSpace(Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GSQL_PREFIX")))
+        {
+            Skip = "Set NODAL_TIGERGRAPH_GSQL_FILE and JSON-array NODAL_TIGERGRAPH_GSQL_PREFIX for live migration tests.";
         }
     }
 }
