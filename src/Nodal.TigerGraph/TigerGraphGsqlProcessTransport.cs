@@ -46,6 +46,7 @@ public sealed class TigerGraphGsqlProcessOptions
 /// </remarks>
 public sealed class TigerGraphGsqlProcessTransport : ITigerGraphAdministrativeControlPlane
 {
+    private static readonly TimeSpan IdentifierRegexTimeout = TimeSpan.FromSeconds(1);
     private static readonly ConcurrentDictionary<string, SemaphoreSlim> MigrationLocks =
         new(StringComparer.Ordinal);
     private readonly TigerGraphGsqlProcessOptions options;
@@ -195,7 +196,11 @@ public sealed class TigerGraphGsqlProcessTransport : ITigerGraphAdministrativeCo
     private static void ValidateIdentifier(string identifier, string parameterName)
     {
         ArgumentException.ThrowIfNullOrWhiteSpace(identifier, parameterName);
-        if (!Regex.IsMatch(identifier, "^[A-Za-z_][A-Za-z0-9_]*$", RegexOptions.CultureInvariant))
+        if (!Regex.IsMatch(
+                identifier,
+                "^[A-Za-z_][A-Za-z0-9_]*$",
+                RegexOptions.CultureInvariant,
+                IdentifierRegexTimeout))
         {
             throw new ArgumentException($"'{identifier}' is not a valid TigerGraph identifier.", parameterName);
         }

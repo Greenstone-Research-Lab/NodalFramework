@@ -1,8 +1,8 @@
 using System.Net.Http.Headers;
 using System.Text.Json;
-using Nodal.Core.Migrations;
 using Nodal.Core;
 using Nodal.Core.Metadata;
+using Nodal.Core.Migrations;
 using Nodal.Core.Query;
 using Nodal.TigerGraph;
 
