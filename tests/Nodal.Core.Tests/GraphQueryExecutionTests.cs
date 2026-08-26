@@ -163,6 +163,32 @@ public sealed class GraphQueryExecutionTests
             await new GraphSet<Person>().Query().ToRows().Count("count").ToListAsync());
     }
 
+    [Fact]
+    public void NamedTraversalAndPatternBuildersValidateAliasesAndPathSemantics()
+    {
+        var provider = new QueryProvider();
+        var context = new QueryContext(provider);
+
+        var traversal = context.People.Query("person")
+            .Traverse(context.Friendships, "knows", "friend")
+            .ToQueryModel();
+        var pattern = context.People.Query("person")
+            .WhereNotExists(context.Friendships, candidate => candidate.Name == "Alan")
+            .AlsoMatch(context.Friendships, "knownBy", "referrer")
+            .ToQueryModel();
+
+        Assert.Equal(("knows", "friend"), (Assert.Single(traversal.Traversals).RelationAlias, traversal.ResultAlias));
+        Assert.Single(pattern.EffectiveExistencePatterns);
+        Assert.Single(pattern.EffectiveMatchPatterns);
+        Assert.Throws<ArgumentException>(() => context.People.Query("1person"));
+        Assert.Throws<ArgumentException>(() => context.People.Query("person-name"));
+        Assert.Throws<ArgumentException>(() => context.People.Query("person").Traverse(context.Friendships, "same", "same"));
+        Assert.Throws<ArgumentException>(() => context.People.Query("person").Traverse(context.Friendships, "person", "friend"));
+        Assert.Throws<InvalidOperationException>(() => context.People.Query("person")
+            .WithoutCycles()
+            .AlsoMatch(context.Friendships, "knows", "friend"));
+    }
+
     private sealed class QueryContext(QueryProvider provider) : NodalContext(provider)
     {
         public GraphSet<Person> People => Set<Person>();
@@ -218,7 +244,9 @@ public sealed class GraphQueryExecutionTests
             TestedProviderVersion = "test",
             Features = GraphQueryCapability.ServerSideProjection |
                 GraphQueryCapability.Aggregation |
-                GraphQueryCapability.SetOperations,
+                GraphQueryCapability.SetOperations |
+                GraphQueryCapability.CorrelatedSubquery |
+                GraphQueryCapability.MultiplePatterns,
         };
 
         public GraphCommand Compile(GraphQueryModel query)

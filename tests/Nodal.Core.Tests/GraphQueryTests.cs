@@ -262,6 +262,15 @@ public sealed class GraphQueryTests
     }
 
     [Fact]
+    public void SetOperationsRejectIncompatibleAliases()
+    {
+        var left = new GraphSet<Person>().Query("person");
+        var right = new GraphSet<Person>().Query("other");
+
+        Assert.Throws<ArgumentException>(() => left.Union(right));
+    }
+
+    [Fact]
     public void ComparisonMustUseDirectNodeProperty()
     {
         Assert.Throws<NotSupportedException>(
