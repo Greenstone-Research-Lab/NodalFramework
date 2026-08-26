@@ -54,6 +54,13 @@ jobs:
         shell: pwsh
         run: ./eng/verify.ps1 -PackageVersion $env:PACKAGE_VERSION
 
+      - name: Generate release evidence and capability report
+        shell: pwsh
+        run: |
+          ./eng/generate-release-evidence.ps1 `
+            -PackageVersion $env:PACKAGE_VERSION `
+            -CommitSha '${{ github.sha }}'
+
       - name: Upload verified package artifacts
         uses: actions/upload-artifact@v4
         with:
@@ -61,6 +68,7 @@ jobs:
           path: |
             TestResults/package-verification/*.nupkg
             TestResults/package-verification/*.snupkg
+            TestResults/release-evidence/*
           if-no-files-found: error
           retention-days: 30
 
@@ -91,7 +99,8 @@ jobs:
             'Nodal.Neo4j',
             'Nodal.Analytics',
             'Nodal.PatternRecognition',
-            'Nodal.TigerGraph'
+            'Nodal.TigerGraph',
+            'Nodal.Tool'
           )
 
           foreach ($packageId in $packageIds) {
@@ -110,7 +119,7 @@ jobs:
             }
           }
 
-          "Published all six packages to NuGet.org." | Out-File `
+          "Published all seven packages to NuGet.org." | Out-File `
             -FilePath $env:GITHUB_STEP_SUMMARY `
             -Encoding utf8 `
             -Append

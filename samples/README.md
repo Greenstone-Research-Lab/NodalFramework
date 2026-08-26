@@ -5,6 +5,7 @@ The samples run one provider-neutral social graph workflow through two independe
 - `Nodal.Samples.SocialGraph` contains the POCO model, `NodalContext`, fluent traversal, and unit-of-work scenario.
 - `Nodal.Samples.Neo4j` configures the Neo4j Bolt provider and connection pool.
 - `Nodal.Samples.TigerGraph` configures the TigerGraph HTTP provider and externally managed `HttpClient`.
+- `Nodal.Samples.MigrationHost` demonstrates trusted Neo4j and TigerGraph composition roots for CLI bundle execution.
 
 Start the local databases and run both demos from the repository root:
 
