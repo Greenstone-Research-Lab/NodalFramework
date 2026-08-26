@@ -184,6 +184,9 @@ public sealed class GraphQueryExecutionTests
         Assert.Throws<ArgumentException>(() => context.People.Query("person-name"));
         Assert.Throws<ArgumentException>(() => context.People.Query("person").Traverse(context.Friendships, "same", "same"));
         Assert.Throws<ArgumentException>(() => context.People.Query("person").Traverse(context.Friendships, "person", "friend"));
+        Assert.Throws<InvalidOperationException>(() => context.People.Query()
+            .Traverse(context.Friendships)
+            .ShortestPathTo(context.People.Query(), context.Friendships));
         Assert.Throws<InvalidOperationException>(() => context.People.Query("person")
             .WithoutCycles()
             .AlsoMatch(context.Friendships, "knows", "friend"));
