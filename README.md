@@ -460,6 +460,8 @@ The package gate produces all six `.nupkg` and `.snupkg` artifacts, then inspect
 
 Alpha packages are published only after a pull request promotes `developer` to `staging`. The `Publish Alpha Packages` workflow assigns one immutable `0.1.0-alpha.<run>` version to all six packages, runs the complete QA gate, exchanges GitHub's OIDC identity for a short-lived NuGet credential, and publishes `Nodal.Core` before its dependent packages. No long-lived NuGet API key is stored by the repository.
 
+After publication, the same workflow runs a clean-room World Food Delivery consumer smoke test. It copies a small CSV order dataset into a fresh temporary console application, restores only the immutable packages from NuGet.org, imports customers, restaurants, foods, orders, couriers, and relationship payloads in one bounded unit of work, and validates migration planning plus Neo4j and TigerGraph query boundaries. The consumer project contains no `ProjectReference`; its resolved package identities are retained as a workflow artifact. This verifies the experience an external application receives, rather than merely rebuilding this repository.
+
 The GitHub `staging` environment must define `NUGET_USER` as the NuGet profile name. NuGet Trusted Publishing must match repository owner `Greenstone-Research-Lab`, repository `NodalFramework`, workflow file `publish-alpha.yml`, and environment `staging`. Publishing deliberately does not use `--skip-duplicate`, ensuring package conflicts and reserved identifiers fail visibly.
 
 ## Live integration tests
