@@ -28,7 +28,6 @@ $report = [ordered]@{
         'Nodal.Migrations'
         'Nodal.Neo4j'
         'Nodal.Analytics'
-        'Nodal.PatternRecognition'
         'Nodal.TigerGraph'
         'Nodal.Tool'
     )
