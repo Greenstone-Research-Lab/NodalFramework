@@ -23,7 +23,6 @@
     <ProjectReference Include="..\..\src\Nodal.Neo4j\Nodal.Neo4j.csproj" />
     <ProjectReference Include="..\..\src\Nodal.TigerGraph\Nodal.TigerGraph.csproj" />
     <ProjectReference Include="..\..\src\Nodal.Migrations\Nodal.Migrations.csproj" />
-    <ProjectReference Include="..\..\src\Nodal.PatternRecognition\Nodal.PatternRecognition.csproj" />
     <ProjectReference Include="..\..\src\Nodal.Tool\Nodal.Tool.csproj" />
   </ItemGroup>
 
