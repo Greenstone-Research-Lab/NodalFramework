@@ -7,7 +7,7 @@
     <ToolCommandName>nodal</ToolCommandName>
     <PackageId>Nodal.Tool</PackageId>
     <Title>Nodal Framework Migration Tool</Title>
-    <Description>Command-line tooling for deterministic Nodal Framework schema snapshots, diffs, plans, and validation.</Description>
+    <Description>Command-line tooling for deterministic Nodal Framework schema snapshots, plans, immutable bundles, approved apply, and rollback workflows.</Description>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
