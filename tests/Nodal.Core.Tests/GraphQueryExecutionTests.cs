@@ -1,5 +1,6 @@
 using Nodal.Core.Execution;
 using Nodal.Core.Metadata;
+using Nodal.Core.Migrations;
 using Nodal.Core.Providers;
 using Nodal.Core.Query;
 
@@ -92,9 +93,49 @@ public sealed class GraphQueryExecutionTests
         await Assert.ThrowsAsync<InvalidOperationException>(async () => await standalone.ToSubgraphAsync());
     }
 
+    [Fact]
+    public async Task UnsupportedCorrelatedSubqueryFailsBeforeCompilerOrTransportExecution()
+    {
+        var provider = new QueryProvider();
+        var context = new QueryContext(provider);
+
+        var exception = await Assert.ThrowsAsync<NodalCapabilityNotSupportedException>(async () =>
+            await context.People.Query().WhereExists(context.Friendships).ToListAsync());
+
+        Assert.Equal("NODAL-QUERY-CORRELATED-SUBQUERY", exception.CapabilityCode);
+        Assert.False(provider.Compiled);
+        Assert.False(provider.Executed);
+    }
+
+    [Fact]
+    public async Task RowProjectionMaterializesNamedProviderSideValues()
+    {
+        var provider = new QueryProvider
+        {
+            RowValues = new Dictionary<string, object?>
+            {
+                ["personCount"] = 2L,
+                ["averageScore"] = 4.5d,
+            },
+        };
+        var context = new QueryContext(provider);
+
+        var row = Assert.Single(await context.People.Query()
+            .ToRows()
+            .Count("personCount")
+            .Average("averageScore", person => person.Score)
+            .ToListAsync());
+
+        Assert.Equal(2L, row.Get<long>("personCount"));
+        Assert.Equal(4.5d, row.Get<double>("averageScore"));
+        Assert.Throws<KeyNotFoundException>(() => row.Get<int>("missing"));
+    }
+
     private sealed class QueryContext(QueryProvider provider) : NodalContext(provider)
     {
         public GraphSet<Person> People => Set<Person>();
+
+        public RelationSet<Person, Knows, Person> Friendships => Relations<Person, Knows, Person>();
     }
 
     [GraphNode("Person")]
@@ -104,15 +145,26 @@ public sealed class GraphQueryExecutionTests
         public string Id { get; set; } = string.Empty;
 
         public string Name { get; set; } = string.Empty;
+
+        public double Score { get; set; }
     }
 
-    private sealed class QueryProvider : IGraphProvider, IGraphQueryCompiler, IGraphCommandExecutor
+    [GraphRelation("KNOWS", Directed = false)]
+    private sealed class Knows;
+
+    private sealed class QueryProvider : IGraphProvider, IGraphQueryCapabilityProvider, IGraphQueryCompiler, IGraphCommandExecutor
     {
         public bool Empty { get; set; }
 
         public bool Reload { get; set; }
 
         public bool MissingCount { get; set; }
+
+        public bool Compiled { get; private set; }
+
+        public bool Executed { get; private set; }
+
+        public IReadOnlyDictionary<string, object?>? RowValues { get; init; }
 
         private GraphQueryModel? Query { get; set; }
 
@@ -122,8 +174,17 @@ public sealed class GraphQueryExecutionTests
 
         public IGraphResultMaterializer ResultMaterializer { get; } = new JsonGraphResultMaterializer();
 
+        public GraphQueryCapabilities QueryCapabilities { get; } = new()
+        {
+            ProviderName = "QueryProvider",
+            TestedProviderVersion = "test",
+            Features = GraphQueryCapability.ServerSideProjection |
+                GraphQueryCapability.Aggregation,
+        };
+
         public GraphCommand Compile(GraphQueryModel query)
         {
+            Compiled = true;
             Query = query;
             return new GraphCommand("QUERY", new Dictionary<string, object?>());
         }
@@ -132,6 +193,7 @@ public sealed class GraphQueryExecutionTests
             GraphCommand command,
             CancellationToken cancellationToken = default)
         {
+            Executed = true;
             if (command.Text == "RAW")
             {
                 return ValueTask.FromResult(CreateResult(2));
@@ -145,6 +207,16 @@ public sealed class GraphQueryExecutionTests
                 }
                 return ValueTask.FromResult(new GraphQueryResult(
                     [], Scalars: new Dictionary<string, object?> { ["nodal_count"] = Empty ? 0L : 2L }));
+            }
+
+            if (Query?.Projection == GraphQueryProjection.Row)
+            {
+                return ValueTask.FromResult(new GraphQueryResult(
+                    [],
+                    Rows:
+                    [
+                        new GraphResultRow(null, RowValues ?? new Dictionary<string, object?>()),
+                    ]));
             }
 
             var count = Empty ? 0 : Query?.Limit is int limit ? Math.Min(limit, 2) : 2;

@@ -4,13 +4,14 @@ using Nodal.Core.Execution;
 using Nodal.Core.Migrations;
 using Nodal.Core.Mutations;
 using Nodal.Core.Providers;
+using Nodal.Core.Query;
 
 namespace Nodal.TigerGraph;
 
 /// <summary>
 /// Provides the complete Nodal query pipeline for a TigerGraph graph.
 /// </summary>
-public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider, IGraphMigrationProvider, IGraphMigrationHistoryProvider,
+public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityProvider, IGraphMutationProvider, IGraphMigrationProvider, IGraphMigrationHistoryProvider,
     IGraphMigrationLockProvider, IGraphAnalyticsProvider, IGraphAnalyticsRuntimeProvider, IGraphSchemaIntrospectionProvider
 {
     private readonly IGraphMigrationExecutor? migrationExecutor;
@@ -118,6 +119,14 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphMutationProvider,
 
     /// <inheritdoc />
     public IGraphResultMaterializer ResultMaterializer { get; }
+
+    /// <inheritdoc />
+    public GraphQueryCapabilities QueryCapabilities { get; } = new()
+    {
+        ProviderName = "TigerGraph",
+        TestedProviderVersion = "4.2.4 Community",
+        Features = GraphQueryCapability.VariableLengthTraversal,
+    };
 
     /// <inheritdoc />
     public IGraphAnalyticsCompiler AnalyticsCompiler { get; }

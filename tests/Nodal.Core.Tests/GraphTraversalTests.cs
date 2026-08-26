@@ -167,6 +167,69 @@ public sealed class GraphTraversalTests
     }
 
     [Fact]
+    public void ExistsPatternsPreserveMappedTargetAndRelationPredicates()
+    {
+        var context = new NetworkContext(new UnusedProvider());
+
+        var model = context.People.Query()
+            .WhereExists(
+                context.Employment,
+                company => company.Country == "EE",
+                employment => employment.Role == "Engineer")
+            .WhereNotExists(context.Friendships)
+            .ToQueryModel();
+
+        Assert.Collection(
+            model.EffectiveExistencePatterns,
+            exists =>
+            {
+                Assert.False(exists.Negated);
+                Assert.Equal("node", exists.SourceAlias);
+                Assert.Equal("WORKS_AT", exists.RelationType);
+                Assert.Equal("country_code", Assert.IsType<GraphComparisonPredicate>(exists.TargetPredicate).PropertyName);
+                Assert.Equal("role_name", Assert.IsType<GraphComparisonPredicate>(exists.RelationPredicate).PropertyName);
+            },
+            missing =>
+            {
+                Assert.True(missing.Negated);
+                Assert.Equal("FRIEND_OF", missing.RelationType);
+            });
+        Assert.Equal(["p0", "p1"], model.Parameters.Select(parameter => parameter.Name));
+    }
+
+    [Fact]
+    public void MultiplePatternsUseExplicitAliasesAndMappedPredicates()
+    {
+        var context = new NetworkContext(new UnusedProvider());
+
+        var model = context.People.Query("person")
+            .AlsoMatch(
+                context.Employment,
+                "employment",
+                "company",
+                company => company.Country == "EE",
+                relationship => relationship.Role == "Engineer")
+            .AlsoMatch(context.Friendships, "friendship", "friend")
+            .ToQueryModel();
+
+        Assert.Equal("person", model.Alias);
+        Assert.Collection(
+            model.EffectiveMatchPatterns,
+            employment =>
+            {
+                Assert.Equal(("person", "employment", "company"),
+                    (employment.SourceAlias, employment.RelationAlias, employment.TargetAlias));
+                Assert.Equal("country_code", Assert.IsType<GraphComparisonPredicate>(employment.Predicate).PropertyName);
+                Assert.Equal("role_name", Assert.IsType<GraphComparisonPredicate>(employment.RelationPredicate).PropertyName);
+            },
+            friendship => Assert.Equal(("friendship", "friend"), (friendship.RelationAlias, friendship.TargetAlias)));
+        Assert.Equal(["p0", "p1"], model.Parameters.Select(parameter => parameter.Name));
+        Assert.Throws<ArgumentException>(() => context.People.Query("invalid alias"));
+        Assert.Throws<ArgumentException>(() => context.People.Query("person")
+            .AlsoMatch(context.Employment, "person", "company"));
+    }
+
+    [Fact]
     public void PathProjectionFiltersRelationshipAndTargetUsingMappedProperties()
     {
         var context = new NetworkContext(new UnusedProvider());

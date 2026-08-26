@@ -32,6 +32,30 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
         ArgumentNullException.ThrowIfNull(query);
         ValidateIdentifier(query.NodeType, nameof(query.NodeType));
         ValidateIdentifier(query.Alias, nameof(query.Alias));
+        if (query.SetOperation is not null)
+        {
+            throw new NotSupportedException(
+                "TigerGraph interpreted GSQL does not provide a portable set-operation execution path. " +
+                "Use an installed provider extension until Nodal supplies an installed-query implementation.");
+        }
+        if (query.EffectiveExistencePatterns.Count > 0)
+        {
+            throw new NotSupportedException(
+                "TigerGraph interpreted GSQL does not provide a portable correlated-subquery execution path. " +
+                "Use an installed provider extension until Nodal supplies an installed-query implementation.");
+        }
+        if (query.EffectiveMatchPatterns.Count > 0)
+        {
+            throw new NotSupportedException(
+                "TigerGraph interpreted GSQL does not provide a portable multiple-pattern execution path. " +
+                "Use an installed provider extension until Nodal supplies an installed-query implementation.");
+        }
+        if (query.Projection == GraphQueryProjection.Row)
+        {
+            throw new NotSupportedException(
+                "TigerGraph interpreted GSQL does not provide a portable server-side row-projection execution path. " +
+                "Use an installed provider extension until Nodal supplies an installed-query implementation.");
+        }
         foreach (var traversal in query.Traversals)
         {
             foreach (var relationType in traversal.RelationTypes)

@@ -197,6 +197,30 @@ public sealed class Neo4jConnectionTests
         Assert.Single(subgraph.RelationRecords);
         Assert.Equal(2, count);
 
+        var union = await detachedContext.People.Match(person => person.Id == ada.Id)
+            .Union(detachedContext.People.Match(person => person.Name.StartsWith("Al")))
+            .OrderBy(person => person.Name)
+            .ToListAsync();
+        var grouped = await detachedContext.People.Query()
+            .ToRows()
+            .Select("name", person => person.Name)
+            .Count("personCount")
+            .OrderBy("name")
+            .ToListAsync();
+
+        Assert.Equal(["Ada", "Alan"], union.Select(person => person.Name));
+        Assert.Collection(grouped,
+            row =>
+            {
+                Assert.Equal("Ada", row.Get<string>("name"));
+                Assert.Equal(1L, row.Get<long>("personCount"));
+            },
+            row =>
+            {
+                Assert.Equal("Alan", row.Get<string>("name"));
+                Assert.Equal(1L, row.Get<long>("personCount"));
+            });
+
         Assert.Equal("Ada", (await detachedContext.People.Query().OrderBy(person => person.Name).FirstAsync()).Name);
         Assert.Equal("Alan", (await detachedContext.People.Match(person => person.Id == alan.Id).SingleAsync()).Name);
         Assert.True(await detachedContext.People.Match(person => person.Name.Contains("da")).AnyAsync());

@@ -40,6 +40,10 @@ Legend: **Yes** is implemented; **Conditional** requires the condition shown; **
 | Variable-depth traversal | Yes | Conditional: GSQL Syntax V2 |
 | Optional match | Yes | No |
 | Vertex-simple variable-depth path | Yes | No: intermediate aliases are unavailable |
+| Correlated existence pattern | Yes: Cypher `EXISTS` subquery | No: use a separately verified installed-query extension |
+| Additional named required pattern | Yes: Cypher `MATCH` | No: use a separately verified installed-query extension |
+| Provider-side scalar/aggregate rows | Yes | No: interpreted GSQL route rejects it before transport |
+| Compatible node-query `Union` / `UnionAll` | Yes | No: use a separately verified installed-query extension |
 | Client-managed multi-command transaction | Yes | No: request or installed-query boundary |
 | Atomic mutation plan | Yes | Conditional: REST++ or installed mutation query |
 | Migration execution | Yes | Conditional: verified administrative control plane and graph lock |

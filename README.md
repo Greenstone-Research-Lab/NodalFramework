@@ -66,6 +66,7 @@ Nodal distinguishes vendor client compatibility from versions verified by this r
 | Parameterized queries and fixed traversals | Supported | Supported |
 | Variable-depth traversal | Supported | GSQL Syntax V2 with documented restrictions |
 | Optional match | Supported | Not supported |
+| Correlated existence, additional patterns, row aggregates, and set operations | Supported | Not supported by interpreted GSQL; use an installed provider extension |
 | Transaction boundary | Client-managed transaction | Atomic request or installed query |
 | Migration execution | Supported | Requires administrative transport |
 | Centrality and community detection | Requires compatible GDS and named projection | Requires explicitly configured installed GSQL query |
@@ -186,6 +187,26 @@ var person = await context.People.Match(person => person.Id == "person-42").Sing
 ```
 
 `FirstAsync`, `FirstOrDefaultAsync`, `SingleAsync`, `SingleOrDefaultAsync`, `AnyAsync`, and `CountAsync` apply bounded or aggregate execution. `CountAsync` uses a server-side aggregate when paging has not changed LINQ count semantics. `AsAsyncEnumerable` provides cancellation-aware asynchronous consumption; HTTP providers necessarily receive one response payload, while the API keeps consumer code provider-neutral.
+
+Neo4j additionally supports correlated existence checks, independently named required patterns, provider-side row aggregates, and compatible node-query unions. Each value remains parameterized; the second union operand is automatically rebased so parameter names cannot collide:
+
+```csharp
+var selected = await context.People.Match(person => person.Active)
+    .Union(context.People.Match(person => person.Name.StartsWith("Ada")))
+    .OrderBy(person => person.Name)
+    .Take(50)
+    .ToListAsync();
+
+var summary = await context.People.Query()
+    .ToRows()
+    .Select("name", person => person.Name)
+    .Count("people")
+    .Having("people", GraphComparisonOperator.GreaterThan, 1)
+    .OrderByDescending("people")
+    .ToListAsync();
+```
+
+Scalar columns selected together with aggregate columns define the provider-side grouping key. TigerGraph's interpreted GSQL route does not advertise these query shapes: Nodal rejects them before database transport rather than attempting an in-memory fallback. An installed TigerGraph provider extension can expose a separately verified execution path.
 
 Graph analytics retain the same typed model while executing centrality and community algorithms on the provider:
 

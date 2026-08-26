@@ -15,6 +15,10 @@ namespace Nodal.Core.Query;
 /// <param name="Distinct">Whether duplicate results are removed.</param>
 /// <param name="TrackingBehavior">Whether materialized objects are tracked.</param>
 /// <param name="CycleBehavior">How repeated vertices in a matched path are handled.</param>
+/// <param name="ExistencePatterns">Correlated relationship patterns that must exist or not exist for a result node.</param>
+/// <param name="MatchPatterns">Additional required relationship patterns bound to aliases in the same query.</param>
+/// <param name="RowProjection">The provider-side scalar and aggregate columns requested from the query.</param>
+/// <param name="SetOperation">The optional set operation that supplies this query's result nodes.</param>
 public sealed record GraphQueryModel(
     string NodeType,
     string Alias,
@@ -27,7 +31,11 @@ public sealed record GraphQueryModel(
     IReadOnlyList<GraphOrdering>? Orderings = null,
     bool Distinct = false,
     GraphTrackingBehavior TrackingBehavior = GraphTrackingBehavior.TrackAll,
-    GraphCycleBehavior CycleBehavior = GraphCycleBehavior.ProviderDefault)
+    GraphCycleBehavior CycleBehavior = GraphCycleBehavior.ProviderDefault,
+    IReadOnlyList<GraphExistencePattern>? ExistencePatterns = null,
+    IReadOnlyList<GraphTraversalStep>? MatchPatterns = null,
+    GraphRowProjection? RowProjection = null,
+    GraphSetOperation? SetOperation = null)
 {
     /// <summary>Gets the normalized ordering clauses.</summary>
     public IReadOnlyList<GraphOrdering> EffectiveOrderings => Orderings ?? [];
@@ -36,7 +44,36 @@ public sealed record GraphQueryModel(
 
     /// <summary>Gets the provider-neutral node type returned by the query.</summary>
     public string ResultNodeType => Traversals.Count == 0 ? NodeType : Traversals[^1].TargetNodeType;
+
+    /// <summary>Gets the correlated existence patterns, or an empty collection when none were requested.</summary>
+    public IReadOnlyList<GraphExistencePattern> EffectiveExistencePatterns => ExistencePatterns ?? [];
+
+    /// <summary>Gets additional required patterns, or an empty collection when none were requested.</summary>
+    public IReadOnlyList<GraphTraversalStep> EffectiveMatchPatterns => MatchPatterns ?? [];
 }
+
+/// <summary>
+/// Describes one correlated relationship pattern used as an exists or not-exists predicate.
+/// </summary>
+/// <param name="RelationType">The provider-neutral relationship name.</param>
+/// <param name="TargetNodeType">The node type reached by the relationship.</param>
+/// <param name="SourceAlias">The outer query alias correlated with this pattern.</param>
+/// <param name="RelationAlias">The stable relationship alias inside the correlated pattern.</param>
+/// <param name="TargetAlias">The stable target-node alias inside the correlated pattern.</param>
+/// <param name="Direction">The requested relationship direction.</param>
+/// <param name="TargetPredicate">An optional predicate applied to the correlated target node.</param>
+/// <param name="RelationPredicate">An optional predicate applied to the correlated relationship payload.</param>
+/// <param name="Negated">Whether the pattern must be absent rather than present.</param>
+public sealed record GraphExistencePattern(
+    string RelationType,
+    string TargetNodeType,
+    string SourceAlias,
+    string RelationAlias,
+    string TargetAlias,
+    GraphTraversalDirection Direction,
+    GraphPredicate? TargetPredicate,
+    GraphPredicate? RelationPredicate,
+    bool Negated = false);
 
 /// <summary>Defines cycle handling for a graph path match.</summary>
 public enum GraphCycleBehavior
@@ -85,7 +122,91 @@ public enum GraphQueryProjection
 
     /// <summary>Returns the number of matched result nodes.</summary>
     Count,
+
+    /// <summary>Returns named scalar and aggregate values without materializing source nodes.</summary>
+    Row,
 }
+
+/// <summary>Defines the value produced by one provider-side result-row column.</summary>
+public enum GraphRowColumnKind
+{
+    /// <summary>Returns a mapped property from a bound node.</summary>
+    Property,
+
+    /// <summary>Counts bound values.</summary>
+    Count,
+
+    /// <summary>Sums numeric bound-property values.</summary>
+    Sum,
+
+    /// <summary>Averages numeric bound-property values.</summary>
+    Average,
+
+    /// <summary>Returns the minimum bound-property value.</summary>
+    Minimum,
+
+    /// <summary>Returns the maximum bound-property value.</summary>
+    Maximum,
+}
+
+/// <summary>Describes one named scalar or aggregate value in a result-row projection.</summary>
+/// <param name="Name">The stable result-column name.</param>
+/// <param name="Kind">The scalar or aggregate operation.</param>
+/// <param name="SourceAlias">The alias whose value or property is read.</param>
+/// <param name="PropertyName">The mapped property name for property-based columns.</param>
+/// <param name="Distinct">Whether duplicate values are removed before a count operation.</param>
+public sealed record GraphRowColumn(
+    string Name,
+    GraphRowColumnKind Kind,
+    string SourceAlias,
+    string? PropertyName = null,
+    bool Distinct = false);
+
+/// <summary>Describes the named columns returned from a provider-side row projection.</summary>
+/// <param name="Columns">The ordered projected columns.</param>
+/// <param name="Orderings">The optional ordering applied to projected row columns.</param>
+/// <param name="HavingPredicates">The optional aggregate-stage predicates applied to projected row columns.</param>
+public sealed record GraphRowProjection(
+    IReadOnlyList<GraphRowColumn> Columns,
+    IReadOnlyList<GraphRowOrdering>? Orderings = null,
+    IReadOnlyList<GraphRowPredicate>? HavingPredicates = null)
+{
+    /// <summary>Gets the normalized projected-row ordering clauses.</summary>
+    public IReadOnlyList<GraphRowOrdering> EffectiveOrderings => Orderings ?? [];
+
+    /// <summary>Gets the normalized aggregate-stage predicates.</summary>
+    public IReadOnlyList<GraphRowPredicate> EffectiveHavingPredicates => HavingPredicates ?? [];
+}
+
+/// <summary>Describes ordering over one projected row column.</summary>
+/// <param name="ColumnName">The named projected column to order.</param>
+/// <param name="Direction">The requested ordering direction.</param>
+public sealed record GraphRowOrdering(string ColumnName, GraphSortDirection Direction);
+
+/// <summary>Describes one parameterized predicate over a projected row column.</summary>
+/// <param name="ColumnName">The named projected column to filter.</param>
+/// <param name="Operator">The comparison operation.</param>
+/// <param name="ParameterName">The generated query parameter containing the comparison value.</param>
+public sealed record GraphRowPredicate(
+    string ColumnName,
+    GraphComparisonOperator Operator,
+    string ParameterName);
+
+/// <summary>Defines portable set combination operations over compatible graph-node queries.</summary>
+public enum GraphSetOperationKind
+{
+    /// <summary>Combines results and removes duplicates.</summary>
+    Union,
+
+    /// <summary>Combines results while preserving duplicates.</summary>
+    UnionAll,
+}
+
+/// <summary>Describes the compatible node-query operands of one portable set operation.</summary>
+/// <param name="Kind">The requested combination operation.</param>
+/// <param name="Left">The first node-query operand.</param>
+/// <param name="Right">The second node-query operand.</param>
+public sealed record GraphSetOperation(GraphSetOperationKind Kind, GraphQueryModel Left, GraphQueryModel Right);
 
 /// <summary>Describes the direction of one strongly typed relationship traversal.</summary>
 public enum GraphTraversalDirection
