@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: nuget-staging
@@ -21,6 +20,9 @@ env:
 jobs:
   publish-alpha:
     name: Validate and publish alpha packages
+    permissions:
+      contents: read
+      id-token: write
     outputs:
       package_version: ${{ steps.version.outputs.package_version }}
     if: github.ref == 'refs/heads/staging'
