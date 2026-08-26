@@ -1,5 +1,6 @@
 using Nodal.Core.Execution;
 using Nodal.Core.Metadata;
+using Nodal.Core.Migrations;
 using Nodal.Core.Providers;
 using Nodal.Core.Query;
 
@@ -92,9 +93,110 @@ public sealed class GraphQueryExecutionTests
         await Assert.ThrowsAsync<InvalidOperationException>(async () => await standalone.ToSubgraphAsync());
     }
 
+    [Fact]
+    public async Task UnsupportedCorrelatedSubqueryFailsBeforeCompilerOrTransportExecution()
+    {
+        var provider = new QueryProvider();
+        var context = new QueryContext(provider);
+
+        var exception = await Assert.ThrowsAsync<NodalCapabilityNotSupportedException>(async () =>
+            await context.People.Query().WhereExists(context.Friendships).ToListAsync());
+
+        Assert.Equal("NODAL-QUERY-CORRELATED-SUBQUERY", exception.CapabilityCode);
+        Assert.False(provider.Compiled);
+        Assert.False(provider.Executed);
+    }
+
+    [Fact]
+    public async Task RowProjectionMaterializesNamedProviderSideValues()
+    {
+        var provider = new QueryProvider
+        {
+            RowValues = new Dictionary<string, object?>
+            {
+                ["personCount"] = 2L,
+                ["averageScore"] = 4.5d,
+            },
+        };
+        var context = new QueryContext(provider);
+
+        var row = Assert.Single(await context.People.Query()
+            .ToRows()
+            .Count("personCount")
+            .Average("averageScore", person => person.Score)
+            .ToListAsync());
+
+        Assert.Equal(2L, row.Get<long>("personCount"));
+        Assert.Equal(4.5d, row.Get<double>("averageScore"));
+        Assert.Throws<KeyNotFoundException>(() => row.Get<int>("missing"));
+    }
+
+    [Fact]
+    public async Task RowsConvertProviderValuesAndSetQueriesExecuteThroughTheContext()
+    {
+        var provider = new QueryProvider
+        {
+            RowValues = new Dictionary<string, object?>
+            {
+                ["count"] = 2,
+                ["rank"] = 1,
+                ["optional"] = null,
+            },
+        };
+        var context = new QueryContext(provider);
+
+        var row = Assert.Single(await context.People.Query().ToRows().Count("count").ToListAsync());
+        Assert.Equal(2L, row.Get<long>("count"));
+        Assert.Equal(PersonRank.Established, row.Get<PersonRank>("rank"));
+        Assert.Null(row.Get<string>("optional"));
+        Assert.Equal(3, row.Values.Count);
+
+        var union = await context.People.Match(person => person.Id == "person-1")
+            .UnionAll(context.People.Match(person => person.Name == "Alan"))
+            .OrderByDescending(person => person.Name)
+            .ToListAsync();
+
+        Assert.Equal(2, union.Count);
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await new GraphSet<Person>().Query().Union(new GraphSet<Person>().Query()).ToListAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await new GraphSet<Person>().Query().ToRows().Count("count").ToListAsync());
+    }
+
+    [Fact]
+    public void NamedTraversalAndPatternBuildersValidateAliasesAndPathSemantics()
+    {
+        var provider = new QueryProvider();
+        var context = new QueryContext(provider);
+
+        var traversal = context.People.Query("person")
+            .Traverse(context.Friendships, "knows", "friend")
+            .ToQueryModel();
+        var pattern = context.People.Query("person")
+            .WhereNotExists(context.Friendships, candidate => candidate.Name == "Alan")
+            .AlsoMatch(context.Friendships, "knownBy", "referrer")
+            .ToQueryModel();
+
+        Assert.Equal(("knows", "friend"), (Assert.Single(traversal.Traversals).RelationAlias, traversal.ResultAlias));
+        Assert.Single(pattern.EffectiveExistencePatterns);
+        Assert.Single(pattern.EffectiveMatchPatterns);
+        Assert.Throws<ArgumentException>(() => context.People.Query("1person"));
+        Assert.Throws<ArgumentException>(() => context.People.Query("person-name"));
+        Assert.Throws<ArgumentException>(() => context.People.Query("person").Traverse(context.Friendships, "same", "same"));
+        Assert.Throws<ArgumentException>(() => context.People.Query("person").Traverse(context.Friendships, "person", "friend"));
+        Assert.Throws<InvalidOperationException>(() => context.People.Query()
+            .Traverse(context.Friendships)
+            .ShortestPathTo(context.People.Query(), context.Friendships));
+        Assert.Throws<InvalidOperationException>(() => context.People.Query("person")
+            .WithoutCycles()
+            .AlsoMatch(context.Friendships, "knows", "friend"));
+    }
+
     private sealed class QueryContext(QueryProvider provider) : NodalContext(provider)
     {
         public GraphSet<Person> People => Set<Person>();
+
+        public RelationSet<Person, Knows, Person> Friendships => Relations<Person, Knows, Person>();
     }
 
     [GraphNode("Person")]
@@ -104,15 +206,32 @@ public sealed class GraphQueryExecutionTests
         public string Id { get; set; } = string.Empty;
 
         public string Name { get; set; } = string.Empty;
+
+        public double Score { get; set; }
     }
 
-    private sealed class QueryProvider : IGraphProvider, IGraphQueryCompiler, IGraphCommandExecutor
+    [GraphRelation("KNOWS", Directed = false)]
+    private sealed class Knows;
+
+    private enum PersonRank
+    {
+        New = 0,
+        Established = 1,
+    }
+
+    private sealed class QueryProvider : IGraphProvider, IGraphQueryCapabilityProvider, IGraphQueryCompiler, IGraphCommandExecutor
     {
         public bool Empty { get; set; }
 
         public bool Reload { get; set; }
 
         public bool MissingCount { get; set; }
+
+        public bool Compiled { get; private set; }
+
+        public bool Executed { get; private set; }
+
+        public IReadOnlyDictionary<string, object?>? RowValues { get; init; }
 
         private GraphQueryModel? Query { get; set; }
 
@@ -122,8 +241,19 @@ public sealed class GraphQueryExecutionTests
 
         public IGraphResultMaterializer ResultMaterializer { get; } = new JsonGraphResultMaterializer();
 
+        public GraphQueryCapabilities QueryCapabilities { get; } = new()
+        {
+            ProviderName = "QueryProvider",
+            TestedProviderVersion = "test",
+            Features = GraphQueryCapability.ServerSideProjection |
+                GraphQueryCapability.Aggregation |
+                GraphQueryCapability.SetOperations |
+                GraphQueryCapability.MultiplePatterns,
+        };
+
         public GraphCommand Compile(GraphQueryModel query)
         {
+            Compiled = true;
             Query = query;
             return new GraphCommand("QUERY", new Dictionary<string, object?>());
         }
@@ -132,6 +262,7 @@ public sealed class GraphQueryExecutionTests
             GraphCommand command,
             CancellationToken cancellationToken = default)
         {
+            Executed = true;
             if (command.Text == "RAW")
             {
                 return ValueTask.FromResult(CreateResult(2));
@@ -145,6 +276,16 @@ public sealed class GraphQueryExecutionTests
                 }
                 return ValueTask.FromResult(new GraphQueryResult(
                     [], Scalars: new Dictionary<string, object?> { ["nodal_count"] = Empty ? 0L : 2L }));
+            }
+
+            if (Query?.Projection == GraphQueryProjection.Row)
+            {
+                return ValueTask.FromResult(new GraphQueryResult(
+                    [],
+                    Rows:
+                    [
+                        new GraphResultRow(null, RowValues ?? new Dictionary<string, object?>()),
+                    ]));
             }
 
             var count = Empty ? 0 : Query?.Limit is int limit ? Math.Min(limit, 2) : 2;
