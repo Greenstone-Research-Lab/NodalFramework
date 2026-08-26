@@ -95,10 +95,19 @@ public sealed class Neo4jMutationCompilerTests
         Assert.Contains("`domain``key`", command.Text, StringComparison.Ordinal);
     }
 
+    [Fact]
+    public void CompilerRejectsUnknownMutationOperations()
+    {
+        Assert.Throws<NotSupportedException>(() => Neo4jMutationCompiler.Compile(
+            new GraphMutationPlan([new UnknownMutation()])));
+    }
+
     private static GraphIdentity Identity(string nodeType, string key, object value) =>
         new(typeof(object), nodeType, key, value);
 
     private static Dictionary<string, object?> Properties(
         params (string Name, object? Value)[] properties) =>
         properties.ToDictionary(property => property.Name, property => property.Value);
+
+    private sealed record UnknownMutation : GraphMutationOperation;
 }

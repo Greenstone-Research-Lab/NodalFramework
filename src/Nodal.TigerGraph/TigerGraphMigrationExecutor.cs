@@ -5,78 +5,297 @@ using Nodal.Core.Migrations;
 
 namespace Nodal.TigerGraph;
 
-/// <summary>
-/// Executes TigerGraph schema jobs through an explicit administrative transport and stores
-/// migration history through documented schema and REST++ endpoints.
-/// </summary>
+/// <summary>Executes recoverable TigerGraph schema jobs and journals every irreversible boundary.</summary>
 public sealed class TigerGraphMigrationExecutor : IGraphMigrationExecutor
 {
-    private const string HistoryType = "__NodalMigration";
+    private static readonly TimeSpan CleanupTimeout = TimeSpan.FromSeconds(30);
     private readonly HttpClient httpClient;
     private readonly TigerGraphOptions options;
     private readonly string graphName;
-    private readonly ITigerGraphAdministrativeTransport administrativeTransport;
-    private bool infrastructureReady;
+    private readonly ITigerGraphAdministrativeControlPlane controlPlane;
+    private readonly TigerGraphMigrationInfrastructure infrastructure;
 
     /// <summary>Initializes the executor for one TigerGraph graph.</summary>
     public TigerGraphMigrationExecutor(
         HttpClient httpClient,
         TigerGraphOptions options,
         string graphName,
-        ITigerGraphAdministrativeTransport administrativeTransport)
+        ITigerGraphAdministrativeControlPlane controlPlane)
+        : this(httpClient, options, graphName, controlPlane,
+            new TigerGraphMigrationInfrastructure(httpClient, options, graphName, controlPlane))
+    {
+    }
+
+    internal TigerGraphMigrationExecutor(
+        HttpClient httpClient,
+        TigerGraphOptions options,
+        string graphName,
+        ITigerGraphAdministrativeControlPlane controlPlane,
+        TigerGraphMigrationInfrastructure infrastructure)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(options);
         ArgumentException.ThrowIfNullOrWhiteSpace(graphName);
-        ArgumentNullException.ThrowIfNull(administrativeTransport);
+        ArgumentNullException.ThrowIfNull(controlPlane);
+        ArgumentNullException.ThrowIfNull(infrastructure);
         httpClient.BaseAddress ??= options.Endpoint;
         this.httpClient = httpClient;
         this.options = options;
         this.graphName = graphName;
-        this.administrativeTransport = administrativeTransport;
+        this.controlPlane = controlPlane;
+        this.infrastructure = infrastructure;
+        Journal = new TigerGraphSchemaJobJournalStore(httpClient, options, graphName, infrastructure);
     }
+
+    /// <summary>Gets the durable journal used for inspection and recovery.</summary>
+    public TigerGraphSchemaJobJournalStore Journal { get; }
 
     /// <inheritdoc />
     public async ValueTask<IReadOnlyDictionary<string, string>> GetAppliedMigrationsAsync(
         CancellationToken cancellationToken = default)
     {
-        await EnsureInfrastructureAsync(cancellationToken).ConfigureAwait(false);
-        using var request = CreateRequest(
-            HttpMethod.Get,
-            $"restpp/graph/{Uri.EscapeDataString(graphName)}/vertices/{HistoryType}");
+        await infrastructure.EnsureAsync(cancellationToken).ConfigureAwait(false);
+        using var request = CreateRequest(HttpMethod.Get,
+            $"restpp/graph/{Uri.EscapeDataString(graphName)}/vertices/" +
+            TigerGraphMigrationInfrastructure.HistoryType);
         using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         var payload = await ReadSuccessAsync(response, cancellationToken).ConfigureAwait(false);
         using var document = JsonDocument.Parse(payload);
         var history = new Dictionary<string, string>(StringComparer.Ordinal);
-        CollectHistory(document.RootElement, history);
+        CollectAppliedHistory(document.RootElement, history);
         return history;
     }
 
     /// <inheritdoc />
-    public async ValueTask ApplyAsync(
+    public ValueTask ApplyAsync(MigrationExecution execution, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(execution, TigerGraphSchemaJobDirection.Up, cancellationToken);
+
+    /// <inheritdoc />
+    public ValueTask RevertAsync(MigrationExecution execution, CancellationToken cancellationToken = default) =>
+        ExecuteAsync(execution, TigerGraphSchemaJobDirection.Down, cancellationToken);
+
+    private async ValueTask ExecuteAsync(
         MigrationExecution execution,
-        CancellationToken cancellationToken = default)
+        TigerGraphSchemaJobDirection direction,
+        CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(execution);
-        await EnsureInfrastructureAsync(cancellationToken).ConfigureAwait(false);
-        await ExecuteCommandsAsync(execution.Commands, cancellationToken).ConfigureAwait(false);
+        await infrastructure.EnsureAsync(cancellationToken).ConfigureAwait(false);
+        var envelope = SchemaJobEnvelope.Parse(execution.Commands);
+        var existing = await Journal.GetAsync(execution.Id, cancellationToken).ConfigureAwait(false);
+        if (IsOppositeTerminal(existing, direction))
+        {
+            if (!string.Equals(existing!.Checksum, execution.Checksum, StringComparison.Ordinal))
+            {
+                throw new InvalidOperationException(
+                    $"TigerGraph migration journal checksum drift was detected for '{execution.Id}'.");
+            }
 
+            existing = null;
+        }
+
+        ValidateJournal(existing, execution, direction, envelope.JobName);
+        if (IsComplete(existing, direction)) return;
+
+        if (existing?.Phase is TigerGraphSchemaJobPhase.SchemaOutcomeUnknown or
+            TigerGraphSchemaJobPhase.SchemaApplying)
+        {
+            throw new TigerGraphMigrationRecoveryRequiredException(execution.Id, envelope.JobName);
+        }
+
+        if (existing?.Phase is TigerGraphSchemaJobPhase.SchemaAppliedHistoryPending or
+            TigerGraphSchemaJobPhase.CleanupPending)
+        {
+            await CompleteAfterSchemaAsync(execution, direction, existing, envelope, cancellationToken)
+                .ConfigureAwait(false);
+            return;
+        }
+
+        var journal = NewEntry(execution, direction, envelope.JobName,
+            existing?.StartedAt ?? DateTimeOffset.UtcNow);
+        await Journal.SaveAsync(journal, cancellationToken).ConfigureAwait(false);
+        if (await controlPlane.SchemaJobExistsAsync(graphName, envelope.JobName, cancellationToken)
+            .ConfigureAwait(false))
+        {
+            await CleanupAsync(envelope.Drop).ConfigureAwait(false);
+        }
+
+        try
+        {
+            await controlPlane.ExecuteAsync(envelope.Create, cancellationToken).ConfigureAwait(false);
+            journal = await SavePhaseAsync(journal, TigerGraphSchemaJobPhase.JobCreated, cancellationToken)
+                .ConfigureAwait(false);
+            journal = await SavePhaseAsync(journal, TigerGraphSchemaJobPhase.SchemaApplying, cancellationToken)
+                .ConfigureAwait(false);
+            await controlPlane.ExecuteAsync(envelope.Run, cancellationToken).ConfigureAwait(false);
+        }
+        catch (OperationCanceledException exception)
+        {
+            var cleanupCompleted = false;
+            try
+            {
+                if (await controlPlane.SchemaJobExistsAsync(
+                    graphName, envelope.JobName, CancellationToken.None).ConfigureAwait(false))
+                {
+                    await CleanupAsync(envelope.Drop).ConfigureAwait(false);
+                }
+
+                cleanupCompleted = true;
+            }
+            catch (Exception cleanupFailure)
+            {
+                exception.Data["TigerGraphCleanupFailure"] = cleanupFailure.Message;
+            }
+
+            await SaveFailureAsync(
+                journal with { CleanupCompleted = cleanupCompleted },
+                TigerGraphSchemaJobPhase.SchemaOutcomeUnknown,
+                exception).ConfigureAwait(false);
+            throw;
+        }
+        catch (Exception exception)
+        {
+            await HandleKnownFailureAsync(journal, envelope.Drop, exception).ConfigureAwait(false);
+            throw;
+        }
+
+        journal = await SavePhaseAsync(
+            journal, TigerGraphSchemaJobPhase.SchemaAppliedHistoryPending, CancellationToken.None)
+            .ConfigureAwait(false);
+        await CompleteAfterSchemaAsync(execution, direction, journal, envelope, cancellationToken)
+            .ConfigureAwait(false);
+    }
+
+    private async ValueTask CompleteAfterSchemaAsync(
+        MigrationExecution execution,
+        TigerGraphSchemaJobDirection direction,
+        TigerGraphSchemaJobJournalEntry journal,
+        SchemaJobEnvelope envelope,
+        CancellationToken cancellationToken)
+    {
+        if (!journal.CleanupCompleted)
+        {
+            try
+            {
+                if (await controlPlane.SchemaJobExistsAsync(graphName, envelope.JobName, cancellationToken)
+                    .ConfigureAwait(false))
+                {
+                    await CleanupAsync(envelope.Drop).ConfigureAwait(false);
+                }
+
+                journal = journal with
+                {
+                    Phase = TigerGraphSchemaJobPhase.SchemaAppliedHistoryPending,
+                    CleanupCompleted = true,
+                    UpdatedAt = DateTimeOffset.UtcNow,
+                    FailureMessage = null,
+                    FailureType = null,
+                };
+                await Journal.SaveAsync(journal, CancellationToken.None).ConfigureAwait(false);
+            }
+            catch (Exception exception)
+            {
+                await SaveFailureAsync(journal, TigerGraphSchemaJobPhase.CleanupPending, exception)
+                    .ConfigureAwait(false);
+                throw;
+            }
+        }
+
+        if (direction is TigerGraphSchemaJobDirection.Up)
+            await SaveAppliedHistoryAsync(execution, cancellationToken).ConfigureAwait(false);
+        else
+            await RemoveHistoryAsync(execution.Id, cancellationToken).ConfigureAwait(false);
+
+        await Journal.SaveAsync(journal with
+        {
+            Phase = direction is TigerGraphSchemaJobDirection.Up
+                ? TigerGraphSchemaJobPhase.Applied
+                : TigerGraphSchemaJobPhase.Reverted,
+            CleanupCompleted = true,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            FailureMessage = null,
+            FailureType = null,
+        }, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private async ValueTask HandleKnownFailureAsync(
+        TigerGraphSchemaJobJournalEntry journal,
+        MigrationCommand drop,
+        Exception primaryFailure)
+    {
+        Exception? cleanupFailure = null;
+        try
+        {
+            await CleanupAsync(drop).ConfigureAwait(false);
+        }
+        catch (Exception exception)
+        {
+            cleanupFailure = exception;
+        }
+
+        await SaveFailureAsync(
+            journal with { CleanupCompleted = cleanupFailure is null },
+            TigerGraphSchemaJobPhase.Failed,
+            primaryFailure).ConfigureAwait(false);
+        if (cleanupFailure is not null) throw new AggregateException(primaryFailure, cleanupFailure);
+    }
+
+    private async ValueTask CleanupAsync(MigrationCommand drop)
+    {
+        using var cleanup = new CancellationTokenSource(CleanupTimeout);
+        await controlPlane.ExecuteAsync(drop, cleanup.Token).ConfigureAwait(false);
+    }
+
+    private async ValueTask<TigerGraphSchemaJobJournalEntry> SavePhaseAsync(
+        TigerGraphSchemaJobJournalEntry journal,
+        TigerGraphSchemaJobPhase phase,
+        CancellationToken cancellationToken)
+    {
+        var updated = journal with { Phase = phase, UpdatedAt = DateTimeOffset.UtcNow };
+        await Journal.SaveAsync(updated, cancellationToken).ConfigureAwait(false);
+        return updated;
+    }
+
+    private async ValueTask SaveFailureAsync(
+        TigerGraphSchemaJobJournalEntry journal,
+        TigerGraphSchemaJobPhase phase,
+        Exception exception)
+    {
+        await Journal.SaveAsync(journal with
+        {
+            Phase = phase,
+            UpdatedAt = DateTimeOffset.UtcNow,
+            FailureMessage = Truncate(exception.Message, 1024),
+            FailureType = exception.GetType().FullName,
+        }, CancellationToken.None).ConfigureAwait(false);
+    }
+
+    private async ValueTask SaveAppliedHistoryAsync(
+        MigrationExecution execution,
+        CancellationToken cancellationToken)
+    {
+        var now = DateTimeOffset.UtcNow.ToUniversalTime().ToString("O");
+        var attributes = new JsonObject
+        {
+            ["Checksum"] = Value(execution.Checksum),
+            ["AppliedAt"] = Value(now),
+            ["State"] = Value(MigrationExecutionState.Applied.ToString()),
+            ["StartedAt"] = Value(now),
+            ["CompletedAt"] = Value(now),
+            ["FailureMessage"] = Value(string.Empty),
+            ["FailureType"] = Value(string.Empty),
+        };
         var root = new JsonObject
         {
             ["vertices"] = new JsonObject
             {
-                [HistoryType] = new JsonObject
+                [TigerGraphMigrationInfrastructure.HistoryType] = new JsonObject
                 {
-                    [execution.Id] = new JsonObject
-                    {
-                        ["Checksum"] = Value(execution.Checksum),
-                        ["AppliedAt"] = Value(DateTimeOffset.UtcNow.UtcDateTime.ToString("O")),
-                    },
+                    [execution.Id] = attributes,
                 },
             },
         };
-        using var request = CreateRequest(
-            HttpMethod.Post,
+        using var request = CreateRequest(HttpMethod.Post,
             $"restpp/graph/{Uri.EscapeDataString(graphName)}?vertex_must_exist=false");
         request.Headers.TryAddWithoutValidation("gsql-atomic-level", "atomic");
         request.Content = new StringContent(root.ToJsonString(), Encoding.UTF8, "application/json");
@@ -84,104 +303,13 @@ public sealed class TigerGraphMigrationExecutor : IGraphMigrationExecutor
         _ = await ReadSuccessAsync(response, cancellationToken).ConfigureAwait(false);
     }
 
-    /// <inheritdoc />
-    public async ValueTask RevertAsync(
-        MigrationExecution execution,
-        CancellationToken cancellationToken = default)
+    private async ValueTask RemoveHistoryAsync(string migrationId, CancellationToken cancellationToken)
     {
-        ArgumentNullException.ThrowIfNull(execution);
-        await EnsureInfrastructureAsync(cancellationToken).ConfigureAwait(false);
-        await ExecuteCommandsAsync(execution.Commands, cancellationToken).ConfigureAwait(false);
-        using var request = CreateRequest(
-            HttpMethod.Delete,
-            $"restpp/graph/{Uri.EscapeDataString(graphName)}/vertices/{HistoryType}/" +
-            Uri.EscapeDataString(execution.Id));
+        using var request = CreateRequest(HttpMethod.Delete,
+            $"restpp/graph/{Uri.EscapeDataString(graphName)}/vertices/" +
+            $"{TigerGraphMigrationInfrastructure.HistoryType}/{Uri.EscapeDataString(migrationId)}");
         using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
         _ = await ReadSuccessAsync(response, cancellationToken).ConfigureAwait(false);
-    }
-
-    private async ValueTask EnsureInfrastructureAsync(CancellationToken cancellationToken)
-    {
-        if (infrastructureReady)
-        {
-            return;
-        }
-
-        using var request = CreateRequest(
-            HttpMethod.Get,
-            $"gsql/v1/schema?graph={Uri.EscapeDataString(graphName)}");
-        using var response = await httpClient.SendAsync(request, cancellationToken).ConfigureAwait(false);
-        var payload = await ReadSuccessAsync(response, cancellationToken).ConfigureAwait(false);
-        using var document = JsonDocument.Parse(payload);
-        if (!ContainsNamedType(document.RootElement, HistoryType))
-        {
-            MigrationCommand[] bootstrap =
-            [
-                new MigrationCommand(
-                    $"CREATE SCHEMA_CHANGE JOB nodal_history_bootstrap FOR GRAPH {graphName} {{ " +
-                    $"ADD VERTEX {HistoryType} (PRIMARY_ID Id STRING, Checksum STRING, AppliedAt DATETIME) " +
-                    "WITH primary_id_as_attribute=\"true\"; }",
-                    false),
-                new MigrationCommand("RUN SCHEMA_CHANGE JOB nodal_history_bootstrap", false),
-                new MigrationCommand("DROP JOB nodal_history_bootstrap", false),
-            ];
-            await ExecuteCommandsAsync(bootstrap, cancellationToken).ConfigureAwait(false);
-        }
-
-        infrastructureReady = true;
-    }
-
-    private async ValueTask ExecuteCommandsAsync(
-        IReadOnlyList<MigrationCommand> commands,
-        CancellationToken cancellationToken)
-    {
-        if (commands.Count == 0)
-        {
-            return;
-        }
-
-        if (commands.Count < 3)
-        {
-            foreach (var command in commands)
-            {
-                await administrativeTransport.ExecuteAsync(command, cancellationToken).ConfigureAwait(false);
-            }
-
-            return;
-        }
-
-        Exception? failure = null;
-        var created = false;
-        try
-        {
-            await administrativeTransport.ExecuteAsync(commands[0], cancellationToken).ConfigureAwait(false);
-            created = true;
-            for (var index = 1; index < commands.Count - 1; index++)
-            {
-                await administrativeTransport.ExecuteAsync(commands[index], cancellationToken).ConfigureAwait(false);
-            }
-        }
-        catch (Exception exception)
-        {
-            failure = exception;
-        }
-
-        if (created)
-        {
-            try
-            {
-                await administrativeTransport.ExecuteAsync(commands[^1], cancellationToken).ConfigureAwait(false);
-            }
-            catch (Exception cleanupException) when (failure is not null)
-            {
-                throw new AggregateException(failure, cleanupException);
-            }
-        }
-
-        if (failure is not null)
-        {
-            throw failure;
-        }
     }
 
     private HttpRequestMessage CreateRequest(HttpMethod method, string uri)
@@ -192,63 +320,114 @@ public sealed class TigerGraphMigrationExecutor : IGraphMigrationExecutor
     }
 
     private static async ValueTask<string> ReadSuccessAsync(
-        HttpResponseMessage response,
-        CancellationToken cancellationToken)
+        HttpResponseMessage response, CancellationToken cancellationToken)
     {
         var payload = await response.Content.ReadAsStringAsync(cancellationToken).ConfigureAwait(false);
-        if (!response.IsSuccessStatusCode)
-        {
-            throw new HttpRequestException(
-                $"TigerGraph migration endpoint returned HTTP {(int)response.StatusCode}: {payload}",
-                null,
-                response.StatusCode);
-        }
-
+        TigerGraphAdministrativeResponse.EnsureSuccess(response, payload, "migration endpoint");
         return payload;
     }
 
-    private static bool ContainsNamedType(JsonElement element, string name)
+    private static void ValidateJournal(
+        TigerGraphSchemaJobJournalEntry? journal,
+        MigrationExecution execution,
+        TigerGraphSchemaJobDirection direction,
+        string jobName)
     {
-        if (element.ValueKind == JsonValueKind.Object)
+        if (journal is null) return;
+        if (!string.Equals(journal.Checksum, execution.Checksum, StringComparison.Ordinal) ||
+            journal.Direction != direction ||
+            !string.Equals(journal.JobName, jobName, StringComparison.Ordinal))
         {
-            if (element.TryGetProperty("Name", out var typeName) && typeName.GetString() == name)
-            {
-                return true;
-            }
-
-            return element.EnumerateObject().Any(property => ContainsNamedType(property.Value, name));
+            throw new InvalidOperationException(
+                $"TigerGraph migration journal drift was detected for '{execution.Id}'.");
         }
-
-        return element.ValueKind == JsonValueKind.Array &&
-            element.EnumerateArray().Any(item => ContainsNamedType(item, name));
     }
 
-    private static void CollectHistory(JsonElement element, IDictionary<string, string> history)
+    private static bool IsComplete(
+        TigerGraphSchemaJobJournalEntry? journal, TigerGraphSchemaJobDirection direction) =>
+        journal?.Phase == (direction is TigerGraphSchemaJobDirection.Up
+            ? TigerGraphSchemaJobPhase.Applied : TigerGraphSchemaJobPhase.Reverted);
+
+    private static bool IsOppositeTerminal(
+        TigerGraphSchemaJobJournalEntry? journal,
+        TigerGraphSchemaJobDirection direction) =>
+        (direction is TigerGraphSchemaJobDirection.Down &&
+            journal?.Phase is TigerGraphSchemaJobPhase.Applied) ||
+        (direction is TigerGraphSchemaJobDirection.Up &&
+            journal?.Phase is TigerGraphSchemaJobPhase.Reverted);
+
+    private static TigerGraphSchemaJobJournalEntry NewEntry(
+        MigrationExecution execution,
+        TigerGraphSchemaJobDirection direction,
+        string jobName,
+        DateTimeOffset startedAt) =>
+        new(execution.Id, execution.Checksum, jobName, direction,
+            TigerGraphSchemaJobPhase.CreatingJob, false, startedAt, DateTimeOffset.UtcNow);
+
+    private static void CollectAppliedHistory(JsonElement element, IDictionary<string, string> history)
     {
         if (element.ValueKind == JsonValueKind.Object &&
             element.TryGetProperty("v_id", out var id) &&
             element.TryGetProperty("attributes", out var attributes) &&
             attributes.TryGetProperty("Checksum", out var checksum))
         {
-            history[id.GetString() ?? string.Empty] = checksum.GetString() ?? string.Empty;
+            if (!attributes.TryGetProperty("State", out var state) ||
+                string.IsNullOrWhiteSpace(state.GetString()) ||
+                string.Equals(state.GetString(), "Applied", StringComparison.OrdinalIgnoreCase))
+                history[id.GetString() ?? string.Empty] = checksum.GetString() ?? string.Empty;
             return;
         }
 
         if (element.ValueKind == JsonValueKind.Object)
-        {
-            foreach (var property in element.EnumerateObject())
-            {
-                CollectHistory(property.Value, history);
-            }
-        }
+            foreach (var property in element.EnumerateObject()) CollectAppliedHistory(property.Value, history);
         else if (element.ValueKind == JsonValueKind.Array)
-        {
-            foreach (var item in element.EnumerateArray())
-            {
-                CollectHistory(item, history);
-            }
-        }
+            foreach (var item in element.EnumerateArray()) CollectAppliedHistory(item, history);
     }
 
+    private static string Truncate(string value, int maximumLength) =>
+        value.Length <= maximumLength ? value : value[..maximumLength];
+
     private static JsonObject Value(string value) => new() { ["value"] = value };
+
+    private sealed record SchemaJobEnvelope(
+        string JobName, MigrationCommand Create, MigrationCommand Run, MigrationCommand Drop)
+    {
+        public static SchemaJobEnvelope Parse(IReadOnlyList<MigrationCommand> commands)
+        {
+            if (commands.Count != 3 ||
+                !commands[0].Text.StartsWith("CREATE SCHEMA_CHANGE JOB ", StringComparison.OrdinalIgnoreCase) ||
+                !commands[1].Text.StartsWith("RUN SCHEMA_CHANGE JOB ", StringComparison.OrdinalIgnoreCase) ||
+                !commands[2].Text.StartsWith("DROP JOB ", StringComparison.OrdinalIgnoreCase))
+                throw new InvalidOperationException(
+                    "TigerGraph migrations must compile to one create, run, and drop schema-job envelope.");
+
+            var createTokens = commands[0].Text.Split(' ', StringSplitOptions.RemoveEmptyEntries);
+            var jobName = createTokens[3];
+            var runName = commands[1].Text.Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+            var dropName = commands[2].Text.Split(' ', StringSplitOptions.RemoveEmptyEntries).LastOrDefault();
+            if (!string.Equals(jobName, runName, StringComparison.Ordinal) ||
+                !string.Equals(jobName, dropName, StringComparison.Ordinal))
+                throw new InvalidOperationException("TigerGraph schema-job envelope names do not match.");
+            return new SchemaJobEnvelope(jobName, commands[0], commands[1], commands[2]);
+        }
+    }
+}
+
+/// <summary>Indicates that a cancelled schema operation has an unknown outcome requiring reconciliation.</summary>
+public sealed class TigerGraphMigrationRecoveryRequiredException : InvalidOperationException
+{
+    /// <summary>Initializes a recovery-required exception.</summary>
+    public TigerGraphMigrationRecoveryRequiredException(string migrationId, string jobName)
+        : base($"TigerGraph migration '{migrationId}' has an unknown schema outcome for job '{jobName}'. " +
+            "Inspect the graph and use TigerGraphMigrationRecovery before attempting replay.")
+    {
+        MigrationId = migrationId;
+        JobName = jobName;
+    }
+
+    /// <summary>Gets the migration requiring reconciliation.</summary>
+    public string MigrationId { get; }
+
+    /// <summary>Gets the deterministic schema-job name.</summary>
+    public string JobName { get; }
 }

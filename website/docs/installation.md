@@ -19,9 +19,17 @@ the application project. The provider brings `Nodal.Core` transitively; add
 | Portable migration definitions and execution | [`Nodal.Migrations`](https://www.nuget.org/packages/Nodal.Migrations) |
 | Provider-neutral path and pattern analytics | [`Nodal.Analytics`](https://www.nuget.org/packages/Nodal.Analytics) |
 | Provider authors and compiler-only tools | [`Nodal.Core`](https://www.nuget.org/packages/Nodal.Core) |
+| Migration planning in local and CI workflows | [`Nodal.Tool`](https://www.nuget.org/packages/Nodal.Tool) |
 
 All pre-release package versions move together. Do not mix different Nodal
 alpha versions in one application.
+
+Install the command-line package as a global or manifest-local .NET tool rather
+than an application package:
+
+```bash
+dotnet tool install --global Nodal.Tool --prerelease
+```
 
 `Nodal.PatternRecognition` is retained only as a deprecated alpha transition
 package. New applications should install `Nodal.Analytics` and use the
@@ -161,8 +169,10 @@ builder.Services.AddScoped<SocialGraphContext>();
 ```
 
 TigerGraph migration execution additionally requires an
-`ITigerGraphAdministrativeTransport`; ordinary query and mutation scenarios do
-not require that privileged channel.
+`ITigerGraphAdministrativeControlPlane` with verified schema, job lifecycle,
+cleanup, and graph-lock capabilities. Ordinary query and upsert scenarios do
+not require that privileged channel; an execute-only administrative transport
+does not advertise migrations.
 
 ## Keep credentials out of source control
 

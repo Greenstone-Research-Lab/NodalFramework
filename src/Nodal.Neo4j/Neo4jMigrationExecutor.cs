@@ -16,6 +16,7 @@ public sealed class Neo4jMigrationExecutor(IDriver driver, string? database = nu
         {
             var cursor = await transaction.RunAsync(
                 "MATCH (`migration`:`__NodalMigration`) " +
+                "WHERE `migration`.`State` IS NULL OR `migration`.`State` = 'Applied' " +
                 "RETURN `migration`.`Id` AS `id`, `migration`.`Checksum` AS `checksum`").ConfigureAwait(false);
             var records = await cursor.ToListAsync(cancellationToken).ConfigureAwait(false);
             return records.ToDictionary(
@@ -41,36 +42,86 @@ public sealed class Neo4jMigrationExecutor(IDriver driver, string? database = nu
     {
         ArgumentNullException.ThrowIfNull(execution);
         cancellationToken.ThrowIfCancellationRequested();
-        var nonTransactional = execution.Commands.FirstOrDefault(command => !command.IsTransactional);
-        if (nonTransactional is not null)
+        var hasTransactional = execution.Commands.Any(command => command.IsTransactional);
+        var hasNonTransactional = execution.Commands.Any(command => !command.IsTransactional);
+        if (hasTransactional && hasNonTransactional)
         {
             throw new NotSupportedException(
-                "Neo4j migration execution requires every command to support the same transaction boundary.");
+                "Neo4j cannot combine graph-write and schema migration commands in one execution.");
         }
 
-        await using var session = driver.AsyncSession(builder => ConfigureSession(builder, database));
-        await session.ExecuteWriteAsync(async transaction =>
+        if (hasNonTransactional)
         {
-            foreach (var command in execution.Commands)
-            {
-                cancellationToken.ThrowIfCancellationRequested();
-                var cursor = await transaction.RunAsync(command.Text).ConfigureAwait(false);
-                await cursor.ConsumeAsync().ConfigureAwait(false);
-            }
+            await ExecuteCommandsAsync(execution.Commands, cancellationToken).ConfigureAwait(false);
+            await ExecuteHistoryAsync(execution, upward, cancellationToken).ConfigureAwait(false);
+            return;
+        }
 
-            var historyCommand = upward
-                ? "MERGE (`migration`:`__NodalMigration` {`Id`: $id}) " +
-                  "SET `migration`.`Checksum` = $checksum, `migration`.`AppliedAt` = datetime()"
-                : "MATCH (`migration`:`__NodalMigration` {`Id`: $id}) DELETE `migration`";
-            var history = await transaction.RunAsync(
-                historyCommand,
-                new Dictionary<string, object>
-                {
-                    ["id"] = execution.Id,
-                    ["checksum"] = execution.Checksum,
-                }).ConfigureAwait(false);
-            await history.ConsumeAsync().ConfigureAwait(false);
+        await ExecuteTransactionAsync(async transaction =>
+        {
+            await RunCommandsAsync(transaction, execution.Commands, cancellationToken).ConfigureAwait(false);
+            await RunHistoryAsync(transaction, execution, upward).ConfigureAwait(false);
         }).ConfigureAwait(false);
+    }
+
+    private async ValueTask ExecuteCommandsAsync(
+        IReadOnlyList<MigrationCommand> commands,
+        CancellationToken cancellationToken) =>
+        await ExecuteTransactionAsync(transaction =>
+            RunCommandsAsync(transaction, commands, cancellationToken)).ConfigureAwait(false);
+
+    private async ValueTask ExecuteHistoryAsync(
+        MigrationExecution execution,
+        bool upward,
+        CancellationToken cancellationToken)
+    {
+        cancellationToken.ThrowIfCancellationRequested();
+        await ExecuteTransactionAsync(transaction =>
+            RunHistoryAsync(transaction, execution, upward)).ConfigureAwait(false);
+    }
+
+    private async ValueTask ExecuteTransactionAsync(Func<IAsyncQueryRunner, Task> work)
+    {
+        await using var session = driver.AsyncSession(builder => ConfigureSession(builder, database));
+        await session.ExecuteWriteAsync(work).ConfigureAwait(false);
+    }
+
+    private static async Task RunCommandsAsync(
+        IAsyncQueryRunner transaction,
+        IReadOnlyList<MigrationCommand> commands,
+        CancellationToken cancellationToken)
+    {
+        foreach (var command in commands)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            var cursor = await transaction.RunAsync(command.Text).ConfigureAwait(false);
+            await cursor.ConsumeAsync().ConfigureAwait(false);
+        }
+    }
+
+    private static async Task RunHistoryAsync(
+        IAsyncQueryRunner transaction,
+        MigrationExecution execution,
+        bool upward)
+    {
+        var historyCommand = upward
+            ? "MERGE (`migration`:`__NodalMigration` {`Id`: $id}) " +
+              "SET `migration`.`Checksum` = $checksum, " +
+              "`migration`.`State` = 'Applied', " +
+              "`migration`.`AppliedAt` = datetime(), " +
+              "`migration`.`CompletedAt` = datetime(), " +
+              "`migration`.`FailureMessage` = null, " +
+              "`migration`.`FailureType` = null, " +
+              "`migration`.`FailureAt` = null"
+            : "MATCH (`migration`:`__NodalMigration` {`Id`: $id}) DELETE `migration`";
+        var history = await transaction.RunAsync(
+            historyCommand,
+            new Dictionary<string, object>
+            {
+                ["id"] = execution.Id,
+                ["checksum"] = execution.Checksum,
+            }).ConfigureAwait(false);
+        await history.ConsumeAsync().ConfigureAwait(false);
     }
 
     private static void ConfigureSession(SessionConfigBuilder builder, string? database)

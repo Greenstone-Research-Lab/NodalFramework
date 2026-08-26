@@ -47,12 +47,38 @@ public sealed partial class TigerGraphMigrationDialect : IGraphMigrationDialect
         CreateIndexOperation index =>
             $"ALTER VERTEX {Identifier(index.NodeType)} ADD INDEX " +
             $"{Identifier($"nodal_ix_{index.NodeType}_{index.PropertyName}")} ON ({Identifier(index.PropertyName)});",
+        AddNodePropertyOperation property =>
+            $"ALTER VERTEX {Identifier(property.NodeType)} ADD ATTRIBUTE " +
+            $"({Identifier(property.Property.Name)} {MapType(property.Property.ClrType, primaryKey: false)});",
+        AddRelationPropertyOperation property =>
+            $"ALTER EDGE {Identifier(property.RelationType)} ADD ATTRIBUTE " +
+            $"({Identifier(property.Property.Name)} {MapType(property.Property.ClrType, primaryKey: false)});",
+        DropNodePropertyOperation property =>
+            $"ALTER VERTEX {Identifier(property.NodeType)} DROP ATTRIBUTE " +
+            $"({Identifier(property.PropertyName)});",
+        DropRelationPropertyOperation property =>
+            $"ALTER EDGE {Identifier(property.RelationType)} DROP ATTRIBUTE " +
+            $"({Identifier(property.PropertyName)});",
         DropNodeTypeOperation node => $"DROP VERTEX {Identifier(node.NodeType)};",
         DropRelationTypeOperation relation => $"DROP EDGE {Identifier(relation.RelationType)};",
         CreateUniqueConstraintOperation => throw new NotSupportedException(
             "TigerGraph supports uniqueness through vertex primary IDs; arbitrary unique constraints are not supported."),
+        DropIndexOperation index =>
+            $"ALTER VERTEX {Identifier(index.NodeType)} DROP INDEX " +
+            $"{Identifier($"nodal_ix_{index.NodeType}_{index.PropertyName}")};",
         DropSchemaObjectOperation => throw new NotSupportedException(
-            "TigerGraph index removal requires the owning vertex type. Use a provider-aware down migration until typed drop-index support is available."),
+            "TigerGraph schema-object removal requires an owning vertex type. Use the typed DropIndex operation for secondary indexes."),
+        DropUniqueConstraintOperation => throw new NotSupportedException(
+            "TigerGraph does not expose arbitrary unique constraints beyond primary IDs."),
+        CreatePropertyExistenceConstraintOperation or
+        DropPropertyExistenceConstraintOperation or
+        CreatePropertyTypeConstraintOperation or
+        DropPropertyTypeConstraintOperation => throw new NotSupportedException(
+            "TigerGraph does not expose portable property existence or type constraints."),
+        RenameNodePropertyOperation or RenameRelationPropertyOperation => throw new NotSupportedException(
+            "TigerGraph property rename requires a provider-specific backfill and is not implicit."),
+        AlterNodePropertyTypeOperation or AlterRelationPropertyTypeOperation => throw new NotSupportedException(
+            "TigerGraph property type alteration requires an explicit provider-specific backfill."),
         _ => throw new NotSupportedException(
             $"Migration operation '{operation.GetType().Name}' is not supported by TigerGraph."),
     };
