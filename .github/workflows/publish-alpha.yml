@@ -7,7 +7,6 @@ on:
 
 permissions:
   contents: read
-  id-token: write
 
 concurrency:
   group: nuget-staging
@@ -21,6 +20,11 @@ env:
 jobs:
   publish-alpha:
     name: Validate and publish alpha packages
+    permissions:
+      contents: read
+      id-token: write
+    outputs:
+      package_version: ${{ steps.version.outputs.package_version }}
     if: github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -38,6 +42,7 @@ jobs:
           global-json-file: global.json
 
       - name: Select immutable alpha version
+        id: version
         shell: pwsh
         run: |
           $version = "0.1.0-alpha.${{ github.run_number }}"
@@ -45,6 +50,7 @@ jobs:
             -FilePath $env:GITHUB_ENV `
             -Encoding utf8 `
             -Append
+          "package_version=$version" >> $env:GITHUB_OUTPUT
           "### Nodal Framework $version" | Out-File `
             -FilePath $env:GITHUB_STEP_SUMMARY `
             -Encoding utf8 `
@@ -123,3 +129,31 @@ jobs:
             -FilePath $env:GITHUB_STEP_SUMMARY `
             -Encoding utf8 `
             -Append
+
+  published-consumer-smoke:
+    name: Validate published package consumer
+    needs: publish-alpha
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v7
+        with:
+          persist-credentials: false
+
+      - name: Install .NET SDK
+        uses: actions/setup-dotnet@v6
+        with:
+          global-json-file: global.json
+
+      - name: Restore and run the World Food Delivery consumer
+        shell: pwsh
+        run: ./eng/run-published-consumer-smoke.ps1 -PackageVersion '${{ needs.publish-alpha.outputs.package_version }}'
+
+      - name: Upload consumer verification evidence
+        uses: actions/upload-artifact@v4
+        with:
+          name: published-consumer-smoke-${{ needs.publish-alpha.outputs.package_version }}
+          path: TestResults/published-consumer-smoke.json
+          if-no-files-found: error
+          retention-days: 30

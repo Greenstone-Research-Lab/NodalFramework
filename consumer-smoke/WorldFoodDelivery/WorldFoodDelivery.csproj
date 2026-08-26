@@ -1,0 +1,16 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <OutputType>Exe</OutputType>
+    <TargetFramework>net10.0</TargetFramework>
+    <ImplicitUsings>enable</ImplicitUsings>
+    <Nullable>enable</Nullable>
+    <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
+    <NodalPackageVersion Condition="'$(NodalPackageVersion)' == ''">0.1.0-alpha.1</NodalPackageVersion>
+  </PropertyGroup>
+  <ItemGroup>
+    <PackageReference Include="Nodal.Core" Version="$(NodalPackageVersion)" />
+    <PackageReference Include="Nodal.Migrations" Version="$(NodalPackageVersion)" />
+    <PackageReference Include="Nodal.Neo4j" Version="$(NodalPackageVersion)" />
+    <PackageReference Include="Nodal.TigerGraph" Version="$(NodalPackageVersion)" />
+  </ItemGroup>
+</Project>
