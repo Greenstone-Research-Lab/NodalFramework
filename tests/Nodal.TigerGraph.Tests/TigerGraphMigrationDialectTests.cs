@@ -54,6 +54,52 @@ public sealed class TigerGraphMigrationDialectTests
     }
 
     [Fact]
+    public void CompileHandlesPropertyEvolutionAndRejectsUnsafeRewrite()
+    {
+        var dialect = new TigerGraphMigrationDialect("SocialGraph");
+        var commands = dialect.Compile(
+        [
+            new AddNodePropertyOperation(
+                "Person",
+                new GraphSchemaProperty("display_name", typeof(string))),
+            new AddRelationPropertyOperation(
+                "KNOWS",
+                new GraphSchemaProperty("since", typeof(DateTime))),
+            new DropNodePropertyOperation("Person", "display_name"),
+            new DropRelationPropertyOperation("KNOWS", "since"),
+        ]);
+
+        Assert.Contains("ALTER VERTEX Person ADD ATTRIBUTE (display_name STRING)", commands[0].Text, StringComparison.Ordinal);
+        Assert.Contains("ALTER EDGE KNOWS ADD ATTRIBUTE (since DATETIME)", commands[0].Text, StringComparison.Ordinal);
+        Assert.Contains("ALTER VERTEX Person DROP ATTRIBUTE (display_name)", commands[0].Text, StringComparison.Ordinal);
+        Assert.Contains("ALTER EDGE KNOWS DROP ATTRIBUTE (since)", commands[0].Text, StringComparison.Ordinal);
+        Assert.Throws<NotSupportedException>(() =>
+            dialect.Compile(
+            [
+                new AlterNodePropertyTypeOperation(
+                    "Person",
+                    "age",
+                    typeof(int),
+                    typeof(string),
+                    MigrationPropertyTypeCompatibility.RequiresRewrite)
+            ]));
+    }
+
+    [Fact]
+    public void CompileProducesTypedSecondaryIndexDrop()
+    {
+        var command = Assert.Single(new TigerGraphMigrationDialect("SocialGraph").Compile(
+        [
+            new DropIndexOperation("Person", "email"),
+        ]).Take(1));
+
+        Assert.Contains(
+            "ALTER VERTEX Person DROP INDEX nodal_ix_Person_email;",
+            command.Text,
+            StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void UnsupportedConstraintTypeAndUnsafeNamesAreRejected()
     {
         Assert.Throws<ArgumentException>(() => new TigerGraphMigrationDialect("bad;graph"));
@@ -62,6 +108,16 @@ public sealed class TigerGraphMigrationDialectTests
             dialect.Compile([new CreateUniqueConstraintOperation("Person", "email")]));
         Assert.Throws<NotSupportedException>(() =>
             dialect.Compile([new DropSchemaObjectOperation("old_index", MigrationSchemaObjectKind.Index)]));
+        Assert.Throws<NotSupportedException>(() =>
+            dialect.Compile([new CreatePropertyExistenceConstraintOperation(
+                GraphSchemaEntityKind.Node, "Person", "email")]));
+        Assert.Throws<NotSupportedException>(() =>
+            dialect.Compile([new CreatePropertyTypeConstraintOperation(
+                GraphSchemaEntityKind.Relation, "KNOWS", "since", typeof(DateTime))]));
+        Assert.Throws<NotSupportedException>(() =>
+            dialect.Compile([new AlterRelationPropertyTypeOperation(
+                "KNOWS", "since", typeof(int), typeof(long),
+                MigrationPropertyTypeCompatibility.RequiresRewrite)]));
         Assert.Throws<ArgumentException>(() =>
             dialect.Compile([new DropNodeTypeOperation("bad-name")]));
     }
@@ -103,6 +159,30 @@ public sealed class TigerGraphMigrationDialectTests
                 typeof(string),
                 [new GraphSchemaProperty("payload", typeof(Version))])]));
         Assert.Throws<NotSupportedException>(() => dialect.Compile([new UnsupportedMigrationOperation()]));
+    }
+
+    [Fact]
+    public void CompileMapsNullableDateGuidAndEnumAttributes()
+    {
+        var dialect = new TigerGraphMigrationDialect("SocialGraph");
+
+        var commands = dialect.Compile(
+        [
+            new CreateNodeTypeOperation(
+                "Typed",
+                "id",
+                typeof(Guid),
+                [
+                    new GraphSchemaProperty("optional_count", typeof(int?)),
+                    new GraphSchemaProperty("created_at", typeof(DateTimeOffset)),
+                    new GraphSchemaProperty("kind", typeof(MetricLevel)),
+                ]),
+        ]);
+
+        Assert.Contains(
+            "PRIMARY_ID id STRING, optional_count INT, created_at DATETIME, kind INT",
+            commands[0].Text,
+            StringComparison.Ordinal);
     }
 
     private enum MetricLevel

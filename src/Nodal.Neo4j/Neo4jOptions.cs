@@ -20,6 +20,12 @@ public sealed class Neo4jOptions
     public string? Database { get; init; }
 
     /// <summary>
+    /// Gets or initializes whether Enterprise property-existence and property-type
+    /// constraints may be emitted. The Community-safe default is <see langword="false"/>.
+    /// </summary>
+    public bool EnterpriseSchemaConstraintsEnabled { get; init; }
+
+    /// <summary>
     /// Gets or initializes whether the target server has the Neo4j Graph Data Science library available.
     /// Analytics capability checks remain disabled unless this is explicitly enabled.
     /// </summary>

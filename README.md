@@ -1,3 +1,11 @@
+# NODAL FRAMEWORK IS OPEN SOURCE UNDER MPL-2.0.
+
+Documentation is licensed under CC BY 4.0. Nodal names, logos, and trademarks
+are not granted under the software license. Hosted services, premium models,
+datasets, commercial APIs, and enterprise support are governed by separate
+commercial terms. Contributions require acceptance of the Nodal Contributor
+License Agreement.
+
 # Nodal Framework
 
 Nodal Framework is a provider-based .NET graph data access prototype. It keeps the domain model and query API provider-neutral while Neo4j and TigerGraph packages compile and execute the same model through their native transports.
@@ -12,6 +20,7 @@ Nodal Framework is a provider-based .NET graph data access prototype. It keeps t
 | `Nodal.Analytics` | Provider-neutral analytics shell for path similarity and pattern discovery |
 | `Nodal.PatternRecognition` | Deprecated alpha package; use `Nodal.Analytics` for new projects |
 | `Nodal.TigerGraph` | TigerGraph/GSQL provider using REST++ and an optional administrative transport |
+| `Nodal.Tool` | .NET global tool for deterministic migration snapshots, diffs, plans, and validation |
 
 The initial alpha targets .NET 10. Package versions move together so provider and core contracts remain compatible during the pre-release period.
 
@@ -23,6 +32,22 @@ dotnet add package Nodal.Neo4j --prerelease
 # or: dotnet add package Nodal.TigerGraph --prerelease
 dotnet add package Nodal.Migrations --prerelease
 ```
+
+Install the migration CLI separately as a .NET tool:
+
+```bash
+dotnet tool install --global Nodal.Tool --prerelease
+nodal migrations validate --snapshot nodal.snapshot.json
+```
+
+Immutable migration bundles capture provider identity, required capabilities,
+ordered up/down commands, execution channels, and destructive flags under a
+canonical SHA-256 checksum. `NodalMigrationBundleExecutor` provides idempotent,
+provider-neutral apply, rollback, dry-run, checksum-drift detection, explicit
+destructive approval, and optional exclusive provider locking. CLI `apply` and
+`rollback` load a trusted, provider-composed execution host named by environment
+variables; connection credentials remain inside that deployment host and never
+enter arguments, plans, bundles, or command output.
 
 `Nodal.Analytics` is the optional analytics shell above providers. The former
 `Nodal.PatternRecognition` package is retained as a deprecated alpha transition
@@ -340,17 +365,23 @@ MigrationPlan dryRun = await context.Database.PlanMigrationsAsync(migrations);
 MigrationPlan applied = await context.Database.MigrateAsync(migrations);
 ```
 
-Plans contain deterministic SHA-256 checksums and provider-specific commands. Neo4j applies its commands and `__NodalMigration` history record in one write transaction. TigerGraph compiles typed vertex, edge, and secondary-index operations into one deterministic schema-change job. TigerGraph administrative execution remains an explicit provider capability because its supported REST API exposes schema inspection and query installation but not a general arbitrary-DDL endpoint; the framework does not silently invent or depend on an undocumented route.
+Plans contain deterministic SHA-256 checksums and provider-specific commands. Neo4j commits a homogeneous schema-command batch transactionally, then records the `__NodalMigration` state in a separate graph-write transaction because Neo4j does not permit schema modifications and graph writes in the same transaction. Nodal uses an `Applying`/`Applied`/`Failed` state machine and idempotent DDL so interrupted schema work is visible and retryable. TigerGraph compiles typed vertex, edge, and secondary-index operations into one deterministic schema-change job. TigerGraph administrative execution remains an explicit provider capability because its supported REST API exposes schema inspection and query installation but not a general arbitrary-DDL endpoint; the framework does not silently invent or depend on an undocumented route.
 
 TigerGraph migration execution is enabled only when the host supplies an administrative transport appropriate to its deployment. Self-managed and local Docker installations can use the included documented GSQL process transport:
 
 ```csharp
-ITigerGraphAdministrativeTransport administration = new TigerGraphGsqlProcessTransport(
+ITigerGraphAdministrativeControlPlane administration = new TigerGraphGsqlProcessTransport(
     new TigerGraphGsqlProcessOptions
     {
         FileName = "docker",
-        PrefixArguments = ["exec", "nodal-tigergraph", "gsql"],
-        GraphName = "SocialGraph"
+        PrefixArguments =
+        [
+            "exec",
+            "nodal-tigergraph",
+            "/home/tigergraph/tigergraph/app/4.2.4/cmd/gsql"
+        ],
+        GraphName = "SocialGraph",
+        VerifiedServerVersion = "4.2.4 Community"
     });
 var provider = new TigerGraphProvider(
     httpClient,
@@ -359,7 +390,9 @@ var provider = new TigerGraphProvider(
     administration);
 ```
 
-The migration executor bootstraps the `__NodalMigration` vertex type when necessary, records checksums through an atomic REST++ upsert, and removes temporary schema jobs even when job execution fails. The same administrative channel enables lazy installation of transactional mutation queries required by delete-containing units of work. Without it, querying and atomic create/update batches remain available while migrations and delete plans report an explicit unsupported-capability error. Because mutation dictionaries currently carry runtime values rather than declared property metadata, a null property in a delete-containing compiled plan is rejected instead of guessing an unsafe GSQL parameter type.
+Migration support is advertised only after the control plane verifies schema read/write, job inspection, cleanup, and graph-scoped locking. The executor bootstraps `__NodalMigration` plus an independent `__NodalSchemaJob` journal, records every irreversible phase, and performs temporary-job cleanup with a bounded token independent from caller cancellation. A restart resumes cleanup or history persistence without replaying a schema change known to have succeeded. A cancelled RUN has an unknown outcome and throws `TigerGraphMigrationRecoveryRequiredException` until an operator inspects the graph and calls `provider.MigrationRecovery.ConfirmSchemaAppliedAsync(...)` or `ConfirmSchemaNotAppliedAsync(...)`.
+
+The same administrative channel enables lazy installation of transactional mutation queries required by delete-containing units of work. Without it, querying and atomic create/update batches remain available while migrations and delete plans report an explicit unsupported-capability error. Because mutation dictionaries currently carry runtime values rather than declared property metadata, a null property in a delete-containing compiled plan is rejected instead of guessing an unsafe GSQL parameter type.
 
 ## Documentation
 
@@ -402,7 +435,7 @@ Package verification can also be run independently:
 powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-packages.ps1
 ```
 
-The package gate produces all six `.nupkg` and `.snupkg` artifacts, then inspects their manifests and contents for the MIT expression, repository metadata, README, license, IntelliSense XML, target framework, and required package dependencies.
+The package gate produces all six `.nupkg` and `.snupkg` artifacts, then inspects their manifests and contents for the MPL-2.0 expression, repository metadata, README, license, IntelliSense XML, target framework, and required package dependencies.
 
 ## Publishing
 
@@ -473,4 +506,6 @@ GitHub Actions runs the quality gate and a disposable Neo4j smoke environment fo
 
 ## License
 
-Nodal Framework is distributed under the [MIT License](LICENSE.txt).
+Nodal Framework source code is distributed under the [MPL-2.0 license](LICENSE.txt).
+Documentation is distributed under [CC BY 4.0](https://creativecommons.org/licenses/by/4.0/).
+Trademarks and hosted or commercial services are governed by the policies in this repository.

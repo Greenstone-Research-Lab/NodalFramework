@@ -19,7 +19,7 @@ const structuredData = {
       codeRepository: 'https://github.com/Greenstone-Research-Lab/NodalFramework',
       programmingLanguage: 'C#',
       runtimePlatform: '.NET 10',
-      license: 'https://opensource.org/license/mit',
+      license: 'https://opensource.org/license/mpl-2-0',
       description: 'Provider-neutral graph data access framework for .NET with Neo4j and TigerGraph providers.',
     },
     {

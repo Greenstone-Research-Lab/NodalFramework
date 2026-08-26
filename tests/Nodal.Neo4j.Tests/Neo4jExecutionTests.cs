@@ -1,6 +1,8 @@
+using System.Globalization;
 using Neo4j.Driver;
 using Nodal.Core.Analytics;
 using Nodal.Core.ChangeTracking;
+using Nodal.Core.Execution;
 using Nodal.Core.Migrations;
 using Nodal.Core.Mutations;
 using Nodal.Core.Providers;
@@ -10,6 +12,48 @@ namespace Nodal.Neo4j.Tests;
 
 public sealed class Neo4jExecutionTests
 {
+    [Fact]
+    public async Task SchemaIntrospectorCapturesProviderNeutralObjects()
+    {
+        var driver = Substitute.For<IDriver>();
+        var session = Substitute.For<IAsyncSession>();
+        var runner = Substitute.For<IAsyncQueryRunner>();
+        driver.AsyncSession(Arg.Any<Action<SessionConfigBuilder>>()).Returns(session);
+
+        var nodeCursor = Cursor(Record(("nodeLabels", new object[] { "Food" }), ("propertyName", "Name"), ("propertyTypes", new object[] { "STRING" }), ("mandatory", false)));
+        var relationCursor = Cursor(Record(("relType", "SERVES"), ("propertyName", "Since"), ("propertyTypes", new object[] { "INTEGER" }), ("mandatory", false)));
+        var indexCursor = Cursor(Record(("name", "food_name"), ("type", "RANGE"), ("entityType", "NODE"), ("labelsOrTypes", new object[] { "Food" }), ("properties", new object[] { "Name" })));
+        var constraintCursor = Cursor(Record(("name", "food_id"), ("type", "NODE_KEY"), ("entityType", "NODE"), ("labelsOrTypes", new object[] { "Food" }), ("properties", new object[] { "Id" })));
+        runner.RunAsync(Arg.Any<string>()).Returns(nodeCursor, relationCursor, indexCursor, constraintCursor);
+        session.ExecuteReadAsync(
+                Arg.Any<Func<IAsyncQueryRunner, Task<List<IRecord>>>>(), Arg.Any<Action<TransactionConfigBuilder>>())
+            .Returns(call => call.ArgAt<Func<IAsyncQueryRunner, Task<List<IRecord>>>>(0)(runner));
+
+        var snapshot = await new Neo4jSchemaIntrospector(driver, "neo4j").CaptureAsync();
+
+        Assert.Equal("Neo4j", snapshot.ProviderName);
+        Assert.Equal("Food", Assert.Single(snapshot.Nodes).Name);
+        Assert.Equal("SERVES", Assert.Single(snapshot.Relations).Name);
+        Assert.Equal("food_name", Assert.Single(snapshot.Indexes!).Name);
+        Assert.Equal("food_id", Assert.Single(snapshot.Constraints!).Name);
+        await session.Received(1).DisposeAsync();
+    }
+
+    private static IResultCursor Cursor(IRecord record)
+    {
+        var cursor = Substitute.For<IResultCursor>();
+        cursor.GetAsyncEnumerator(Arg.Any<CancellationToken>())
+            .Returns(_ => new TestAsyncEnumerator<IRecord>([record]));
+        return cursor;
+    }
+
+    private static IRecord Record(params (string Name, object Value)[] values)
+    {
+        var record = Substitute.For<IRecord>();
+        record.Values.Returns(values.ToDictionary(value => value.Name, value => value.Value));
+        return record;
+    }
+
     [Fact]
     public async Task CommandExecutorRunsParameterizedReadAndNormalizesGraphValues()
     {
@@ -156,7 +200,13 @@ public sealed class Neo4jExecutionTests
 
         Assert.Equal("abc", applied["001_initial"]);
         await runner.Received().RunAsync(
-            Arg.Is<string>(text => text.StartsWith("MERGE", StringComparison.Ordinal)),
+            Arg.Is<string>(text =>
+                text.Contains("`migration`.`State` IS NULL", StringComparison.Ordinal) &&
+                text.Contains("`migration`.`State` = 'Applied'", StringComparison.Ordinal)));
+        await runner.Received().RunAsync(
+            Arg.Is<string>(text =>
+                text.StartsWith("MERGE", StringComparison.Ordinal) &&
+                text.Contains("`migration`.`State` = 'Applied'", StringComparison.Ordinal)),
             Arg.Any<IDictionary<string, object>>());
         await runner.Received().RunAsync(
             Arg.Is<string>(text => text.StartsWith("MATCH", StringComparison.Ordinal) && text.EndsWith("DELETE `migration`", StringComparison.Ordinal)),
@@ -164,19 +214,144 @@ public sealed class Neo4jExecutionTests
     }
 
     [Fact]
-    public async Task MigrationExecutorRejectsInvalidExecutions()
+    public async Task MigrationExecutorSeparatesSchemaCommandsFromHistoryWrites()
+    {
+        var driver = Substitute.For<IDriver>();
+        var session = Substitute.For<IAsyncSession>();
+        var runner = Substitute.For<IAsyncQueryRunner>();
+        var cursor = Substitute.For<IResultCursor>();
+        driver.AsyncSession(Arg.Any<Action<SessionConfigBuilder>>()).Returns(session);
+        session.ExecuteWriteAsync(
+                Arg.Any<Func<IAsyncQueryRunner, Task>>(),
+                Arg.Any<Action<TransactionConfigBuilder>>())
+            .Returns(call => call.ArgAt<Func<IAsyncQueryRunner, Task>>(0)(runner));
+        runner.RunAsync(Arg.Any<string>()).Returns(cursor);
+        runner.RunAsync(Arg.Any<string>(), Arg.Any<IDictionary<string, object>>()).Returns(cursor);
+        cursor.ConsumeAsync().Returns(Substitute.For<IResultSummary>());
+        var executor = new Neo4jMigrationExecutor(driver, "neo4j");
+        var execution = new MigrationExecution(
+            "002_schema",
+            "def",
+            [new MigrationCommand("CREATE INDEX sample", false)]);
+
+        await executor.ApplyAsync(execution);
+
+        await session.Received(2).ExecuteWriteAsync(
+            Arg.Any<Func<IAsyncQueryRunner, Task>>(),
+            Arg.Any<Action<TransactionConfigBuilder>>());
+        await runner.Received().RunAsync("CREATE INDEX sample");
+        await runner.Received().RunAsync(
+            Arg.Is<string>(text => text.StartsWith("MERGE", StringComparison.Ordinal)),
+            Arg.Any<IDictionary<string, object>>());
+    }
+
+    [Fact]
+    public async Task StatefulMigrationHistoryStoreReadsWritesAndRemovesEntries()
+    {
+        var driver = Substitute.For<IDriver>();
+        var session = Substitute.For<IAsyncSession>();
+        var runner = Substitute.For<IAsyncQueryRunner>();
+        var cursor = Substitute.For<IResultCursor>();
+
+        var historyRecord = Substitute.For<IRecord>();
+        historyRecord["id"].Returns("001_stateful");
+        historyRecord["checksum"].Returns("checksum-001");
+        historyRecord["state"].Returns("Failed");
+        historyRecord["startedAt"].Returns("2026-08-23T10:00:00.0000000+00:00");
+        historyRecord["completedAt"].Returns(string.Empty);
+        historyRecord["failureMessage"].Returns("provider failed");
+        historyRecord["failureType"].Returns("InvalidOperationException");
+        historyRecord["failureAt"].Returns("2026-08-23T10:00:01.0000000+00:00");
+
+        cursor.GetAsyncEnumerator(Arg.Any<CancellationToken>())
+            .Returns(_ => new TestAsyncEnumerator<IRecord>([historyRecord]));
+
+        runner.RunAsync(Arg.Any<string>())
+            .Returns(cursor);
+
+        runner.RunAsync(
+                Arg.Any<string>(),
+                Arg.Any<IDictionary<string, object>>())
+            .Returns(cursor);
+
+        cursor.ConsumeAsync()
+            .Returns(Substitute.For<IResultSummary>());
+
+        driver.AsyncSession(Arg.Any<Action<SessionConfigBuilder>>())
+            .Returns(session);
+
+        session.ExecuteReadAsync(
+                Arg.Any<Func<IAsyncQueryRunner,
+                    Task<Dictionary<string, MigrationHistoryEntry>>>>(),
+                Arg.Any<Action<TransactionConfigBuilder>>())
+            .Returns(call =>
+                call.ArgAt<Func<IAsyncQueryRunner,
+                    Task<Dictionary<string, MigrationHistoryEntry>>>>(0)(runner));
+
+        session.ExecuteWriteAsync(
+                Arg.Any<Func<IAsyncQueryRunner, Task>>(),
+                Arg.Any<Action<TransactionConfigBuilder>>())
+            .Returns(call =>
+                call.ArgAt<Func<IAsyncQueryRunner, Task>>(0)(runner));
+
+        var store = new Neo4jMigrationHistoryStore(driver, "neo4j");
+
+        var history = await store.GetMigrationHistoryAsync();
+
+        Assert.Single(history);
+        Assert.Equal(
+            MigrationExecutionState.Failed,
+            history["001_stateful"].State);
+        Assert.Equal(
+            "checksum-001",
+            history["001_stateful"].Checksum);
+        Assert.NotNull(history["001_stateful"].Failure);
+        Assert.Equal("provider failed", history["001_stateful"].Failure!.Message);
+
+        var entry = new MigrationHistoryEntry(
+            "001_stateful",
+            "checksum-001",
+            MigrationExecutionState.Applied,
+            DateTimeOffset.Parse(
+                "2026-08-23T10:00:00+00:00",
+            CultureInfo.InvariantCulture),
+            DateTimeOffset.Parse(
+                "2026-08-23T10:01:00+00:00",
+                CultureInfo.InvariantCulture));
+
+        await store.SaveMigrationHistoryAsync(entry);
+        await store.RemoveMigrationHistoryAsync("001_stateful");
+
+        await runner.Received().RunAsync(
+            Arg.Is<string>(text =>
+                text.Contains("MERGE", StringComparison.Ordinal)),
+            Arg.Any<IDictionary<string, object>>());
+
+        await runner.Received().RunAsync(
+            Arg.Is<string>(text =>
+                text.Contains("DELETE", StringComparison.Ordinal)),
+            Arg.Any<IDictionary<string, object>>());
+
+        await session.Received(3).DisposeAsync();
+    }
+
+    [Fact]
+    public async Task MigrationExecutorRejectsInvalidAndMixedExecutions()
     {
         var driver = Substitute.For<IDriver>();
         var executor = new Neo4jMigrationExecutor(driver);
-        var nonTransactional = new MigrationExecution(
+        var mixed = new MigrationExecution(
             "001_initial",
             "abc",
-            [new MigrationCommand("CREATE DATABASE", false)]);
+            [
+                new MigrationCommand("CREATE INDEX", false),
+                new MigrationCommand("CREATE NODE", true),
+            ]);
         using var cancellation = new CancellationTokenSource();
         cancellation.Cancel();
 
         await Assert.ThrowsAsync<ArgumentNullException>(async () => await executor.ApplyAsync(null!));
-        await Assert.ThrowsAsync<NotSupportedException>(async () => await executor.ApplyAsync(nonTransactional));
+        await Assert.ThrowsAsync<NotSupportedException>(async () => await executor.ApplyAsync(mixed));
         await Assert.ThrowsAnyAsync<OperationCanceledException>(
             async () => await executor.GetAppliedMigrationsAsync(cancellation.Token));
     }
@@ -189,9 +364,20 @@ public sealed class Neo4jExecutionTests
 
         Assert.IsType<Neo4jQueryCompiler>(provider.QueryCompiler);
         Assert.IsType<Neo4jCommandExecutor>(provider.CommandExecutor);
+        Assert.IsType<JsonGraphResultMaterializer>(provider.ResultMaterializer);
         Assert.IsType<Neo4jMutationExecutor>(provider.MutationExecutor);
         Assert.IsType<Neo4jMigrationDialect>(provider.MigrationDialect);
         Assert.IsType<Neo4jMigrationExecutor>(provider.MigrationExecutor);
+        Assert.IsType<Neo4jMigrationHistoryStore>(
+            ((IGraphMigrationHistoryProvider)provider).MigrationHistory);
+        Assert.Equal(
+            "neo4j:neo4j",
+            ((IGraphMigrationHistoryProvider)provider).MigrationHistoryScope);
+        Assert.IsType<Neo4jMigrationLock>(
+            ((IGraphMigrationLockProvider)provider).MigrationLock);
+        Assert.Equal(
+            "neo4j:neo4j",
+            ((IGraphMigrationLockProvider)provider).MigrationLockScope);
         Assert.True(provider.SupportsMigrationExecution);
         Assert.True(provider.Capabilities.SupportsTransactions);
         Assert.Equal(GraphTransactionScope.ClientManaged, provider.Capabilities.TransactionScope);
@@ -251,6 +437,279 @@ public sealed class Neo4jExecutionTests
         Assert.Equal("neo4j", options.Database);
         Assert.IsType<Neo4jCommandExecutor>(provider.CommandExecutor);
     }
+
+
+    [Fact]
+    public async Task Neo4jMigrationLockAcquiresAndCommitsLease()
+    {
+        var driver = Substitute.For<IDriver>();
+
+        var bootstrapSession = Substitute.For<IAsyncSession>();
+        var leaseSession = Substitute.For<IAsyncSession>();
+        var transaction = Substitute.For<IAsyncTransaction>();
+
+        var bootstrapCursor = Substitute.For<IResultCursor>();
+        var acquireCursor = Substitute.For<IResultCursor>();
+        var releaseCursor = Substitute.For<IResultCursor>();
+
+        bootstrapCursor
+            .ConsumeAsync()
+            .Returns(Substitute.For<IResultSummary>());
+
+        acquireCursor
+            .ConsumeAsync()
+            .Returns(Substitute.For<IResultSummary>());
+
+        releaseCursor
+            .ConsumeAsync()
+            .Returns(Substitute.For<IResultSummary>());
+
+        bootstrapSession
+            .RunAsync(Arg.Any<string>())
+            .Returns(bootstrapCursor);
+
+        leaseSession
+            .BeginTransactionAsync()
+            .Returns(Task.FromResult(transaction));
+
+        transaction
+            .RunAsync(
+                Arg.Any<string>(),
+                Arg.Any<IDictionary<string, object>>())
+            .Returns(acquireCursor, releaseCursor);
+
+        driver
+            .AsyncSession(Arg.Any<Action<SessionConfigBuilder>>())
+            .Returns(bootstrapSession, leaseSession);
+
+        var migrationLock = new Neo4jMigrationLock(
+            driver,
+            "neo4j");
+
+        var lease = await migrationLock.AcquireAsync(
+            "neo4j:neo4j",
+            CancellationToken.None);
+
+        Assert.NotNull(lease);
+
+        await lease.DisposeAsync();
+
+        await bootstrapSession.Received(1).RunAsync(
+            Arg.Is<string>(text =>
+                text.Contains("CREATE CONSTRAINT", StringComparison.Ordinal)));
+
+        await transaction.Received(1).CommitAsync();
+
+        await transaction.Received(2).RunAsync(
+            Arg.Any<string>(),
+            Arg.Any<IDictionary<string, object>>());
+
+        await bootstrapSession.Received(1).DisposeAsync();
+        await leaseSession.Received(1).DisposeAsync();
+    }
+
+
+    [Fact]
+    public async Task Neo4jMigrationLockHonorsCancellationBeforeOpeningSession()
+    {
+        var driver = Substitute.For<IDriver>();
+        var migrationLock = new Neo4jMigrationLock(
+            driver,
+            "neo4j");
+
+        using var cancellation = new CancellationTokenSource();
+        cancellation.Cancel();
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await migrationLock.AcquireAsync(
+                "neo4j:neo4j",
+                cancellation.Token));
+
+        driver.DidNotReceive()
+            .AsyncSession(Arg.Any<Action<SessionConfigBuilder>>());
+    }
+
+    [Fact]
+    public async Task Neo4jMigrationLockRollsBackWhenAcquireIsCancelled()
+    {
+        var driver = Substitute.For<IDriver>();
+        var bootstrapSession = Substitute.For<IAsyncSession>();
+        var leaseSession = Substitute.For<IAsyncSession>();
+        var transaction = Substitute.For<IAsyncTransaction>();
+        var bootstrapCursor = Substitute.For<IResultCursor>();
+
+        bootstrapCursor.ConsumeAsync().Returns(Substitute.For<IResultSummary>());
+        bootstrapSession.RunAsync(Arg.Any<string>()).Returns(bootstrapCursor);
+        leaseSession.BeginTransactionAsync().Returns(Task.FromResult(transaction));
+        transaction.RunAsync(
+                Arg.Any<string>(),
+                Arg.Any<IDictionary<string, object>>())
+            .Returns(Task.FromException<IResultCursor>(new OperationCanceledException()));
+        driver.AsyncSession(Arg.Any<Action<SessionConfigBuilder>>())
+            .Returns(bootstrapSession, leaseSession);
+
+        var migrationLock = new Neo4jMigrationLock(driver, "neo4j");
+
+        await Assert.ThrowsAnyAsync<OperationCanceledException>(
+            async () => await migrationLock.AcquireAsync("neo4j:neo4j"));
+
+        await transaction.Received(1).RollbackAsync();
+        await transaction.Received(1).DisposeAsync();
+        await leaseSession.Received(1).DisposeAsync();
+    }
+
+
+    [Fact]
+    public async Task Neo4jMigrationLockWrapsBootstrapFailures()
+    {
+        var driver = Substitute.For<IDriver>();
+        var bootstrapSession = Substitute.For<IAsyncSession>();
+
+        bootstrapSession
+            .RunAsync(Arg.Any<string>())
+            .Returns(Task.FromException<IResultCursor>(
+                new InvalidOperationException(
+                    "Constraint creation failed.")));
+
+        driver
+            .AsyncSession(Arg.Any<Action<SessionConfigBuilder>>())
+            .Returns(bootstrapSession);
+
+        var migrationLock = new Neo4jMigrationLock(
+            driver,
+            "neo4j");
+
+        var exception = await Assert.ThrowsAsync<
+            MigrationLockUnavailableException>(
+            async () => await migrationLock.AcquireAsync(
+                "neo4j:neo4j"));
+
+        Assert.Equal("neo4j:neo4j", exception.Scope);
+        Assert.Contains(
+            "constraint could not be prepared",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.IsType<InvalidOperationException>(
+            exception.InnerException);
+
+        await bootstrapSession.Received(1).DisposeAsync();
+    }
+
+
+    [Fact]
+    public async Task Neo4jMigrationLockWrapsTransactionAcquireFailures()
+    {
+        var driver = Substitute.For<IDriver>();
+
+        var bootstrapSession = Substitute.For<IAsyncSession>();
+        var leaseSession = Substitute.For<IAsyncSession>();
+        var transaction = Substitute.For<IAsyncTransaction>();
+        var bootstrapCursor = Substitute.For<IResultCursor>();
+
+        bootstrapCursor
+            .ConsumeAsync()
+            .Returns(Substitute.For<IResultSummary>());
+
+        bootstrapSession
+            .RunAsync(Arg.Any<string>())
+            .Returns(bootstrapCursor);
+
+        leaseSession
+            .BeginTransactionAsync()
+            .Returns(Task.FromResult(transaction));
+
+        transaction
+            .RunAsync(
+                Arg.Any<string>(),
+                Arg.Any<IDictionary<string, object>>())
+            .Returns(Task.FromException<IResultCursor>(
+                new InvalidOperationException(
+                    "Lock node creation failed.")));
+
+        driver
+            .AsyncSession(Arg.Any<Action<SessionConfigBuilder>>())
+            .Returns(bootstrapSession, leaseSession);
+
+        var migrationLock = new Neo4jMigrationLock(
+            driver,
+            "neo4j");
+
+        var exception = await Assert.ThrowsAsync<
+            MigrationLockUnavailableException>(
+            async () => await migrationLock.AcquireAsync(
+                "neo4j:neo4j"));
+
+        Assert.Equal("neo4j:neo4j", exception.Scope);
+        Assert.Contains(
+            "could not be acquired",
+            exception.Message,
+            StringComparison.OrdinalIgnoreCase);
+        Assert.IsType<InvalidOperationException>(
+            exception.InnerException);
+
+        await transaction.Received(1).RollbackAsync();
+        await transaction.Received(1).DisposeAsync();
+        await leaseSession.Received(1).DisposeAsync();
+    }
+
+
+    [Fact]
+    public async Task Neo4jMigrationLockRollsBackWhenLeaseReleaseFails()
+    {
+        var driver = Substitute.For<IDriver>();
+
+        var bootstrapSession = Substitute.For<IAsyncSession>();
+        var leaseSession = Substitute.For<IAsyncSession>();
+        var transaction = Substitute.For<IAsyncTransaction>();
+
+        var bootstrapCursor = Substitute.For<IResultCursor>();
+        var acquireCursor = Substitute.For<IResultCursor>();
+
+        bootstrapCursor
+            .ConsumeAsync()
+            .Returns(Substitute.For<IResultSummary>());
+
+        acquireCursor
+            .ConsumeAsync()
+            .Returns(Substitute.For<IResultSummary>());
+
+        bootstrapSession
+            .RunAsync(Arg.Any<string>())
+            .Returns(bootstrapCursor);
+
+        leaseSession
+            .BeginTransactionAsync()
+            .Returns(Task.FromResult(transaction));
+
+        transaction
+            .RunAsync(
+                Arg.Any<string>(),
+                Arg.Any<IDictionary<string, object>>())
+            .Returns(
+                _ => Task.FromResult<IResultCursor>(acquireCursor),
+                _ => Task.FromException<IResultCursor>(
+                    new InvalidOperationException(
+                        "Lock release failed.")));
+
+        driver
+            .AsyncSession(Arg.Any<Action<SessionConfigBuilder>>())
+            .Returns(bootstrapSession, leaseSession);
+
+        var migrationLock = new Neo4jMigrationLock(
+            driver,
+            "neo4j");
+
+        var lease = await migrationLock.AcquireAsync(
+            "neo4j:neo4j");
+
+        await Assert.ThrowsAsync<InvalidOperationException>(
+            async () => await lease.DisposeAsync());
+
+        await transaction.Received(1).RollbackAsync();
+        await transaction.Received(1).DisposeAsync();
+        await leaseSession.Received(1).DisposeAsync();
+    }
+
 
     private static INode Node(string id, string label, params (string Name, object Value)[] properties)
     {

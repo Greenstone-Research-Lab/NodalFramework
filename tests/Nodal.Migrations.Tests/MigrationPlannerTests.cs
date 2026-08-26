@@ -20,6 +20,22 @@ public sealed class MigrationPlannerTests
         Assert.Single(commands);
     }
 
+    [Fact]
+    public void PlannerSupportsDownAndPreflightDirections()
+    {
+        var dialect = new RecordingDialect();
+        var planner = new MigrationPlanner(dialect);
+        var migration = new InitialGraph();
+
+        Assert.Single(planner.PlanDown(migration));
+        Assert.True(planner.PreflightUp(migration).IsValid);
+        Assert.True(planner.PreflightDown(migration).IsValid);
+        Assert.Throws<ArgumentNullException>(() => planner.PlanUp(null!));
+        Assert.Throws<ArgumentNullException>(() => planner.PlanDown(null!));
+        Assert.Throws<ArgumentNullException>(() => planner.PreflightUp(null!));
+        Assert.Throws<ArgumentNullException>(() => planner.PreflightDown(null!));
+    }
+
     private sealed class InitialGraph : NodalMigration
     {
         protected override void Up(MigrationBuilder migration)

@@ -11,8 +11,16 @@ namespace Nodal.Neo4j;
 /// Provides the complete Nodal query pipeline for Neo4j and owns the pooled driver
 /// when constructed from <see cref="Neo4jOptions"/>.
 /// </summary>
-public sealed class Neo4jProvider : IGraphProvider, IGraphMutationProvider, IGraphMigrationProvider,
-    IGraphAnalyticsProvider, IGraphAnalyticsRuntimeProvider, IAsyncDisposable
+public sealed class Neo4jProvider :
+    IGraphProvider,
+    IGraphMutationProvider,
+    IGraphMigrationProvider,
+    IGraphMigrationHistoryProvider,
+    IGraphMigrationLockProvider,
+    IGraphAnalyticsProvider,
+    IGraphAnalyticsRuntimeProvider,
+    IGraphSchemaIntrospectionProvider,
+    IAsyncDisposable
 {
     private readonly IDriver driver;
     private readonly bool ownsDriver;
@@ -31,8 +39,18 @@ public sealed class Neo4jProvider : IGraphProvider, IGraphMutationProvider, IGra
         QueryCompiler = new Neo4jQueryCompiler();
         CommandExecutor = new Neo4jCommandExecutor(driver, options.Database);
         MutationExecutor = new Neo4jMutationExecutor(driver, options.Database);
-        MigrationDialect = new Neo4jMigrationDialect();
+        MigrationDialect = new Neo4jMigrationDialect(options.EnterpriseSchemaConstraintsEnabled);
         MigrationExecutor = new Neo4jMigrationExecutor(driver, options.Database);
+        MigrationHistory = new Neo4jMigrationHistoryStore(
+            driver,
+            options.Database);
+        MigrationHistoryScope =
+            $"neo4j:{options.Database ?? "default"}";
+        MigrationLock = new Neo4jMigrationLock(
+            driver,
+            options.Database);
+        MigrationLockScope =
+            $"neo4j:{options.Database ?? "default"}";
         ResultMaterializer = new JsonGraphResultMaterializer();
         AnalyticsCompiler = new Neo4jAnalyticsCompiler();
         AnalyticsCapabilities = CreateAnalyticsCapabilities(
@@ -40,6 +58,7 @@ public sealed class Neo4jProvider : IGraphProvider, IGraphMutationProvider, IGra
             options.AnalyticsAlgorithms);
         AnalyticsRuntime = new Neo4jAnalyticsRuntime(
             driver, options.Database, AnalyticsCapabilities.Algorithms, options.AnalyticsDiscoveryCacheDuration);
+        SchemaIntrospector = new Neo4jSchemaIntrospector(driver, options.Database);
     }
 
     /// <summary>
@@ -50,20 +69,32 @@ public sealed class Neo4jProvider : IGraphProvider, IGraphMutationProvider, IGra
         IDriver driver,
         string? database = null,
         bool graphDataScienceEnabled = false,
-        IReadOnlySet<GraphAnalyticsAlgorithm>? analyticsAlgorithms = null)
+        IReadOnlySet<GraphAnalyticsAlgorithm>? analyticsAlgorithms = null,
+        bool enterpriseSchemaConstraintsEnabled = false)
     {
         ArgumentNullException.ThrowIfNull(driver);
         this.driver = driver;
         QueryCompiler = new Neo4jQueryCompiler();
         CommandExecutor = new Neo4jCommandExecutor(driver, database);
         MutationExecutor = new Neo4jMutationExecutor(driver, database);
-        MigrationDialect = new Neo4jMigrationDialect();
+        MigrationDialect = new Neo4jMigrationDialect(enterpriseSchemaConstraintsEnabled);
         MigrationExecutor = new Neo4jMigrationExecutor(driver, database);
+        MigrationHistory = new Neo4jMigrationHistoryStore(
+                driver,
+                database);
+        MigrationHistoryScope =
+            $"neo4j:{database ?? "default"}";
+        MigrationLock = new Neo4jMigrationLock(
+            driver,
+            database);
+        MigrationLockScope =
+            $"neo4j:{database ?? "default"}";
         ResultMaterializer = new JsonGraphResultMaterializer();
         AnalyticsCompiler = new Neo4jAnalyticsCompiler();
         AnalyticsCapabilities = CreateAnalyticsCapabilities(graphDataScienceEnabled, analyticsAlgorithms);
         AnalyticsRuntime = new Neo4jAnalyticsRuntime(
             driver, database, AnalyticsCapabilities.Algorithms, TimeSpan.FromMinutes(5));
+        SchemaIntrospector = new Neo4jSchemaIntrospector(driver, database);
     }
 
     /// <inheritdoc />
@@ -85,6 +116,9 @@ public sealed class Neo4jProvider : IGraphProvider, IGraphMutationProvider, IGra
     public IGraphAnalyticsRuntime AnalyticsRuntime { get; }
 
     /// <inheritdoc />
+    public IGraphSchemaIntrospector SchemaIntrospector { get; }
+
+    /// <inheritdoc />
     public IGraphMutationExecutor MutationExecutor { get; }
 
     /// <inheritdoc />
@@ -92,6 +126,18 @@ public sealed class Neo4jProvider : IGraphProvider, IGraphMutationProvider, IGra
 
     /// <inheritdoc />
     public IGraphMigrationExecutor MigrationExecutor { get; }
+
+    /// <inheritdoc />
+    public IGraphMigrationHistoryStore MigrationHistory { get; }
+
+    /// <inheritdoc />
+    public string MigrationHistoryScope { get; }
+
+    /// <inheritdoc />
+    public IGraphMigrationLock MigrationLock { get; }
+
+    /// <inheritdoc />
+    public string MigrationLockScope { get; }
 
     /// <inheritdoc />
     public bool SupportsMigrationExecution => true;

@@ -12,6 +12,7 @@ $expectedPackages = @{
     'Nodal.Analytics' = @('Nodal.Core')
     'Nodal.PatternRecognition' = @('Nodal.Core')
     'Nodal.TigerGraph' = @('Nodal.Core')
+    'Nodal.Tool' = @()
 }
 
 if (Test-Path -LiteralPath $outputDirectory) {
@@ -56,12 +57,24 @@ foreach ($packageId in $expectedPackages.Keys) {
     $archive = [System.IO.Compression.ZipFile]::OpenRead($packagePath)
     try {
         $entryNames = @($archive.Entries | ForEach-Object FullName)
-        $requiredEntries = @(
-            'LICENSE.txt'
-            'README.md'
-            "lib/net10.0/$packageId.dll"
-            "lib/net10.0/$packageId.xml"
-        )
+        $requiredEntries = if ($packageId -eq 'Nodal.Tool') {
+            @(
+                'LICENSE.txt'
+                'README.md'
+                'tools/net10.0/any/DotnetToolSettings.xml'
+                'tools/net10.0/any/Nodal.Tool.dll'
+                'tools/net10.0/any/Nodal.Tool.xml'
+                'tools/net10.0/any/Nodal.Migrations.dll'
+            )
+        }
+        else {
+            @(
+                'LICENSE.txt'
+                'README.md'
+                "lib/net10.0/$packageId.dll"
+                "lib/net10.0/$packageId.xml"
+            )
+        }
 
         foreach ($requiredEntry in $requiredEntries) {
             if ($requiredEntry -notin $entryNames) {
@@ -95,8 +108,8 @@ foreach ($packageId in $expectedPackages.Keys) {
             throw "Package identity mismatch. Expected '$packageId/$PackageVersion', found '$actualId/$actualVersion'."
         }
 
-        if ($license.type -ne 'expression' -or $license.InnerText -ne 'MIT') {
-            throw "Package '$packageId' must declare the MIT license expression."
+        if ($license.type -ne 'expression' -or $license.InnerText -ne 'MPL-2.0') {
+            throw "Package '$packageId' must declare the MPL-2.0 license expression."
         }
 
         if ($readme -ne 'README.md') {

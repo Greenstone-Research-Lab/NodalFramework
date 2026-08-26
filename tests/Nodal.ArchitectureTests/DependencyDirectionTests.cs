@@ -2,6 +2,7 @@ using System.Text.Json;
 using Nodal.Analytics.Similarity;
 using Nodal.Core.Analytics;
 using Nodal.Core.Providers;
+using Nodal.Tool;
 
 namespace Nodal.ArchitectureTests;
 
@@ -28,6 +29,20 @@ public sealed class DependencyDirectionTests
             .Select(reference => reference.Name)
             .ToArray();
 
+        Assert.DoesNotContain("Nodal.Neo4j", references);
+        Assert.DoesNotContain("Nodal.TigerGraph", references);
+    }
+
+    [Fact]
+    public void MigrationToolDependsOnlyOnProviderNeutralProductAssemblies()
+    {
+        var references = typeof(NodalCli).Assembly
+            .GetReferencedAssemblies()
+            .Select(reference => reference.Name)
+            .ToArray();
+
+        Assert.Contains("Nodal.Core", references);
+        Assert.Contains("Nodal.Migrations", references);
         Assert.DoesNotContain("Nodal.Neo4j", references);
         Assert.DoesNotContain("Nodal.TigerGraph", references);
     }
