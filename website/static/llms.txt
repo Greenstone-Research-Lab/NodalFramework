@@ -6,7 +6,8 @@
 
 Canonical documentation: https://nodalframework.pages.dev/docs/intro
 Source repository: https://github.com/Greenstone-Research-Lab/NodalFramework
-License: MIT
+Source code license: MPL-2.0
+Documentation license: CC BY 4.0
 
 ## Start here
 
