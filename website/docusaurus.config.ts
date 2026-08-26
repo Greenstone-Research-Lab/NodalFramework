@@ -70,7 +70,7 @@ const config: Config = {
         {title: 'Providers', items: [{label: 'Neo4j', to: '/docs/providers/neo4j'}, {label: 'TigerGraph', to: '/docs/providers/tigergraph'}]},
         {title: 'Project', items: [{label: 'GitHub', href: 'https://github.com/Greenstone-Research-Lab/NodalFramework'}, {label: 'Roadmap', to: '/docs/roadmap'}]},
       ],
-      copyright: `Copyright © ${new Date().getFullYear()} Greenstone Research Lab. MIT licensed.`,
+      copyright: `Copyright © ${new Date().getFullYear()} Greenstone Research Lab. Source code: MPL-2.0 · Documentation: CC BY 4.0.`,
     },
     prism: {
       additionalLanguages: ['csharp', 'powershell'],
