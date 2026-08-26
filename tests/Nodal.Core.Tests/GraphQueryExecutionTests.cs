@@ -245,7 +245,6 @@ public sealed class GraphQueryExecutionTests
             Features = GraphQueryCapability.ServerSideProjection |
                 GraphQueryCapability.Aggregation |
                 GraphQueryCapability.SetOperations |
-                GraphQueryCapability.CorrelatedSubquery |
                 GraphQueryCapability.MultiplePatterns,
         };
 
