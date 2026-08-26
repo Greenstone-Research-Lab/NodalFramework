@@ -74,6 +74,54 @@ public sealed class GraphQueryPreflightTests
         Assert.Equal("NODAL-QUERY-VARIABLE-LENGTH", exception.CapabilityCode);
     }
 
+    [Fact]
+    public void ValidateAllowsAdvancedFeaturesWhenTheyAreExplicitlyAdvertised()
+    {
+        var query = new GraphQueryModel(
+            "Person",
+            "person",
+            null,
+            [],
+            null,
+            [],
+            GraphQueryProjection.Row,
+            ExistencePatterns:
+            [new GraphExistencePattern("KNOWS", "Person", "person", "knows", "friend", GraphTraversalDirection.Outgoing, null, null)],
+            MatchPatterns:
+            [new GraphTraversalStep("KNOWS", "Person", "person", "knows2", "friend2", GraphTraversalDirection.Outgoing, null)],
+            RowProjection: new GraphRowProjection([new GraphRowColumn("count", GraphRowColumnKind.Count, "person")]));
+        var capabilities = CreateCapabilities(
+            GraphQueryCapability.CorrelatedSubquery |
+            GraphQueryCapability.MultiplePatterns |
+            GraphQueryCapability.ServerSideProjection |
+            GraphQueryCapability.Aggregation);
+
+        GraphQueryPreflight.Validate(query, capabilities);
+    }
+
+    [Fact]
+    public void ValidateRejectsMissingAdvancedFeatureCapabilities()
+    {
+        var exists = new GraphQueryModel(
+            "Person", "person", null, [], null, [],
+            ExistencePatterns:
+            [new GraphExistencePattern("KNOWS", "Person", "person", "knows", "friend", GraphTraversalDirection.Outgoing, null, null)]);
+        var pattern = new GraphQueryModel(
+            "Person", "person", null, [], null, [],
+            MatchPatterns:
+            [new GraphTraversalStep("KNOWS", "Person", "person", "knows", "friend", GraphTraversalDirection.Outgoing, null)]);
+        var row = new GraphQueryModel(
+            "Person", "person", null, [], null, [], GraphQueryProjection.Row,
+            RowProjection: new GraphRowProjection([new GraphRowColumn("name", GraphRowColumnKind.Property, "person", "Name")]));
+
+        Assert.Equal("NODAL-QUERY-CORRELATED-SUBQUERY", Assert.Throws<NodalCapabilityNotSupportedException>(
+            () => GraphQueryPreflight.Validate(exists, CreateCapabilities(GraphQueryCapability.None))).CapabilityCode);
+        Assert.Equal("NODAL-QUERY-MULTIPLE-PATTERNS", Assert.Throws<NodalCapabilityNotSupportedException>(
+            () => GraphQueryPreflight.Validate(pattern, CreateCapabilities(GraphQueryCapability.None))).CapabilityCode);
+        Assert.Equal("NODAL-QUERY-SERVER-SIDE-PROJECTION", Assert.Throws<NodalCapabilityNotSupportedException>(
+            () => GraphQueryPreflight.Validate(row, CreateCapabilities(GraphQueryCapability.None))).CapabilityCode);
+    }
+
     private static GraphQueryCapabilities CreateCapabilities(GraphQueryCapability features) => new()
     {
         ProviderName = "ExampleGraph",

@@ -65,7 +65,7 @@ internal sealed class ProviderGraphQueryExecutor(
 
     public async ValueTask<IReadOnlyList<GraphResultRow>> ExecuteRowsAsync(
         GraphQueryModel query,
-        CancellationToken cancellationToken)
+        CancellationToken cancellationToken = default)
     {
         ValidateCapabilities(query);
         var command = provider.QueryCompiler.Compile(query);

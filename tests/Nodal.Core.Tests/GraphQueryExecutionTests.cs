@@ -131,6 +131,38 @@ public sealed class GraphQueryExecutionTests
         Assert.Throws<KeyNotFoundException>(() => row.Get<int>("missing"));
     }
 
+    [Fact]
+    public async Task RowsConvertProviderValuesAndSetQueriesExecuteThroughTheContext()
+    {
+        var provider = new QueryProvider
+        {
+            RowValues = new Dictionary<string, object?>
+            {
+                ["count"] = 2,
+                ["rank"] = 1,
+                ["optional"] = null,
+            },
+        };
+        var context = new QueryContext(provider);
+
+        var row = Assert.Single(await context.People.Query().ToRows().Count("count").ToListAsync());
+        Assert.Equal(2L, row.Get<long>("count"));
+        Assert.Equal(PersonRank.Established, row.Get<PersonRank>("rank"));
+        Assert.Null(row.Get<string>("optional"));
+        Assert.Equal(3, row.Values.Count);
+
+        var union = await context.People.Match(person => person.Id == "person-1")
+            .UnionAll(context.People.Match(person => person.Name == "Alan"))
+            .OrderByDescending(person => person.Name)
+            .ToListAsync();
+
+        Assert.Equal(2, union.Count);
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await new GraphSet<Person>().Query().Union(new GraphSet<Person>().Query()).ToListAsync());
+        await Assert.ThrowsAsync<InvalidOperationException>(async () =>
+            await new GraphSet<Person>().Query().ToRows().Count("count").ToListAsync());
+    }
+
     private sealed class QueryContext(QueryProvider provider) : NodalContext(provider)
     {
         public GraphSet<Person> People => Set<Person>();
@@ -151,6 +183,12 @@ public sealed class GraphQueryExecutionTests
 
     [GraphRelation("KNOWS", Directed = false)]
     private sealed class Knows;
+
+    private enum PersonRank
+    {
+        New = 0,
+        Established = 1,
+    }
 
     private sealed class QueryProvider : IGraphProvider, IGraphQueryCapabilityProvider, IGraphQueryCompiler, IGraphCommandExecutor
     {
@@ -179,7 +217,8 @@ public sealed class GraphQueryExecutionTests
             ProviderName = "QueryProvider",
             TestedProviderVersion = "test",
             Features = GraphQueryCapability.ServerSideProjection |
-                GraphQueryCapability.Aggregation,
+                GraphQueryCapability.Aggregation |
+                GraphQueryCapability.SetOperations,
         };
 
         public GraphCommand Compile(GraphQueryModel query)

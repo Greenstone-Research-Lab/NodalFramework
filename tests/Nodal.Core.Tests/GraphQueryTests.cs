@@ -84,6 +84,31 @@ public sealed class GraphQueryTests
     }
 
     [Fact]
+    public void RowProjectionSupportsEveryAggregateAndValidatesItsFluentSurface()
+    {
+        var model = new GraphSet<Person>().Query().ToRows()
+            .Sum("scoreSum", person => person.Score)
+            .Min("minimumAge", person => person.Age)
+            .Max("maximumAge", person => person.Age)
+            .OrderBy("scoreSum")
+            .ThenByDescending("maximumAge")
+            .Take(3)
+            .ToQueryModel();
+
+        Assert.Equal(3, model.Limit);
+        Assert.Equal(
+            [GraphRowColumnKind.Sum, GraphRowColumnKind.Minimum, GraphRowColumnKind.Maximum],
+            model.RowProjection!.Columns.Select(column => column.Kind));
+        Assert.Collection(model.RowProjection.EffectiveOrderings,
+            ordering => Assert.Equal(GraphSortDirection.Ascending, ordering.Direction),
+            ordering => Assert.Equal(GraphSortDirection.Descending, ordering.Direction));
+        Assert.Throws<InvalidOperationException>(() => new GraphSet<Person>().Query().ToRows().ToQueryModel());
+        Assert.Throws<InvalidOperationException>(() => new GraphSet<Person>().Query().ToRows().ThenBy("missing"));
+        Assert.Throws<ArgumentException>(() => new GraphSet<Person>().Query().ToRows().Count("count").OrderBy("missing"));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GraphSet<Person>().Query().ToRows().Count("count").Take(0));
+    }
+
+    [Fact]
     public void OrElseAndReversedComparisonsAreTranslatedCorrectly()
     {
         var query = new GraphSet<Person>().Match(person =>
@@ -220,6 +245,20 @@ public sealed class GraphQueryTests
         Assert.Throws<InvalidOperationException>(() => query.Skip(1));
         Assert.Throws<InvalidOperationException>(() => query.ThenBy(person => person.Name));
         Assert.Throws<ArgumentOutOfRangeException>(() => query.Take(0));
+    }
+
+    [Fact]
+    public void SetQuerySupportsDescendingAndSecondaryAscendingOrdering()
+    {
+        var model = new GraphSet<Person>().Query()
+            .Union(new GraphSet<Person>().Query())
+            .OrderByDescending(person => person.Age)
+            .ThenBy(person => person.Name)
+            .ToQueryModel();
+
+        Assert.Collection(model.EffectiveOrderings,
+            ordering => Assert.Equal(GraphSortDirection.Descending, ordering.Direction),
+            ordering => Assert.Equal(GraphSortDirection.Ascending, ordering.Direction));
     }
 
     [Fact]
