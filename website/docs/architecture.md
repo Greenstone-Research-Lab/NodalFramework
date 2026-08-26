@@ -12,9 +12,6 @@ flowchart TB
   Contract --> Neo["Nodal.Neo4j\nCypher · Bolt"]
   Contract --> Tiger["Nodal.TigerGraph\nGSQL · REST++"]
   Migrations["Nodal.Migrations\nportable schema intent"] --> Contract
-  Core --> Pattern["Nodal.Analytics\noptional analytics shell"]
-  Neo -. "capabilities and native pushdown" .-> Pattern
-  Tiger -. "capabilities and native pushdown" .-> Pattern
 ```
 
 `Nodal.Core` does not depend on provider packages. Provider packages depend inward on stable contracts. `Nodal.Migrations` describes schema intent while provider dialects decide how it becomes native operations.
@@ -30,16 +27,14 @@ The execution pipeline is:
 
 This separation keeps native performance opportunities without making the domain depend on Cypher, GSQL, Bolt, or REST response shapes.
 
-## The analytics shell
+## Analytics boundary
 
-`Nodal.Analytics` is an optional layer above the provider boundary,
-not a provider and not a dependency of provider packages. It consumes canonical
-graph paths and change events, builds typed feature representations, compares
-paths, discovers communities and temporal transitions, and returns versioned
-evidence that applications can explain or persist explicitly.
+`Nodal.Analytics` is optional, provider-neutral, and remains above the provider
+boundary. Its public role is to expose stable contracts and capability-aware
+integration for analytics executed by supported graph platforms. It is not a
+provider and never becomes a dependency of provider packages.
 
-The shell may ask a provider to push down extraction, filtering, or a native
-algorithm when its versioned capability declaration guarantees compatible
-semantics. The portable .NET kernel completes the remaining stages. A provider
-without a native accelerator therefore remains correct; it may differ only in
-execution cost and documented limits.
+Advanced analytics implementation details are intentionally outside the public
+documentation and package contract. This keeps the open-source provider model
+clear while allowing separately licensed products to evolve without creating an
+implicit compatibility promise.

@@ -19,23 +19,24 @@ typed options, and compiled analytics factories.
 
 ## Completed - analytics package boundary correction
 
-1. Renamed the analytics package boundary to `Nodal.Analytics` before the beta line.
-   The current similarity kernel and future path, community, centrality,
-   pattern, temporal, vector, and execution surfaces under the broader analytics
-   boundary. Preserve `Nodal.PatternRecognition` as a temporary transition
-   package, mark it deprecated on NuGet with `Nodal.Analytics` as its suggested
-   replacement, and update source, tests, benchmarks, samples, documentation,
-   capability metadata, and publishing workflows together. Treat
-   `Nodal.Semantics` as a separate future package for ontology, taxonomy, entity
-   resolution, inference, provenance, and knowledge-graph concerns rather than
-   overloading the analytics package.
-## Next - Sonar quality gate
+1. Defined `Nodal.Analytics` as the public analytics contract boundary before
+   the beta line. Its scope is provider-neutral capability metadata and the
+   integration of analytics executed by supported graph platforms. Advanced
+   implementations are not part of the public repository or compatibility
+   promise.
+## Completed - release quality and migration foundation
 
-1. Add SonarCloud/SonarQube analysis to the protected CI path. Import the
-   Coverlet coverage report, configure a repository quality profile and quality
-   gate, publish the result on pull requests, and make the gate a required branch
-   check alongside formatting, tests, coverage, package validation, and live
-   provider smoke tests.
+1. Added SonarCloud analysis to the protected CI path. Pull requests now publish
+   the quality result beside formatting, tests, coverage, package validation, and
+   live provider smoke checks.
+2. Completed the M0–M5 migration program: portable contracts and preflight,
+   durable history and recovery, schema snapshots and deterministic diffs,
+   Neo4j and TigerGraph execution hardening, immutable migration bundles, and
+   the provider-neutral `nodal` CLI workflow.
+3. Published the migration guide, operational recovery boundaries, deployment
+   host examples, and the first release-quality evidence artifacts. Provider
+   migration behavior remains certified independently; portability never means
+   that native transaction or administrative semantics are silently emulated.
 
 ## P2 - production hardening
 
@@ -52,45 +53,13 @@ typed options, and compiled analytics factories.
   agents.
 - Establish versioned documentation and a stable package promotion policy.
 
-## P3 - Nodal.Analytics alpha
+## Advanced analytics
 
-P3 introduces an optional package for discovering repeated structures and
-temporal behavior without changing the responsibilities of `Nodal.Core`.
-
-### Foundation
-
-1. Record the package boundaries and execution architecture in an ADR.
-2. Complete the `Nodal.Analytics` package and dependency rules after the beta
-   boundary correction.
-3. Define canonical path, pattern, observation, and result contracts.
-4. Define event time, observation time, validity time, sessions, and windows.
-5. Add a provider-neutral pattern DSL and canonical analysis plan.
-6. Enforce bounded extraction, path budgets, cancellation, and sampling.
-
-### Discovery
-
-7. Implement canonical path signatures and stable hashing.
-8. Implement typed positional multi-hot bitsets, XOR/popcount distance, and
-   n-gram similarity kernels with scalar and hardware-accelerated paths.
-9. Implement weighted heterogeneous PathSim/HeteSim-style similarity and dense
-   vector scoring as an optional lane.
-10. Build a sparse top-k similarity graph without an all-pairs materialization,
-    and benchmark exact and approximate candidate strategies.
-11. Detect path communities and select representative paths.
-12. Mine bounded frequent path and event-sequence patterns.
-
-### Temporal and provider execution
-
-13. Build directed temporal transition graphs with windows and time decay.
-14. Add Neo4j planning and native analytics pushdown where semantics match.
-15. Add TigerGraph planning and GSQL pushdown where semantics match.
-16. Persist versioned patterns, evidence, scores, and explanations explicitly.
-
-### Productization
-
-17. Add property, differential, live-provider, performance, and load tests.
-18. Publish benchmarks, an e-commerce showcase, documentation, and the first
-    alpha package.
+Nodal's public analytics surface remains limited to provider-neutral contracts,
+capability metadata, and the integration of analytics executed by supported
+graph platforms. Advanced analytics products are developed and licensed
+separately. Their implementation scope, performance characteristics, and
+roadmap are intentionally not part of this public compatibility promise.
 
 ## Provider expansion
 
@@ -105,17 +74,5 @@ temporal behavior without changing the responsibilities of `Nodal.Core`.
 Additional providers are selected only after a transport, query-language,
 transaction, migration, local-QA, and maintenance assessment.
 
-## P4+ - research horizon
-
-- Full frequent-subgraph mining and closed/maximal pattern reduction.
-- Overlapping and evolutionary community detection.
-- Concept-drift detection and automatic window adaptation.
-- Learned path embeddings and approximate vector indexes.
-- Probabilistic next-event and temporal point-process models.
-- Temporal graph neural networks and online model training.
-- Model registry, evaluation, rollback, bias, and drift governance.
-
-The dated execution plan is published in
-[the Nodal Journal](/blog/alpha-roadmap-pattern-recognition-and-new-providers).
-Track implementation status in the
+Track public implementation status in the
 [GitHub repository](https://github.com/Greenstone-Research-Lab/NodalFramework).

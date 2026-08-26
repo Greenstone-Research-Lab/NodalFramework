@@ -6,5 +6,7 @@ source-code license. They require a separate commercial agreement, order form,
 or applicable service terms.
 
 The open-source packages remain available under their stated licenses. A
-commercial service may include proprietary service code, operational tooling,
-models, or data that are not part of those packages.
+commercial service may include proprietary service code, advanced analytics
+implementations, operational tooling, models, configurations, or data that are
+not part of those packages. Public contracts do not grant rights to, or imply
+delivery of, a corresponding advanced implementation.

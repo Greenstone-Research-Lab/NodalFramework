@@ -17,8 +17,7 @@ Nodal Framework is a provider-based .NET graph data access prototype. It keeps t
 | `Nodal.Core` | Provider-neutral model, LINQ query surface, tracking, and unit of work |
 | `Nodal.Migrations` | Portable graph schema migration contracts and planning |
 | `Nodal.Neo4j` | Neo4j/Cypher provider using the official pooled Bolt driver |
-| `Nodal.Analytics` | Provider-neutral analytics shell for path similarity and pattern discovery |
-| `Nodal.PatternRecognition` | Deprecated alpha package; use `Nodal.Analytics` for new projects |
+| `Nodal.Analytics` | Provider-neutral analytics contracts and capability integration |
 | `Nodal.TigerGraph` | TigerGraph/GSQL provider using REST++ and an optional administrative transport |
 | `Nodal.Tool` | .NET global tool for deterministic migration snapshots, diffs, plans, and validation |
 
@@ -49,11 +48,10 @@ destructive approval, and optional exclusive provider locking. CLI `apply` and
 variables; connection credentials remain inside that deployment host and never
 enter arguments, plans, bundles, or command output.
 
-`Nodal.Analytics` is the optional analytics shell above providers. The former
-`Nodal.PatternRecognition` package is retained as a deprecated alpha transition
-package; use `Nodal.Analytics` for new projects.
-Its first executable alpha slice includes exact allocation-free bitset similarity;
-community, sequence, and temporal-transition surfaces remain experimental roadmap work.
+`Nodal.Analytics` is an optional public contract layer above providers. It keeps
+provider-executed analytics integration and capability declarations separate from
+the query and migration foundations. Advanced analytics implementations are not
+part of the open-source package contract.
 
 Pin all packages to the same version for reproducible builds, for example
 `0.1.0-alpha.2`. The complete console, worker, and ASP.NET Core setup is in the
