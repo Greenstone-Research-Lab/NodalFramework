@@ -60,13 +60,16 @@ jobs:
     environment: ${{ inputs.target }}
     env:
       NODAL_MIGRATION_HOST_CONFIGURATION: ${{ secrets.NODAL_MIGRATION_HOST_CONFIGURATION }}
+      NODAL_TARGET: ${{ inputs.target }}
       NODAL_ACTION: ${{ inputs.action }}
       NODAL_APPROVE_DESTRUCTIVE: ${{ inputs.approve_destructive }}
+      NODAL_ARTIFACT_RUN_ID: ${{ inputs.artifact_run_id }}
       NODAL_ARTIFACT_ROOT: ${{ github.workspace }}/deployment
       NODAL_BUNDLE_RELATIVE_PATH: ${{ inputs.bundle_path }}
       NODAL_HOST_RELATIVE_PATH: ${{ inputs.host_assembly_path }}
       NODAL_MIGRATION_HOST_TYPE: ${{ inputs.host_type }}
       NODAL_TOOL_VERSION: ${{ inputs.tool_version }}
+      NODAL_COMMIT_SHA: ${{ github.sha }}
 
     steps:
       - name: Checkout workflow revision
@@ -122,8 +125,8 @@ jobs:
         shell: pwsh
         run: |
           "### Nodal migration deployment" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          "- Target: ${{ inputs.target }}" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          "- Action: ${{ inputs.action }}" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          "- Artifact run: ${{ inputs.artifact_run_id }}" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          "- Tool version: ${{ inputs.tool_version }}" | Out-File $env:GITHUB_STEP_SUMMARY -Append
-          "- Commit: ${{ github.sha }}" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "- Target: $env:NODAL_TARGET" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "- Action: $env:NODAL_ACTION" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "- Artifact run: $env:NODAL_ARTIFACT_RUN_ID" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "- Tool version: $env:NODAL_TOOL_VERSION" | Out-File $env:GITHUB_STEP_SUMMARY -Append
+          "- Commit: $env:NODAL_COMMIT_SHA" | Out-File $env:GITHUB_STEP_SUMMARY -Append
