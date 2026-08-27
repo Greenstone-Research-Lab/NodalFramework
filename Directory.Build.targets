@@ -1,0 +1,12 @@
+<Project>
+  <!--
+    Public packages are checked against the last verified alpha baseline.
+    The baseline moves only through an explicit release-compatibility decision.
+  -->
+  <PropertyGroup Condition="'$(IsPackable)' != 'false'">
+    <NodalPublicApiBaselineVersion>0.1.0-alpha.10</NodalPublicApiBaselineVersion>
+    <EnablePackageValidation>true</EnablePackageValidation>
+    <PackageValidationBaselineVersion>$(NodalPublicApiBaselineVersion)</PackageValidationBaselineVersion>
+    <ApiCompatEnableRuleCannotChangeParameterName>true</ApiCompatEnableRuleCannotChangeParameterName>
+  </PropertyGroup>
+</Project>
