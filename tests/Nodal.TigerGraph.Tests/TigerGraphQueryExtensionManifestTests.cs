@@ -1,8 +1,8 @@
-using Nodal.Core.Migrations;
-using Nodal.TigerGraph.Extensions;
 using System.Net;
 using System.Net.Http.Headers;
 using System.Text;
+using Nodal.Core.Migrations;
+using Nodal.TigerGraph.Extensions;
 
 namespace Nodal.TigerGraph.Tests;
 

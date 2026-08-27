@@ -1,7 +1,7 @@
-using System.Runtime.CompilerServices;
 using System.Data;
 using System.Data.Common;
 using System.Diagnostics.CodeAnalysis;
+using System.Runtime.CompilerServices;
 using Nodal.Import;
 using Nodal.Import.Csv;
 using Nodal.Import.Relational;
