@@ -2,6 +2,7 @@ using System.Text;
 using System.Text.RegularExpressions;
 using Nodal.Core.Providers;
 using Nodal.Core.Query;
+using Nodal.TigerGraph.Extensions;
 
 namespace Nodal.TigerGraph;
 
@@ -15,15 +16,22 @@ namespace Nodal.TigerGraph;
 public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
 {
     private readonly string graphName;
+    private readonly TigerGraphInstalledQueryCatalog? installedQueries;
 
     /// <summary>
     /// Initializes a compiler for a specific TigerGraph graph.
     /// </summary>
     /// <param name="graphName">The target graph name.</param>
     public TigerGraphQueryCompiler(string graphName)
+        : this(graphName, null)
+    {
+    }
+
+    internal TigerGraphQueryCompiler(string graphName, TigerGraphInstalledQueryCatalog? installedQueries)
     {
         ValidateIdentifier(graphName, nameof(graphName));
         this.graphName = graphName;
+        this.installedQueries = installedQueries;
     }
 
     /// <inheritdoc />
@@ -40,9 +48,18 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
         }
         if (query.EffectiveExistencePatterns.Count > 0)
         {
-            throw new NotSupportedException(
-                "TigerGraph interpreted GSQL does not provide a portable correlated-subquery execution path. " +
-                "Use an installed provider extension until Nodal supplies an installed-query implementation.");
+            if (installedQueries is null)
+            {
+                throw new NotSupportedException(
+                    "TigerGraph interpreted GSQL does not provide a portable correlated-subquery execution path. " +
+                    "Configure the correlated-existence installed-query extension and an administrative transport.");
+            }
+
+            var definition = TigerGraphInstalledQueryDefinitionFactory.CreateCorrelatedExistence(graphName, query);
+            return new GraphCommand(
+                string.Empty,
+                query.Parameters.ToDictionary(parameter => parameter.Name, parameter => NormalizeValue(parameter.Value), StringComparer.Ordinal),
+                installedQueries.Register(definition));
         }
         if (query.EffectiveMatchPatterns.Count > 0)
         {

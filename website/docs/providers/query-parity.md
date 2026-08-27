@@ -31,7 +31,8 @@ instead of silently changing pagination.
 | Fixed-depth simple paths | Supported | Supported |
 | Variable-depth simple paths | Supported | Not supported: repeated-hop aliases are unavailable |
 | Scalar rows and aggregate rows | Supported | Supported through SQL-like GSQL Syntax V2 |
-| Optional traversal, correlated existence, additional patterns, set operations | Supported | Not part of the portable interpreted route yet |
+| Correlated `WhereExists` / `WhereNotExists` | Supported | Conditional: Nodal-generated installed query plus administrative transport; live verified |
+| Optional traversal, additional patterns, set operations | Supported | Explicitly unavailable; rejected before transport |
 
 TigerGraph's row support uses the database's table-producing `SELECT ... INTO`
 form. Nodal compiles property columns, `Count`, `Sum`, `Average`, `Min`, `Max`,
@@ -40,6 +41,25 @@ ordering, and bounded results. The provider normalizes both TigerGraph table
 shapes: a multi-row JSON array and a one-row aggregate JSON object. The
 baseline includes a live test for property projection, `Count`, `GROUP BY`,
 `HAVING`, `ORDER BY`, and `LIMIT` against TigerGraph 4.2.4 Community.
+
+## Verification ledger
+
+| Query shape | Neo4j 5.26 Community | TigerGraph 4.2.4 Community | Missing-feature behaviour |
+| --- | --- | --- | --- |
+| Parameter filters and fixed traversal | Compiler + unit + live container | Compiler + unit + live container | Not applicable |
+| Node `Distinct` | Compiler + unit + live container | Compiler + unit + live convergence test | Not applicable |
+| Variable-depth traversal | Compiler + unit | Compiler + unit; Syntax V2 route | Unsupported combinations fail during compilation |
+| Fixed vertex-simple path | Compiler + unit | Compiler + unit + live subgraph test | Variable-depth simple path fails pre-transport |
+| Scalar and aggregate rows | Compiler + unit | Compiler + unit + live grouping/count test | Unsupported row shapes fail during compilation |
+| Correlated existence | Compiler + unit + live container | Generated-query unit + live `WhereExists`/`WhereNotExists` container test | Capability preflight rejects it unless runtime generation and administration are configured |
+| Optional traversal | Compiler + unit | Explicitly excluded | `NODAL-QUERY-OPTIONAL-TRAVERSAL` |
+| Additional required patterns | Compiler + unit | Explicitly excluded | `NODAL-QUERY-MULTIPLE-PATTERNS` |
+| `Union` / `UnionAll` | Compiler + unit + live container | Explicitly excluded | `NODAL-QUERY-SET-OPERATIONS` |
+
+“Live container” refers to the repository's executable Docker baselines, not a
+claim inferred from vendor documentation. The generated TigerGraph extension
+test additionally requires the documented GSQL administrative channel; the
+ordinary REST++ test lane cannot create or install queries.
 
 See TigerGraph's [SQL-like SELECT reference](https://docs.tigergraph.com/gsql-ref/3.11/querying/select-statement/sql-like-select-statement)
 for the underlying table semantics.
@@ -70,3 +90,33 @@ not installed, Nodal fails before transport with a capability-specific error.
 
 This keeps application code honest during provider replacement: missing
 behaviour never becomes a silent in-memory fallback.
+
+TigerGraph correlated existence is the first runtime-generated extension. It
+is disabled by default and requires both an explicit feature opt-in and a
+supported administrative transport:
+
+```csharp
+var options = new TigerGraphOptions
+{
+    Endpoint = new Uri("https://example.i.tgcloud.io/"),
+    AccessToken = "secret-token",
+    GeneratedQueryExtensions = new HashSet<TigerGraphQueryExtensionFeature>
+    {
+        TigerGraphQueryExtensionFeature.CorrelatedExistence
+    }
+};
+
+var provider = new TigerGraphProvider(
+    httpClient,
+    options,
+    "SocialGraph",
+    administrativeTransport);
+```
+
+Nodal fingerprints the parameterized query shape, uses `CREATE OR REPLACE
+QUERY`, installs it with `-FORCE`, and invokes the resulting REST++ route.
+Concurrent calls through the same provider for a graph and fingerprint share
+one installation task. The live suite verifies positive and negative existence with node
+and relationship predicates against TigerGraph 4.2.4 Community. Enabling the
+feature requires query create/update/install privileges; configuring a
+preinstalled-query manifest alone does not enable runtime generation.

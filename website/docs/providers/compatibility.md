@@ -42,7 +42,7 @@ Legend: **Yes** is implemented; **Conditional** requires the condition shown; **
 | Optional match | Yes | No |
 | Vertex-simple fixed-depth path | Yes | Yes |
 | Vertex-simple variable-depth path | Yes | No: intermediate aliases are unavailable |
-| Correlated existence pattern | Yes: Cypher `EXISTS` subquery | No: use a separately verified installed-query extension |
+| Correlated existence pattern | Yes: Cypher `EXISTS` subquery | Conditional: explicit Nodal-generated installed-query extension and administrative transport; TigerGraph 4.2.4 live verified |
 | Additional named required pattern | Yes: Cypher `MATCH` | No: use a separately verified installed-query extension |
 | Provider-side scalar/aggregate rows | Yes | Yes: SQL-like GSQL Syntax V2; property rows, grouping, `Having`, ordering, bounded results, and aggregate projection |
 | Compatible node-query `Union` / `UnionAll` | Yes | No: use a separately verified installed-query extension |

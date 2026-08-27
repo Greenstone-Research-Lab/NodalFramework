@@ -69,7 +69,9 @@ Nodal distinguishes vendor client compatibility from versions verified by this r
 | Parameterized queries and fixed traversals | Supported | Supported |
 | Variable-depth traversal | Supported | GSQL Syntax V2 with documented restrictions |
 | Optional match | Supported | Not supported |
-| Correlated existence, additional patterns, row aggregates, and set operations | Supported | Not supported by interpreted GSQL; use an installed provider extension |
+| Correlated `WhereExists` / `WhereNotExists` | Supported | Conditional: explicit runtime-generated extension plus administrative transport; live verified |
+| Additional patterns and set operations | Supported | Not supported; rejected before transport |
+| Scalar and aggregate rows | Supported | Supported through SQL-like GSQL Syntax V2 |
 | Transaction boundary | Client-managed transaction | Atomic request or installed query |
 | Migration execution | Supported | Requires administrative transport |
 | Centrality and community detection | Requires compatible GDS and named projection | Requires explicitly configured installed GSQL query |
@@ -209,7 +211,7 @@ var summary = await context.People.Query()
     .ToListAsync();
 ```
 
-Scalar columns selected together with aggregate columns define the provider-side grouping key. TigerGraph's interpreted GSQL route does not advertise these query shapes: Nodal rejects them before database transport rather than attempting an in-memory fallback. An installed TigerGraph provider extension can expose a separately verified execution path.
+Scalar columns selected together with aggregate columns define the provider-side grouping key. TigerGraph compiles these shapes through SQL-like GSQL Syntax V2 and normalizes its tabular response. Optional traversal, additional named patterns, and set operations remain explicitly unavailable on TigerGraph and fail before transport rather than being simulated in memory. Correlated existence is available only when the host opts into Nodal-generated queries and supplies an administrative transport; the provider then creates or replaces, installs, and executes a deterministic query through REST++.
 
 Graph analytics retain the same typed model while executing centrality and community algorithms on the provider:
 

@@ -31,6 +31,7 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
         QueryExtensions = options.QueryExtensions;
         QueryCompiler = new TigerGraphQueryCompiler(graphName);
         CommandExecutor = new TigerGraphCommandExecutor(httpClient, options);
+        QueryCapabilities = CreateQueryCapabilities(GraphQueryCapability.None);
         MutationExecutor = new TigerGraphMutationExecutor(httpClient, options, graphName);
         ResultMaterializer = new JsonGraphResultMaterializer();
         MigrationDialect = new TigerGraphMigrationDialect(graphName);
@@ -67,6 +68,17 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
         : this(httpClient, options, graphName)
     {
         ArgumentNullException.ThrowIfNull(administrativeTransport);
+        if (options.GeneratedQueryExtensions.Contains(TigerGraphQueryExtensionFeature.CorrelatedExistence))
+        {
+            var installedQueries = new TigerGraphInstalledQueryCatalog(graphName);
+            QueryCompiler = new TigerGraphQueryCompiler(graphName, installedQueries);
+            CommandExecutor = new TigerGraphCommandExecutor(
+                httpClient,
+                options,
+                installedQueries,
+                new TigerGraphInstalledQueryInstaller(administrativeTransport, graphName));
+            QueryCapabilities = CreateQueryCapabilities(GraphQueryCapability.CorrelatedSubquery);
+        }
         MutationExecutor = new TigerGraphMutationExecutor(
             httpClient,
             options,
@@ -114,19 +126,21 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
     }
 
     /// <inheritdoc />
-    public IGraphQueryCompiler QueryCompiler { get; }
+    public IGraphQueryCompiler QueryCompiler { get; private set; }
 
     /// <summary>Gets the explicitly configured installed-query extension manifest, when present.</summary>
     public TigerGraphQueryExtensionManifest? QueryExtensions { get; }
 
     /// <inheritdoc />
-    public IGraphCommandExecutor CommandExecutor { get; }
+    public IGraphCommandExecutor CommandExecutor { get; private set; }
 
     /// <inheritdoc />
     public IGraphResultMaterializer ResultMaterializer { get; }
 
     /// <inheritdoc />
-    public GraphQueryCapabilities QueryCapabilities { get; } = new()
+    public GraphQueryCapabilities QueryCapabilities { get; private set; }
+
+    private static GraphQueryCapabilities CreateQueryCapabilities(GraphQueryCapability extensions) => new()
     {
         ProviderName = "TigerGraph",
         TestedProviderVersion = "4.2.4 Community",
@@ -134,7 +148,8 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
             GraphQueryCapability.Distinct |
             GraphQueryCapability.SimplePath |
             GraphQueryCapability.ServerSideProjection |
-            GraphQueryCapability.Aggregation,
+            GraphQueryCapability.Aggregation |
+            extensions,
     };
 
     /// <inheritdoc />
