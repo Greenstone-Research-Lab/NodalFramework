@@ -180,15 +180,10 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
         }
 
         builder.Append(string.Join(", ", projection.Columns.Select(RenderRowColumn)))
-            .Append(" INTO nodal_rows FROM ");
-        if (query.Traversals.Count == 0)
-        {
-            builder.Append(query.NodeType).Append(':').Append(query.Alias);
-        }
-        else
-        {
-            builder.Append(query.NodeType).Append(':').Append(query.Alias);
-        }
+            .Append(" INTO nodal_rows FROM ")
+            .Append(query.NodeType)
+            .Append(':')
+            .Append(query.Alias);
 
         foreach (var traversal in query.Traversals)
         {
@@ -361,16 +356,10 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
             .Append(resultName)
             .Append(" = SELECT ")
             .Append(selectedAlias)
-            .Append(" FROM ");
-
-        if (useSyntaxV2)
-        {
-            builder.Append(query.NodeType).Append(':').Append(query.Alias);
-        }
-        else
-        {
-            builder.Append(query.NodeType).Append(':').Append(query.Alias);
-        }
+            .Append(" FROM ")
+            .Append(query.NodeType)
+            .Append(':')
+            .Append(query.Alias);
 
         foreach (var traversal in query.Traversals)
         {
