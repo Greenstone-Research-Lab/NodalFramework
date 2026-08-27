@@ -24,13 +24,6 @@ Add migrations only when this application owns graph schema changes:
 dotnet add package Nodal.Migrations --prerelease
 ```
 
-Add provider-neutral path and pattern analytics when the application needs
-similarity, communities, sequences, or temporal transitions:
-
-```bash
-dotnet add package Nodal.Analytics --prerelease
-```
-
 ## 1. Define the graph model
 
 ```csharp

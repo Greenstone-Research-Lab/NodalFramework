@@ -88,6 +88,39 @@ public sealed class GraphQuery<TNode>
             direction, 1, 1, false);
     }
 
+    /// <summary>
+    /// Traverses a relationship using caller-defined aliases for the relationship and reached node.
+    /// </summary>
+    /// <typeparam name="TRelation">The relationship payload type.</typeparam>
+    /// <typeparam name="TTarget">The reached node type.</typeparam>
+    /// <param name="relationSet">The relationship set to traverse.</param>
+    /// <param name="relationAlias">The portable alias assigned to the relationship payload.</param>
+    /// <param name="targetAlias">The portable alias assigned to the reached node.</param>
+    /// <returns>A query over the reached node type.</returns>
+    /// <example>
+    /// <code>
+    /// var orders = context.Customers.Query("customer")
+    ///     .Traverse(context.CustomerOrders, "placed", "order");
+    /// </code>
+    /// </example>
+    public GraphQuery<TTarget> Traverse<TRelation, TTarget>(
+        RelationSet<TNode, TRelation, TTarget> relationSet,
+        string relationAlias,
+        string targetAlias)
+        where TRelation : notnull
+    {
+        ArgumentNullException.ThrowIfNull(relationSet);
+        return AppendTraversal<TTarget>(
+            relationSet.Metadata.Name,
+            relationSet.TargetMetadata,
+            relationSet.Metadata.Directed ? GraphTraversalDirection.Outgoing : GraphTraversalDirection.Undirected,
+            1,
+            1,
+            false,
+            relationAlias,
+            targetAlias);
+    }
+
     /// <summary>Traverses a relationship repeatedly within inclusive depth bounds.</summary>
     public GraphQuery<TTarget> Traverse<TRelation, TTarget>(
         RelationSet<TNode, TRelation, TTarget> relationSet,
@@ -119,6 +152,74 @@ public sealed class GraphQuery<TNode>
             1,
             1,
             true);
+    }
+
+    /// <summary>
+    /// Adds another required relationship pattern while preserving the current result node as the query result.
+    /// </summary>
+    /// <typeparam name="TRelation">The relationship payload type.</typeparam>
+    /// <typeparam name="TTarget">The node type reached by the additional pattern.</typeparam>
+    /// <param name="relationSet">The relationship pattern beginning at the current result node.</param>
+    /// <param name="relationAlias">The portable alias assigned to the matched relationship.</param>
+    /// <param name="targetAlias">The portable alias assigned to the matched target node.</param>
+    /// <param name="targetPredicate">An optional predicate over the additional target node.</param>
+    /// <param name="relationPredicate">An optional predicate over the additional relationship payload.</param>
+    /// <returns>A query whose result node remains unchanged and which requires the additional pattern.</returns>
+    /// <example>
+    /// <code>
+    /// var customers = context.Customers.Query("customer")
+    ///     .AlsoMatch(context.CustomerOrders, "placed", "order", order => order.Total > 100m)
+    ///     .AlsoMatch(context.CustomerTickets, "opened", "ticket");
+    /// </code>
+    /// </example>
+    public GraphQuery<TNode> AlsoMatch<TRelation, TTarget>(
+        RelationSet<TNode, TRelation, TTarget> relationSet,
+        string relationAlias,
+        string targetAlias,
+        Expression<Func<TTarget, bool>>? targetPredicate = null,
+        Expression<Func<TRelation, bool>>? relationPredicate = null)
+        where TRelation : notnull
+    {
+        ArgumentNullException.ThrowIfNull(relationSet);
+        if (model.CycleBehavior == GraphCycleBehavior.SimplePath)
+        {
+            throw new InvalidOperationException(
+                "AlsoMatch cannot be combined with WithoutCycles because branch-wide simple-path semantics are not yet defined.");
+        }
+
+        relationAlias = GraphQueryAliases.Validate(relationAlias, nameof(relationAlias));
+        targetAlias = GraphQueryAliases.Validate(targetAlias, nameof(targetAlias));
+        EnsureAliasesAreAvailable(relationAlias, targetAlias);
+        var parameterOffset = model.Parameters.Count;
+        var targetMappings = relationSet.TargetMetadata.Properties.ToDictionary(
+            property => property.Key,
+            property => property.Value.Name);
+        var relationMappings = relationSet.Metadata.Properties.ToDictionary(
+            property => property.Key,
+            property => property.Value.Name);
+        var translatedTarget = targetPredicate is null
+            ? null
+            : GraphExpressionTranslator.Translate(targetPredicate, parameterOffset, targetMappings);
+        var translatedRelation = relationPredicate is null
+            ? null
+            : GraphExpressionTranslator.Translate(
+                relationPredicate,
+                parameterOffset + (translatedTarget?.Parameters.Count ?? 0),
+                relationMappings);
+        var pattern = new GraphTraversalStep(
+            relationSet.Metadata.Name,
+            relationSet.TargetMetadata.Name,
+            model.ResultAlias,
+            relationAlias,
+            targetAlias,
+            relationSet.Metadata.Directed ? GraphTraversalDirection.Outgoing : GraphTraversalDirection.Undirected,
+            translatedTarget?.Predicate,
+            translatedRelation?.Predicate);
+        return Copy(model with
+        {
+            Parameters = [.. model.Parameters, .. (translatedTarget?.Parameters ?? []), .. (translatedRelation?.Parameters ?? [])],
+            MatchPatterns = [.. model.EffectiveMatchPatterns, pattern],
+        });
     }
 
     /// <summary>Traverses any of several relationship types that share the same payload and target types.</summary>
@@ -234,6 +335,56 @@ public sealed class GraphQuery<TNode>
     public GraphQuery<TNode> WithoutCycles() => Copy(model with { CycleBehavior = GraphCycleBehavior.SimplePath });
 
     /// <summary>
+    /// Retains result nodes only when a related node satisfying the supplied predicates exists.
+    /// </summary>
+    /// <typeparam name="TRelation">The relationship payload type.</typeparam>
+    /// <typeparam name="TTarget">The related target node type.</typeparam>
+    /// <param name="relationSet">The relationship pattern correlated with the current result node.</param>
+    /// <param name="targetPredicate">An optional predicate over the related target node.</param>
+    /// <param name="relationPredicate">An optional predicate over the relationship payload.</param>
+    /// <returns>A new query containing a correlated exists condition.</returns>
+    /// <example>
+    /// <code>
+    /// var activeCustomers = context.Customers.Query()
+    ///     .WhereExists(context.CustomerOrders, order => order.Total > 100m);
+    /// </code>
+    /// </example>
+    public GraphQuery<TNode> WhereExists<TRelation, TTarget>(
+        RelationSet<TNode, TRelation, TTarget> relationSet,
+        Expression<Func<TTarget, bool>>? targetPredicate = null,
+        Expression<Func<TRelation, bool>>? relationPredicate = null)
+        where TRelation : notnull => AddExistencePattern(
+            relationSet,
+            targetPredicate,
+            relationPredicate,
+            negated: false);
+
+    /// <summary>
+    /// Retains result nodes only when no related node satisfies the supplied predicates.
+    /// </summary>
+    /// <typeparam name="TRelation">The relationship payload type.</typeparam>
+    /// <typeparam name="TTarget">The related target node type.</typeparam>
+    /// <param name="relationSet">The relationship pattern correlated with the current result node.</param>
+    /// <param name="targetPredicate">An optional predicate over the related target node.</param>
+    /// <param name="relationPredicate">An optional predicate over the relationship payload.</param>
+    /// <returns>A new query containing a correlated not-exists condition.</returns>
+    /// <example>
+    /// <code>
+    /// var customersWithoutRefunds = context.Customers.Query()
+    ///     .WhereNotExists(context.CustomerRefunds);
+    /// </code>
+    /// </example>
+    public GraphQuery<TNode> WhereNotExists<TRelation, TTarget>(
+        RelationSet<TNode, TRelation, TTarget> relationSet,
+        Expression<Func<TTarget, bool>>? targetPredicate = null,
+        Expression<Func<TRelation, bool>>? relationPredicate = null)
+        where TRelation : notnull => AddExistencePattern(
+            relationSet,
+            targetPredicate,
+            relationPredicate,
+            negated: true);
+
+    /// <summary>
     /// Begins a provider-native analytics operation over this node selection and a same-node relationship type.
     /// </summary>
     /// <example>
@@ -285,6 +436,27 @@ public sealed class GraphQuery<TNode>
         ArgumentNullException.ThrowIfNull(selector);
         return new GraphProjectedQuery<TNode, TResult>(this, selector.Compile());
     }
+
+    /// <summary>
+    /// Starts a provider-side scalar or aggregate result-row projection.
+    /// </summary>
+    /// <returns>A row-query builder over the current result alias.</returns>
+    /// <example>
+    /// <code>
+    /// var summary = await context.Orders.Query("order")
+    ///     .ToRows()
+    ///     .Count("orderCount")
+    ///     .Sum("totalValue", order => order.Total)
+    ///     .ToListAsync();
+    /// </code>
+    /// </example>
+    public GraphRowQuery<TNode> ToRows() => new(model, executor, propertyMappings);
+
+    /// <summary>Combines compatible node queries and removes duplicate result nodes.</summary>
+    public GraphSetQuery<TNode> Union(GraphQuery<TNode> other) => CreateSetOperation(other, GraphSetOperationKind.Union);
+
+    /// <summary>Combines compatible node queries while preserving duplicate result nodes.</summary>
+    public GraphSetQuery<TNode> UnionAll(GraphQuery<TNode> other) => CreateSetOperation(other, GraphSetOperationKind.UnionAll);
 
     /// <summary>
     /// Produces the immutable model consumed by a database provider.
@@ -396,21 +568,85 @@ public sealed class GraphQuery<TNode>
 
     private GraphQuery<TNode> Copy(GraphQueryModel next) => new(next, executor, propertyMappings);
 
+    private GraphSetQuery<TNode> CreateSetOperation(GraphQuery<TNode> other, GraphSetOperationKind kind)
+    {
+        ArgumentNullException.ThrowIfNull(other);
+        if (!ReferenceEquals(executor, other.executor) || model.ResultNodeType != other.model.ResultNodeType || model.ResultAlias != other.model.ResultAlias ||
+            model.Projection != GraphQueryProjection.Node || other.model.Projection != GraphQueryProjection.Node)
+        {
+            throw new ArgumentException("Set-operation operands must be compatible node queries from the same context and alias.", nameof(other));
+        }
+        var rebasedOther = Rebase(other.model, model.Parameters.Count);
+        var outer = new GraphQueryModel(model.ResultNodeType, model.ResultAlias, null, [], null, []);
+        return new GraphSetQuery<TNode>(new GraphSetOperation(kind, model, rebasedOther), executor, propertyMappings, outer);
+    }
+
+    private GraphQuery<TNode> AddExistencePattern<TRelation, TTarget>(
+        RelationSet<TNode, TRelation, TTarget> relationSet,
+        Expression<Func<TTarget, bool>>? targetPredicate,
+        Expression<Func<TRelation, bool>>? relationPredicate,
+        bool negated)
+        where TRelation : notnull
+    {
+        ArgumentNullException.ThrowIfNull(relationSet);
+        var parameterOffset = model.Parameters.Count;
+        var targetMappings = relationSet.TargetMetadata.Properties.ToDictionary(
+            property => property.Key,
+            property => property.Value.Name);
+        var relationMappings = relationSet.Metadata.Properties.ToDictionary(
+            property => property.Key,
+            property => property.Value.Name);
+        var translatedTarget = targetPredicate is null
+            ? null
+            : GraphExpressionTranslator.Translate(targetPredicate, parameterOffset, targetMappings);
+        var translatedRelation = relationPredicate is null
+            ? null
+            : GraphExpressionTranslator.Translate(
+                relationPredicate,
+                parameterOffset + (translatedTarget?.Parameters.Count ?? 0),
+                relationMappings);
+        var index = model.EffectiveExistencePatterns.Count + 1;
+        var pattern = new GraphExistencePattern(
+            relationSet.Metadata.Name,
+            relationSet.TargetMetadata.Name,
+            model.ResultAlias,
+            $"existsRelation{index}",
+            $"existsNode{index}",
+            relationSet.Metadata.Directed
+                ? GraphTraversalDirection.Outgoing
+                : GraphTraversalDirection.Undirected,
+            translatedTarget?.Predicate,
+            translatedRelation?.Predicate,
+            negated);
+        return Copy(model with
+        {
+            Parameters = [.. model.Parameters, .. (translatedTarget?.Parameters ?? []), .. (translatedRelation?.Parameters ?? [])],
+            ExistencePatterns = [.. model.EffectiveExistencePatterns, pattern],
+        });
+    }
+
     private GraphQuery<TTarget> AppendTraversal<TTarget>(
         string relationType,
         GraphNodeMetadata targetMetadata,
         GraphTraversalDirection direction,
         int minDepth,
         int maxDepth,
-        bool optional)
+        bool optional,
+        string? relationAlias = null,
+        string? targetAlias = null)
     {
         var index = model.Traversals.Count + 1;
+        relationAlias ??= $"relation{index}";
+        targetAlias ??= $"node{index}";
+        relationAlias = GraphQueryAliases.Validate(relationAlias, nameof(relationAlias));
+        targetAlias = GraphQueryAliases.Validate(targetAlias, nameof(targetAlias));
+        EnsureAliasesAreAvailable(relationAlias, targetAlias);
         var step = new GraphTraversalStep(
             relationType,
             targetMetadata.Name,
             model.ResultAlias,
-            $"relation{index}",
-            $"node{index}",
+            relationAlias,
+            targetAlias,
             direction,
             null,
             null,
@@ -424,6 +660,34 @@ public sealed class GraphQuery<TNode>
             model with { Traversals = [.. model.Traversals, step] },
             executor,
             mappings);
+    }
+
+    private void EnsureAliasesAreAvailable(string relationAlias, string targetAlias)
+    {
+        if (string.Equals(relationAlias, targetAlias, StringComparison.Ordinal))
+        {
+            throw new ArgumentException("Relationship and target aliases must be distinct.", nameof(targetAlias));
+        }
+
+        var aliases = new HashSet<string>(StringComparer.Ordinal)
+        {
+            model.Alias,
+        };
+        foreach (var step in model.Traversals.Concat(model.EffectiveMatchPatterns))
+        {
+            aliases.Add(step.RelationAlias);
+            aliases.Add(step.TargetAlias);
+        }
+        foreach (var pattern in model.EffectiveExistencePatterns)
+        {
+            aliases.Add(pattern.RelationAlias);
+            aliases.Add(pattern.TargetAlias);
+        }
+
+        if (aliases.Contains(relationAlias) || aliases.Contains(targetAlias))
+        {
+            throw new ArgumentException("Graph query aliases must be unique within one query pattern.", nameof(relationAlias));
+        }
     }
 
     private static GraphPredicate Combine(GraphPredicate? current, GraphPredicate next) =>
@@ -453,6 +717,28 @@ public sealed class GraphQuery<TNode>
         {
             Predicate = source.Predicate is null ? null : Rename(source.Predicate, names),
             Parameters = source.Parameters.Select(parameter => parameter with { Name = names[parameter.Name] }).ToArray(),
+            Traversals = source.Traversals.Select(traversal => traversal with
+            {
+                Predicate = traversal.Predicate is null ? null : Rename(traversal.Predicate, names),
+                RelationPredicate = traversal.RelationPredicate is null ? null : Rename(traversal.RelationPredicate, names),
+            }).ToArray(),
+            ExistencePatterns = source.EffectiveExistencePatterns.Select(pattern => pattern with
+            {
+                TargetPredicate = pattern.TargetPredicate is null ? null : Rename(pattern.TargetPredicate, names),
+                RelationPredicate = pattern.RelationPredicate is null ? null : Rename(pattern.RelationPredicate, names),
+            }).ToArray(),
+            MatchPatterns = source.EffectiveMatchPatterns.Select(pattern => pattern with
+            {
+                Predicate = pattern.Predicate is null ? null : Rename(pattern.Predicate, names),
+                RelationPredicate = pattern.RelationPredicate is null ? null : Rename(pattern.RelationPredicate, names),
+            }).ToArray(),
+            RowProjection = source.RowProjection is null
+                ? null
+                : source.RowProjection with
+                {
+                    HavingPredicates = source.RowProjection.EffectiveHavingPredicates.Select(predicate =>
+                        predicate with { ParameterName = names[predicate.ParameterName] }).ToArray(),
+                },
         };
     }
 

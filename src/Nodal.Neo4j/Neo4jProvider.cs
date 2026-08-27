@@ -4,6 +4,7 @@ using Nodal.Core.Execution;
 using Nodal.Core.Migrations;
 using Nodal.Core.Mutations;
 using Nodal.Core.Providers;
+using Nodal.Core.Query;
 
 namespace Nodal.Neo4j;
 
@@ -20,6 +21,7 @@ public sealed class Neo4jProvider :
     IGraphAnalyticsProvider,
     IGraphAnalyticsRuntimeProvider,
     IGraphSchemaIntrospectionProvider,
+    IGraphQueryCapabilityProvider,
     IAsyncDisposable
 {
     private readonly IDriver driver;
@@ -105,6 +107,21 @@ public sealed class Neo4jProvider :
 
     /// <inheritdoc />
     public IGraphResultMaterializer ResultMaterializer { get; }
+
+    /// <inheritdoc />
+    public GraphQueryCapabilities QueryCapabilities { get; } = new()
+    {
+        ProviderName = "Neo4j",
+        TestedProviderVersion = "5.26 Community",
+        Features = GraphQueryCapability.OptionalTraversal |
+            GraphQueryCapability.VariableLengthTraversal |
+            GraphQueryCapability.SimplePath |
+            GraphQueryCapability.CorrelatedSubquery |
+            GraphQueryCapability.MultiplePatterns |
+            GraphQueryCapability.ServerSideProjection |
+            GraphQueryCapability.Aggregation |
+            GraphQueryCapability.SetOperations,
+    };
 
     /// <inheritdoc />
     public IGraphAnalyticsCompiler AnalyticsCompiler { get; }

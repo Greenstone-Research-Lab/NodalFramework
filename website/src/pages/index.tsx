@@ -62,17 +62,6 @@ export default function Home() {
           <div><small>FIRST-CLASS PROVIDERS</small><h2>Cypher and GSQL behind the same domain model.</h2></div>
           <div className={styles.providerNames}><strong>Neo4j</strong><strong>TigerGraph</strong></div>
         </section>
-        <section className={styles.analyticsShell}>
-          <div className={styles.analyticsVisual}>
-            <img src="/img/journal/pattern-recognition-analytics-shell.png" alt="Provider graph streams entering a shared pattern recognition analytics shell" />
-          </div>
-          <div className={styles.analyticsCopy}>
-            <small>EXPERIMENTAL · P3</small>
-            <h2>Pattern intelligence above every provider.</h2>
-            <p><code>Nodal.Analytics</code> is an optional analytics shell over canonical graph paths. It combines exact bitset similarity, sparse candidate search, communities, and temporal transitions while preserving provider-native acceleration.</p>
-            <Link to="/docs/concepts/pattern-recognition-shell">Explore the analytics shell →</Link>
-          </div>
-        </section>
       </main>
     </Layout>
   );

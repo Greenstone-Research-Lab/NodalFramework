@@ -17,8 +17,7 @@ Nodal Framework is a provider-based .NET graph data access prototype. It keeps t
 | `Nodal.Core` | Provider-neutral model, LINQ query surface, tracking, and unit of work |
 | `Nodal.Migrations` | Portable graph schema migration contracts and planning |
 | `Nodal.Neo4j` | Neo4j/Cypher provider using the official pooled Bolt driver |
-| `Nodal.Analytics` | Provider-neutral analytics shell for path similarity and pattern discovery |
-| `Nodal.PatternRecognition` | Deprecated alpha package; use `Nodal.Analytics` for new projects |
+| `Nodal.Analytics` | Provider-neutral analytics contracts and capability integration |
 | `Nodal.TigerGraph` | TigerGraph/GSQL provider using REST++ and an optional administrative transport |
 | `Nodal.Tool` | .NET global tool for deterministic migration snapshots, diffs, plans, and validation |
 
@@ -49,11 +48,10 @@ destructive approval, and optional exclusive provider locking. CLI `apply` and
 variables; connection credentials remain inside that deployment host and never
 enter arguments, plans, bundles, or command output.
 
-`Nodal.Analytics` is the optional analytics shell above providers. The former
-`Nodal.PatternRecognition` package is retained as a deprecated alpha transition
-package; use `Nodal.Analytics` for new projects.
-Its first executable alpha slice includes exact allocation-free bitset similarity;
-community, sequence, and temporal-transition surfaces remain experimental roadmap work.
+`Nodal.Analytics` is an optional public contract layer above providers. It keeps
+provider-executed analytics integration and capability declarations separate from
+the query and migration foundations. Advanced analytics implementations are not
+part of the open-source package contract.
 
 Pin all packages to the same version for reproducible builds, for example
 `0.1.0-alpha.2`. The complete console, worker, and ASP.NET Core setup is in the
@@ -68,6 +66,7 @@ Nodal distinguishes vendor client compatibility from versions verified by this r
 | Parameterized queries and fixed traversals | Supported | Supported |
 | Variable-depth traversal | Supported | GSQL Syntax V2 with documented restrictions |
 | Optional match | Supported | Not supported |
+| Correlated existence, additional patterns, row aggregates, and set operations | Supported | Not supported by interpreted GSQL; use an installed provider extension |
 | Transaction boundary | Client-managed transaction | Atomic request or installed query |
 | Migration execution | Supported | Requires administrative transport |
 | Centrality and community detection | Requires compatible GDS and named projection | Requires explicitly configured installed GSQL query |
@@ -188,6 +187,26 @@ var person = await context.People.Match(person => person.Id == "person-42").Sing
 ```
 
 `FirstAsync`, `FirstOrDefaultAsync`, `SingleAsync`, `SingleOrDefaultAsync`, `AnyAsync`, and `CountAsync` apply bounded or aggregate execution. `CountAsync` uses a server-side aggregate when paging has not changed LINQ count semantics. `AsAsyncEnumerable` provides cancellation-aware asynchronous consumption; HTTP providers necessarily receive one response payload, while the API keeps consumer code provider-neutral.
+
+Neo4j additionally supports correlated existence checks, independently named required patterns, provider-side row aggregates, and compatible node-query unions. Each value remains parameterized; the second union operand is automatically rebased so parameter names cannot collide:
+
+```csharp
+var selected = await context.People.Match(person => person.Active)
+    .Union(context.People.Match(person => person.Name.StartsWith("Ada")))
+    .OrderBy(person => person.Name)
+    .Take(50)
+    .ToListAsync();
+
+var summary = await context.People.Query()
+    .ToRows()
+    .Select("name", person => person.Name)
+    .Count("people")
+    .Having("people", GraphComparisonOperator.GreaterThan, 1)
+    .OrderByDescending("people")
+    .ToListAsync();
+```
+
+Scalar columns selected together with aggregate columns define the provider-side grouping key. TigerGraph's interpreted GSQL route does not advertise these query shapes: Nodal rejects them before database transport rather than attempting an in-memory fallback. An installed TigerGraph provider extension can expose a separately verified execution path.
 
 Graph analytics retain the same typed model while executing centrality and community algorithms on the provider:
 
@@ -440,6 +459,8 @@ The package gate produces all six `.nupkg` and `.snupkg` artifacts, then inspect
 ## Publishing
 
 Alpha packages are published only after a pull request promotes `developer` to `staging`. The `Publish Alpha Packages` workflow assigns one immutable `0.1.0-alpha.<run>` version to all six packages, runs the complete QA gate, exchanges GitHub's OIDC identity for a short-lived NuGet credential, and publishes `Nodal.Core` before its dependent packages. No long-lived NuGet API key is stored by the repository.
+
+After publication, the same workflow runs a clean-room World Food Delivery consumer smoke test. It copies a small CSV order dataset into a fresh temporary console application, restores only the immutable packages from NuGet.org, imports customers, restaurants, foods, orders, couriers, and relationship payloads in one bounded unit of work, and validates migration planning plus Neo4j and TigerGraph query boundaries. The consumer project contains no `ProjectReference`; its resolved package identities are retained as a workflow artifact. This verifies the experience an external application receives, rather than merely rebuilding this repository.
 
 The GitHub `staging` environment must define `NUGET_USER` as the NuGet profile name. NuGet Trusted Publishing must match repository owner `Greenstone-Research-Lab`, repository `NodalFramework`, workflow file `publish-alpha.yml`, and environment `staging`. Publishing deliberately does not use `--skip-duplicate`, ensuring package conflicts and reserved identifiers fail visibly.
 

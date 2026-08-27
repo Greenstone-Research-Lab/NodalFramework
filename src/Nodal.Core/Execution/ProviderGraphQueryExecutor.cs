@@ -12,6 +12,7 @@ internal sealed class ProviderGraphQueryExecutor(
         GraphQueryModel query,
         CancellationToken cancellationToken)
     {
+        ValidateCapabilities(query);
         var command = provider.QueryCompiler.Compile(query);
         var result = await provider.CommandExecutor.ExecuteAsync(command, cancellationToken).ConfigureAwait(false);
         var materialized = provider.ResultMaterializer.Materialize<TNode>(result);
@@ -28,6 +29,7 @@ internal sealed class ProviderGraphQueryExecutor(
         CancellationToken cancellationToken)
         where TRelation : notnull
     {
+        ValidateCapabilities(query);
         var command = provider.QueryCompiler.Compile(query);
         var result = await provider.CommandExecutor.ExecuteAsync(command, cancellationToken).ConfigureAwait(false);
         var paths = provider.ResultMaterializer.MaterializePaths<TSource, TRelation, TTarget>(result);
@@ -56,12 +58,24 @@ internal sealed class ProviderGraphQueryExecutor(
         GraphQueryModel query,
         CancellationToken cancellationToken)
     {
+        ValidateCapabilities(query);
         var command = provider.QueryCompiler.Compile(query);
         return await provider.CommandExecutor.ExecuteAsync(command, cancellationToken).ConfigureAwait(false);
     }
 
+    public async ValueTask<IReadOnlyList<GraphResultRow>> ExecuteRowsAsync(
+        GraphQueryModel query,
+        CancellationToken cancellationToken = default)
+    {
+        ValidateCapabilities(query);
+        var command = provider.QueryCompiler.Compile(query);
+        var result = await provider.CommandExecutor.ExecuteAsync(command, cancellationToken).ConfigureAwait(false);
+        return result.ResultRows;
+    }
+
     public async ValueTask<int> ExecuteCountAsync(GraphQueryModel query, CancellationToken cancellationToken)
     {
+        ValidateCapabilities(query);
         var command = provider.QueryCompiler.Compile(query);
         var result = await provider.CommandExecutor.ExecuteAsync(command, cancellationToken).ConfigureAwait(false);
         if (!result.ScalarValues.TryGetValue("nodal_count", out var value))
@@ -70,6 +84,14 @@ internal sealed class ProviderGraphQueryExecutor(
         }
 
         return Convert.ToInt32(value, System.Globalization.CultureInfo.InvariantCulture);
+    }
+
+    private void ValidateCapabilities(GraphQueryModel query)
+    {
+        if (provider is IGraphQueryCapabilityProvider capabilityProvider)
+        {
+            GraphQueryPreflight.Validate(query, capabilityProvider.QueryCapabilities);
+        }
     }
 
     public async ValueTask<IReadOnlyList<GraphAnalyticsRecord<TNode>>> ExecuteAnalyticsAsync<TNode>(
@@ -196,6 +218,15 @@ public interface IGraphQueryExecutor
     ValueTask<GraphQueryResult> ExecuteSubgraphAsync(
         GraphQueryModel query,
         CancellationToken cancellationToken = default);
+
+    /// <summary>Executes a provider-side scalar or aggregate row projection.</summary>
+    async ValueTask<IReadOnlyList<GraphResultRow>> ExecuteRowsAsync(
+        GraphQueryModel query,
+        CancellationToken cancellationToken = default)
+    {
+        var result = await ExecuteSubgraphAsync(query, cancellationToken).ConfigureAwait(false);
+        return result.ResultRows;
+    }
 
     /// <summary>Executes a server-side count aggregate.</summary>
     ValueTask<int> ExecuteCountAsync(GraphQueryModel query, CancellationToken cancellationToken = default);

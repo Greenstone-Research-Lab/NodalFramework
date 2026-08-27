@@ -1,5 +1,4 @@
 using System.Text.Json;
-using Nodal.Analytics.Similarity;
 using Nodal.Core.Analytics;
 using Nodal.Core.Providers;
 using Nodal.Tool;
@@ -19,18 +18,6 @@ public sealed class DependencyDirectionTests
         Assert.DoesNotContain("Nodal.Neo4j", references);
         Assert.DoesNotContain("Nodal.TigerGraph", references);
         Assert.DoesNotContain("Nodal.Migrations", references);
-    }
-
-    [Fact]
-    public void PatternRecognitionIsAProviderIndependentAnalyticsShell()
-    {
-        var references = typeof(PatternBitsetSimilarity).Assembly
-            .GetReferencedAssemblies()
-            .Select(reference => reference.Name)
-            .ToArray();
-
-        Assert.DoesNotContain("Nodal.Neo4j", references);
-        Assert.DoesNotContain("Nodal.TigerGraph", references);
     }
 
     [Fact]

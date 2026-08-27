@@ -58,6 +58,19 @@ public sealed class GraphSet<TNode>
         propertyMappings);
 
     /// <summary>
+    /// Starts an unfiltered graph query with an explicit alias for its root node.
+    /// </summary>
+    /// <param name="alias">A portable alias used by subsequent relationship patterns and projections.</param>
+    /// <returns>A query rooted at the mapped node type and the requested alias.</returns>
+    /// <example>
+    /// <code>var customers = context.Customers.Query("customer");</code>
+    /// </example>
+    public GraphQuery<TNode> Query(string alias) => new(
+        new GraphQueryModel(nodeType, GraphQueryAliases.Validate(alias, nameof(alias)), null, [], null, []),
+        executor,
+        propertyMappings);
+
+    /// <summary>
     /// Starts a graph query with a strongly typed predicate.
     /// </summary>
     /// <param name="predicate">The initial node predicate.</param>

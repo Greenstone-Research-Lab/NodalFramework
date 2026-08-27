@@ -6,6 +6,85 @@ namespace Nodal.TigerGraph.Tests;
 public sealed class TigerGraphQueryCompilerTests
 {
     [Fact]
+    public void CompileRejectsCorrelatedExistsPatternInsteadOfIgnoringIt()
+    {
+        var model = new GraphQueryModel(
+            "Person",
+            "person",
+            null,
+            [],
+            null,
+            [],
+            ExistencePatterns:
+            [
+                new GraphExistencePattern(
+                    "KNOWS",
+                    "Person",
+                    "person",
+                    "knows",
+                    "friend",
+                    GraphTraversalDirection.Outgoing,
+                    null,
+                    null),
+            ]);
+
+        var exception = Assert.Throws<NotSupportedException>(() =>
+            new TigerGraphQueryCompiler("Social").Compile(model));
+
+        Assert.Contains("correlated-subquery", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompileRejectsMultiplePatternInsteadOfIgnoringIt()
+    {
+        var model = new GraphQueryModel(
+            "Person",
+            "person",
+            null,
+            [],
+            null,
+            [],
+            MatchPatterns:
+            [
+                new GraphTraversalStep(
+                    "KNOWS",
+                    "Person",
+                    "person",
+                    "knows",
+                    "friend",
+                    GraphTraversalDirection.Outgoing,
+                    null),
+            ]);
+
+        var exception = Assert.Throws<NotSupportedException>(() =>
+            new TigerGraphQueryCompiler("Social").Compile(model));
+
+        Assert.Contains("multiple-pattern", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void CompileRejectsServerSideRowProjectionInsteadOfIgnoringIt()
+    {
+        var model = new GraphQueryModel(
+            "Person",
+            "person",
+            null,
+            [],
+            null,
+            [],
+            GraphQueryProjection.Row,
+            RowProjection: new GraphRowProjection(
+            [
+                new GraphRowColumn("count", GraphRowColumnKind.Count, "person"),
+            ]));
+
+        var exception = Assert.Throws<NotSupportedException>(() =>
+            new TigerGraphQueryCompiler("Social").Compile(model));
+
+        Assert.Contains("row-projection", exception.Message, StringComparison.Ordinal);
+    }
+
+    [Fact]
     public void CompileProducesParameterizedInterpretedGsql()
     {
         const string personId = "person-42";
@@ -293,6 +372,12 @@ public sealed class TigerGraphQueryCompilerTests
                 "Person", "node", null,
                 [new GraphQueryParameter("p0", new Version(1, 0), typeof(Version))],
                 null, [])));
+
+        var operand = new GraphQueryModel("Person", "person", null, [], null, []);
+        Assert.Throws<NotSupportedException>(() => new TigerGraphQueryCompiler("SocialGraph").Compile(
+            new GraphQueryModel(
+                "Person", "person", null, [], null, [],
+                SetOperation: new GraphSetOperation(GraphSetOperationKind.Union, operand, operand))));
 
         static GraphQueryModel ModelWithTraversal(
             int minDepth,

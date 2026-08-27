@@ -181,6 +181,129 @@ public sealed class Neo4jQueryCompilerTests
     }
 
     [Fact]
+    public void CompileRendersCorrelatedExistsAndNotExistsPatterns()
+    {
+        var model = new GraphQueryModel(
+            "Customer",
+            "customer",
+            null,
+            [
+                new GraphQueryParameter("p0", 100m, typeof(decimal)),
+                new GraphQueryParameter("p1", "void", typeof(string)),
+            ],
+            null,
+            [],
+            ExistencePatterns:
+            [
+                new GraphExistencePattern(
+                    "PLACED",
+                    "Order",
+                    "customer",
+                    "orderRelation",
+                    "order",
+                    GraphTraversalDirection.Outgoing,
+                    new GraphComparisonPredicate("total", GraphComparisonOperator.GreaterThan, "p0"),
+                    null),
+                new GraphExistencePattern(
+                    "REFUNDED",
+                    "Refund",
+                    "customer",
+                    "refundRelation",
+                    "refund",
+                    GraphTraversalDirection.Outgoing,
+                    new GraphComparisonPredicate("reason", GraphComparisonOperator.Equal, "p1"),
+                    null,
+                    Negated: true),
+            ]);
+
+        var command = new Neo4jQueryCompiler().Compile(model);
+
+        Assert.Equal(
+            "MATCH (`customer`:`Customer`) WHERE EXISTS { MATCH (`customer`)-[`orderRelation`:`PLACED`]->(`order`:`Order`) WHERE `order`.`total` > $p0 } AND NOT EXISTS { MATCH (`customer`)-[`refundRelation`:`REFUNDED`]->(`refund`:`Refund`) WHERE `refund`.`reason` = $p1 } RETURN `customer`",
+            command.Text);
+    }
+
+    [Fact]
+    public void CompileRendersAdditionalRequiredPatternWithNamedBindings()
+    {
+        var model = new GraphQueryModel(
+            "Customer",
+            "customer",
+            null,
+            [new GraphQueryParameter("p0", 100m, typeof(decimal))],
+            null,
+            [],
+            MatchPatterns:
+            [
+                new GraphTraversalStep(
+                    "PLACED",
+                    "Order",
+                    "customer",
+                    "placed",
+                    "order",
+                    GraphTraversalDirection.Outgoing,
+                    new GraphComparisonPredicate("total", GraphComparisonOperator.GreaterThan, "p0")),
+            ]);
+
+        var command = new Neo4jQueryCompiler().Compile(model);
+
+        Assert.Equal(
+            "MATCH (`customer`:`Customer`) MATCH (`customer`)-[`placed`:`PLACED`]->(`order`:`Order`) WHERE `order`.`total` > $p0 RETURN `customer`",
+            command.Text);
+    }
+
+    [Fact]
+    public void CompileRendersServerSideRowProjectionAndAggregates()
+    {
+        var model = new GraphQueryModel(
+            "Order",
+            "order",
+            null,
+            [],
+            10,
+            [],
+            GraphQueryProjection.Row,
+            RowProjection: new GraphRowProjection(
+            [
+                new GraphRowColumn("customerId", GraphRowColumnKind.Property, "order", "customer_id"),
+                new GraphRowColumn("orderCount", GraphRowColumnKind.Count, "order", Distinct: true),
+                new GraphRowColumn("totalValue", GraphRowColumnKind.Sum, "order", "total"),
+                new GraphRowColumn("averageValue", GraphRowColumnKind.Average, "order", "total"),
+                new GraphRowColumn("firstOrder", GraphRowColumnKind.Minimum, "order", "ordered_at"),
+                new GraphRowColumn("lastOrder", GraphRowColumnKind.Maximum, "order", "ordered_at"),
+            ]));
+
+        var command = new Neo4jQueryCompiler().Compile(model);
+
+        Assert.Equal(
+            "MATCH (`order`:`Order`) RETURN `order`.`customer_id` AS `customerId`, count(DISTINCT `order`) AS `orderCount`, sum(`order`.`total`) AS `totalValue`, avg(`order`.`total`) AS `averageValue`, min(`order`.`ordered_at`) AS `firstOrder`, max(`order`.`ordered_at`) AS `lastOrder` LIMIT 10",
+            command.Text);
+    }
+
+    [Fact]
+    public void CompileRendersAggregateHavingAndProjectedRowOrdering()
+    {
+        var model = new GraphQueryModel(
+            "Order",
+            "order",
+            null,
+            [new GraphQueryParameter("p0", 10, typeof(int))],
+            5,
+            [],
+            GraphQueryProjection.Row,
+            RowProjection: new GraphRowProjection(
+                [new GraphRowColumn("orderCount", GraphRowColumnKind.Count, "order")],
+                [new GraphRowOrdering("orderCount", GraphSortDirection.Descending)],
+                [new GraphRowPredicate("orderCount", GraphComparisonOperator.GreaterThanOrEqual, "p0")]));
+
+        var command = new Neo4jQueryCompiler().Compile(model);
+
+        Assert.Equal(
+            "MATCH (`order`:`Order`) WITH count(`order`) AS `orderCount` WHERE `orderCount` >= $p0 RETURN `orderCount` AS `orderCount` ORDER BY `orderCount` DESC LIMIT 5",
+            command.Text);
+    }
+
+    [Fact]
     public void CompileRendersEverySupportedPredicateVariantAcrossNodeAndRelationScopes()
     {
         GraphPredicate predicate = new GraphLogicalPredicate(
@@ -247,6 +370,43 @@ public sealed class Neo4jQueryCompilerTests
 
         Assert.Throws<NotSupportedException>(() => new Neo4jQueryCompiler().Compile(optionalSimple));
         Assert.Throws<ArgumentOutOfRangeException>(() => new Neo4jQueryCompiler().Compile(invalidDepth));
+    }
+
+    [Fact]
+    public void CompileRendersUnionWithRebasedParametersAndGlobalPaging()
+    {
+        var left = new GraphQueryModel(
+            "Person", "person", new GraphComparisonPredicate("Age", GraphComparisonOperator.GreaterThanOrEqual, "p0"),
+            [new GraphQueryParameter("p0", 18, typeof(int))], null, []);
+        var right = new GraphQueryModel(
+            "Person", "person", new GraphComparisonPredicate("Name", GraphComparisonOperator.Equal, "p1"),
+            [new GraphQueryParameter("p1", "Ada", typeof(string))], null, []);
+        var model = new GraphQueryModel(
+            "Person", "person", null, [], 10, [],
+            Offset: 5,
+            Orderings: [new GraphOrdering("Name", "person", GraphSortDirection.Ascending)],
+            SetOperation: new GraphSetOperation(GraphSetOperationKind.Union, left, right));
+
+        var command = new Neo4jQueryCompiler().Compile(model);
+
+        Assert.Equal(
+            "CALL { MATCH (`person`:`Person`) WHERE `person`.`Age` >= $p0 RETURN `person` UNION MATCH (`person`:`Person`) WHERE `person`.`Name` = $p1 RETURN `person` } RETURN `person` ORDER BY `person`.`Name` ASC SKIP 5 LIMIT 10",
+            command.Text);
+        Assert.Equal(18, command.Parameters["p0"]);
+        Assert.Equal("Ada", command.Parameters["p1"]);
+    }
+
+    [Fact]
+    public void CompileRendersUnionAll()
+    {
+        var operand = new GraphQueryModel("Person", "person", null, [], null, []);
+        var model = new GraphQueryModel(
+            "Person", "person", null, [], null, [],
+            SetOperation: new GraphSetOperation(GraphSetOperationKind.UnionAll, operand, operand));
+
+        var command = new Neo4jQueryCompiler().Compile(model);
+
+        Assert.Contains(" UNION ALL ", command.Text, StringComparison.Ordinal);
     }
 
     [Fact]

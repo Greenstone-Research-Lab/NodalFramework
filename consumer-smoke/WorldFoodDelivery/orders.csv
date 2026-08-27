@@ -1,0 +1,5 @@
+OrderId,CustomerId,CustomerName,RestaurantId,RestaurantName,District,FoodId,FoodName,Category,Kitchen,UnitPrice,Quantity,CourierId,VehicleType
+order-001,customer-ada,Ada Lovelace,restaurant-asian,Tallinn Asian Kitchen,Kesklinn,food-ramen,Spicy Ramen,Noodles,Asian,12.50,1,courier-liis,Bicycle
+order-001,customer-ada,Ada Lovelace,restaurant-asian,Tallinn Asian Kitchen,Kesklinn,food-gyoza,Vegetable Gyoza,Starters,Asian,6.00,2,courier-liis,Bicycle
+order-002,customer-alan,Alan Turing,restaurant-italian,Little Napoli,Lasnamae,food-pasta,Truffle Pasta,Pasta,Italian,15.00,1,courier-martin,Scooter
+order-003,customer-ada,Ada Lovelace,restaurant-asian,Tallinn Asian Kitchen,Kesklinn,food-sushi,Salmon Sushi,Sushi,Asian,14.00,1,courier-liis,Bicycle

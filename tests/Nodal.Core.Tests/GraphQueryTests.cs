@@ -42,6 +42,73 @@ public sealed class GraphQueryTests
     }
 
     [Fact]
+    public void RowProjectionUsesMappedPropertiesAndAggregateColumns()
+    {
+        var model = new GraphSet<Person>().Query()
+            .ToRows()
+            .Select("name", person => person.Name)
+            .Count("personCount", distinct: true)
+            .Average("averageScore", person => person.Score)
+            .ToQueryModel();
+
+        Assert.Equal(GraphQueryProjection.Row, model.Projection);
+        Assert.Collection(
+            model.RowProjection!.Columns,
+            name => Assert.Equal(("name", GraphRowColumnKind.Property, "Name"),
+                (name.Name, name.Kind, name.PropertyName)),
+            count => Assert.Equal(("personCount", GraphRowColumnKind.Count, true),
+                (count.Name, count.Kind, count.Distinct)),
+            average => Assert.Equal(("averageScore", GraphRowColumnKind.Average, "Score"),
+                (average.Name, average.Kind, average.PropertyName)));
+        Assert.Throws<ArgumentException>(() => new GraphSet<Person>().Query().ToRows()
+            .Count("count")
+            .Count("count"));
+    }
+
+    [Fact]
+    public void RowProjectionSupportsAggregateHavingAndOrdering()
+    {
+        var model = new GraphSet<Person>().Query().ToRows()
+            .Count("personCount")
+            .Having("personCount", GraphComparisonOperator.GreaterThanOrEqual, 10)
+            .OrderByDescending("personCount")
+            .ToQueryModel();
+
+        Assert.Equal("p0", Assert.Single(model.Parameters).Name);
+        Assert.Equal(10, model.Parameters[0].Value);
+        Assert.Equal("personCount", Assert.Single(model.RowProjection!.EffectiveHavingPredicates).ColumnName);
+        Assert.Equal(GraphSortDirection.Descending, Assert.Single(model.RowProjection.EffectiveOrderings).Direction);
+        Assert.Throws<InvalidOperationException>(() => new GraphSet<Person>().Query().ToRows()
+            .Select("name", person => person.Name)
+            .Having("name", GraphComparisonOperator.Equal, "Ada"));
+    }
+
+    [Fact]
+    public void RowProjectionSupportsEveryAggregateAndValidatesItsFluentSurface()
+    {
+        var model = new GraphSet<Person>().Query().ToRows()
+            .Sum("scoreSum", person => person.Score)
+            .Min("minimumAge", person => person.Age)
+            .Max("maximumAge", person => person.Age)
+            .OrderBy("scoreSum")
+            .ThenByDescending("maximumAge")
+            .Take(3)
+            .ToQueryModel();
+
+        Assert.Equal(3, model.Limit);
+        Assert.Equal(
+            [GraphRowColumnKind.Sum, GraphRowColumnKind.Minimum, GraphRowColumnKind.Maximum],
+            model.RowProjection!.Columns.Select(column => column.Kind));
+        Assert.Collection(model.RowProjection.EffectiveOrderings,
+            ordering => Assert.Equal(GraphSortDirection.Ascending, ordering.Direction),
+            ordering => Assert.Equal(GraphSortDirection.Descending, ordering.Direction));
+        Assert.Throws<InvalidOperationException>(() => new GraphSet<Person>().Query().ToRows().ToQueryModel());
+        Assert.Throws<InvalidOperationException>(() => new GraphSet<Person>().Query().ToRows().ThenBy("missing"));
+        Assert.Throws<ArgumentException>(() => new GraphSet<Person>().Query().ToRows().Count("count").OrderBy("missing"));
+        Assert.Throws<ArgumentOutOfRangeException>(() => new GraphSet<Person>().Query().ToRows().Count("count").Take(0));
+    }
+
+    [Fact]
     public void OrElseAndReversedComparisonsAreTranslatedCorrectly()
     {
         var query = new GraphSet<Person>().Match(person =>
@@ -141,6 +208,66 @@ public sealed class GraphQueryTests
         Assert.Throws<ArgumentOutOfRangeException>(() => query.Skip(-1));
         Assert.Throws<InvalidOperationException>(() => query.ThenBy(person => person.Name));
         Assert.Throws<NotSupportedException>(() => query.OrderBy(person => person.Name.Length));
+    }
+
+    [Fact]
+    public void UnionBuildsCompatibleSetOperationAndRebasesSecondOperandParameters()
+    {
+        var first = new GraphSet<Person>().Match(person => person.Age >= 18);
+        var second = new GraphSet<Person>().Match(person => person.Name == "Ada");
+
+        var model = first.Union(second)
+            .OrderBy(person => person.Name)
+            .ThenByDescending(person => person.Age)
+            .Skip(5)
+            .Take(10)
+            .ToQueryModel();
+
+        var operation = Assert.IsType<GraphSetOperation>(model.SetOperation);
+        Assert.Equal(GraphSetOperationKind.Union, operation.Kind);
+        Assert.Equal("p0", Assert.Single(operation.Left.Parameters).Name);
+        Assert.Equal("p1", Assert.Single(operation.Right.Parameters).Name);
+        Assert.Equal(5, model.Offset);
+        Assert.Equal(10, model.Limit);
+        Assert.Collection(model.EffectiveOrderings,
+            ordering => Assert.Equal(("Name", GraphSortDirection.Ascending), (ordering.PropertyName, ordering.Direction)),
+            ordering => Assert.Equal(("Age", GraphSortDirection.Descending), (ordering.PropertyName, ordering.Direction)));
+    }
+
+    [Fact]
+    public void UnionAllAndSetQueryPagingValidateArguments()
+    {
+        var first = new GraphSet<Person>().Query();
+        var second = new GraphSet<Person>().Query();
+        var query = first.UnionAll(second);
+
+        Assert.Equal(GraphSetOperationKind.UnionAll, Assert.IsType<GraphSetOperation>(query.ToQueryModel().SetOperation).Kind);
+        Assert.Throws<InvalidOperationException>(() => query.Skip(1));
+        Assert.Throws<InvalidOperationException>(() => query.ThenBy(person => person.Name));
+        Assert.Throws<ArgumentOutOfRangeException>(() => query.Take(0));
+    }
+
+    [Fact]
+    public void SetQuerySupportsDescendingAndSecondaryAscendingOrdering()
+    {
+        var model = new GraphSet<Person>().Query()
+            .Union(new GraphSet<Person>().Query())
+            .OrderByDescending(person => person.Age)
+            .ThenBy(person => person.Name)
+            .ToQueryModel();
+
+        Assert.Collection(model.EffectiveOrderings,
+            ordering => Assert.Equal(GraphSortDirection.Descending, ordering.Direction),
+            ordering => Assert.Equal(GraphSortDirection.Ascending, ordering.Direction));
+    }
+
+    [Fact]
+    public void SetOperationsRejectIncompatibleAliases()
+    {
+        var left = new GraphSet<Person>().Query("person");
+        var right = new GraphSet<Person>().Query("other");
+
+        Assert.Throws<ArgumentException>(() => left.Union(right));
     }
 
     [Fact]

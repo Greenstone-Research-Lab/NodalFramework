@@ -14,6 +14,11 @@ public sealed class Neo4jQueryCompiler : IGraphQueryCompiler
     {
         ArgumentNullException.ThrowIfNull(query);
 
+        if (query.SetOperation is not null)
+        {
+            return CompileSetOperation(query, query.SetOperation);
+        }
+
         if (query.CycleBehavior == GraphCycleBehavior.SimplePath &&
             query.Traversals.Any(traversal => traversal.Optional))
         {
@@ -61,6 +66,14 @@ public sealed class Neo4jQueryCompiler : IGraphQueryCompiler
             }
         }
 
+        foreach (var pattern in query.EffectiveMatchPatterns)
+        {
+            builder.Append(" MATCH (")
+                .Append(Escape(pattern.SourceAlias))
+                .Append(')')
+                .Append(RenderTraversal(pattern));
+        }
+
         var filters = new List<string>();
         if (query.CycleBehavior == GraphCycleBehavior.SimplePath)
         {
@@ -80,12 +93,24 @@ public sealed class Neo4jQueryCompiler : IGraphQueryCompiler
                 .Where(traversal => traversal.RelationPredicate is not null)
                 .Select(traversal => RenderPredicate(traversal.RelationPredicate!, traversal.RelationAlias)));
         }
+        filters.AddRange(query.EffectiveMatchPatterns
+            .Where(pattern => pattern.Predicate is not null)
+            .Select(pattern => RenderPredicate(pattern.Predicate!, pattern.TargetAlias)));
+        filters.AddRange(query.EffectiveMatchPatterns
+            .Where(pattern => pattern.RelationPredicate is not null)
+            .Select(pattern => RenderPredicate(pattern.RelationPredicate!, pattern.RelationAlias)));
+        filters.AddRange(query.EffectiveExistencePatterns.Select(RenderExistencePattern));
         if (filters.Count > 0)
         {
             builder.Append(" WHERE ").Append(string.Join(" AND ", filters));
         }
 
-        builder.Append(" RETURN ");
+        var requiresAggregateStage = query.Projection == GraphQueryProjection.Row &&
+            query.RowProjection?.EffectiveHavingPredicates.Count > 0;
+        if (!requiresAggregateStage)
+        {
+            builder.Append(" RETURN ");
+        }
         if (query.Distinct && query.Projection != GraphQueryProjection.Count)
         {
             builder.Append("DISTINCT ");
@@ -113,7 +138,12 @@ public sealed class Neo4jQueryCompiler : IGraphQueryCompiler
             builder.Append(string.Join(", ",
                 new[] { query.Alias }
                     .Concat(query.Traversals.SelectMany(step => new[] { step.RelationAlias, step.TargetAlias }))
+                    .Concat(query.EffectiveMatchPatterns.SelectMany(step => new[] { step.RelationAlias, step.TargetAlias }))
                     .Select(Escape)));
+        }
+        else if (query.Projection == GraphQueryProjection.Row)
+        {
+            RenderRowProjection(builder, query);
         }
         else
         {
@@ -135,6 +165,54 @@ public sealed class Neo4jQueryCompiler : IGraphQueryCompiler
         return new GraphCommand(
             builder.ToString(),
             query.Parameters.ToDictionary(parameter => parameter.Name, parameter => parameter.Value));
+    }
+
+    private GraphCommand CompileSetOperation(GraphQueryModel query, GraphSetOperation operation)
+    {
+        if (query.Projection != GraphQueryProjection.Node ||
+            operation.Left.Projection != GraphQueryProjection.Node ||
+            operation.Right.Projection != GraphQueryProjection.Node ||
+            operation.Left.ResultNodeType != query.ResultNodeType ||
+            operation.Right.ResultNodeType != query.ResultNodeType ||
+            operation.Left.ResultAlias != query.Alias ||
+            operation.Right.ResultAlias != query.Alias)
+        {
+            throw new NotSupportedException("Neo4j set operations require compatible node projections with one shared result alias.");
+        }
+
+        var left = Compile(operation.Left);
+        var right = Compile(operation.Right);
+        var keyword = operation.Kind switch
+        {
+            GraphSetOperationKind.Union => "UNION",
+            GraphSetOperationKind.UnionAll => "UNION ALL",
+            _ => throw new ArgumentOutOfRangeException(nameof(operation), operation.Kind, null),
+        };
+        var builder = new StringBuilder()
+            .Append("CALL { ")
+            .Append(left.Text)
+            .Append(' ')
+            .Append(keyword)
+            .Append(' ')
+            .Append(right.Text)
+            .Append(" } RETURN ")
+            .Append(Escape(query.Alias));
+        if (query.EffectiveOrderings.Count > 0)
+        {
+            builder.Append(" ORDER BY ").Append(string.Join(", ", query.EffectiveOrderings.Select(RenderOrdering)));
+        }
+        if (query.Offset is not null)
+        {
+            builder.Append(" SKIP ").Append(query.Offset.Value);
+        }
+        if (query.Limit is not null)
+        {
+            builder.Append(" LIMIT ").Append(query.Limit.Value);
+        }
+
+        var parameters = left.Parameters.Concat(right.Parameters)
+            .ToDictionary(parameter => parameter.Key, parameter => parameter.Value, StringComparer.Ordinal);
+        return new GraphCommand(builder.ToString(), parameters);
     }
 
     private static string RenderPredicate(GraphPredicate predicate, string alias) => predicate switch
@@ -172,6 +250,88 @@ public sealed class Neo4jQueryCompiler : IGraphQueryCompiler
             _ => throw new ArgumentOutOfRangeException(nameof(traversal), traversal.Direction, null),
         };
     }
+
+    private static string RenderExistencePattern(GraphExistencePattern pattern)
+    {
+        var relation = $"[{Escape(pattern.RelationAlias)}:{Escape(pattern.RelationType)}]";
+        var target = $"({Escape(pattern.TargetAlias)}:{Escape(pattern.TargetNodeType)})";
+        var traversal = pattern.Direction switch
+        {
+            GraphTraversalDirection.Outgoing => $"-{relation}->{target}",
+            GraphTraversalDirection.Incoming => $"<-{relation}-{target}",
+            GraphTraversalDirection.Undirected => $"-{relation}-{target}",
+            _ => throw new ArgumentOutOfRangeException(nameof(pattern), pattern.Direction, null),
+        };
+        var predicates = new[]
+        {
+            pattern.TargetPredicate is null ? null : RenderPredicate(pattern.TargetPredicate, pattern.TargetAlias),
+            pattern.RelationPredicate is null ? null : RenderPredicate(pattern.RelationPredicate, pattern.RelationAlias),
+        }.Where(predicate => predicate is not null);
+        var query = new StringBuilder()
+            .Append("EXISTS { MATCH (")
+            .Append(Escape(pattern.SourceAlias))
+            .Append(')')
+            .Append(traversal);
+        if (predicates.Any())
+        {
+            query.Append(" WHERE ").Append(string.Join(" AND ", predicates));
+        }
+        query.Append(" }");
+        return pattern.Negated ? $"NOT {query}" : query.ToString();
+    }
+
+    private static GraphRowProjection RequireRowProjection(GraphQueryModel query) => query.RowProjection is { Columns.Count: > 0 } projection
+        ? projection
+        : throw new InvalidOperationException("A row projection requires at least one projected column.");
+
+    private static void RenderRowProjection(StringBuilder builder, GraphQueryModel query)
+    {
+        var projection = RequireRowProjection(query);
+        var columns = string.Join(", ", projection.Columns.Select(RenderRowColumn));
+        if (projection.EffectiveHavingPredicates.Count > 0)
+        {
+            builder.Append(" WITH ").Append(columns)
+                .Append(" WHERE ")
+                .Append(string.Join(" AND ", projection.EffectiveHavingPredicates.Select(RenderRowPredicate)))
+                .Append(" RETURN ")
+                .Append(string.Join(", ", projection.Columns.Select(column =>
+                    $"{Escape(column.Name)} AS {Escape(column.Name)}")));
+        }
+        else
+        {
+            builder.Append(columns);
+        }
+
+        if (projection.EffectiveOrderings.Count > 0)
+        {
+            builder.Append(" ORDER BY ")
+                .Append(string.Join(", ", projection.EffectiveOrderings.Select(RenderRowOrdering)));
+        }
+    }
+
+    private static string RenderRowColumn(GraphRowColumn column)
+    {
+        var source = Escape(column.SourceAlias);
+        var property = column.PropertyName is null ? source : $"{source}.{Escape(column.PropertyName)}";
+        var expression = column.Kind switch
+        {
+            GraphRowColumnKind.Property => property,
+            GraphRowColumnKind.Count => $"count({(column.Distinct ? "DISTINCT " : string.Empty)}{source})",
+            GraphRowColumnKind.Sum => $"sum({property})",
+            GraphRowColumnKind.Average => $"avg({property})",
+            GraphRowColumnKind.Minimum => $"min({property})",
+            GraphRowColumnKind.Maximum => $"max({property})",
+            _ => throw new ArgumentOutOfRangeException(nameof(column), column.Kind, null),
+        };
+        return $"{expression} AS {Escape(column.Name)}";
+    }
+
+    private static string RenderRowPredicate(GraphRowPredicate predicate) =>
+        $"{Escape(predicate.ColumnName)} {RenderOperator(predicate.Operator)} ${predicate.ParameterName}";
+
+    private static string RenderRowOrdering(GraphRowOrdering ordering) =>
+        $"{Escape(ordering.ColumnName)} " +
+        (ordering.Direction == GraphSortDirection.Ascending ? "ASC" : "DESC");
 
     private static string RenderOperator(GraphComparisonOperator comparison) => comparison switch
     {

@@ -10,7 +10,6 @@ $expectedPackages = @{
     'Nodal.Migrations' = @('Nodal.Core')
     'Nodal.Neo4j' = @('Nodal.Core', 'Neo4j.Driver')
     'Nodal.Analytics' = @('Nodal.Core')
-    'Nodal.PatternRecognition' = @('Nodal.Core')
     'Nodal.TigerGraph' = @('Nodal.Core')
     'Nodal.Tool' = @()
 }
