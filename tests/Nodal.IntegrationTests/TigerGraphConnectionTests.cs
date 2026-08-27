@@ -262,6 +262,49 @@ public sealed class TigerGraphConnectionTests
     [TigerGraphIntegrationFact]
     [Trait("Category", "Integration")]
     [Trait("Provider", "TigerGraph")]
+    public async Task VariableDepthTraversalExecutesWithSyntaxV2OnLiveServer()
+    {
+        var endpoint = new Uri(Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_ENDPOINT")!, UriKind.Absolute);
+        var graphName = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GRAPH")!;
+        var options = CreateOptions(endpoint);
+        using var httpClient = new HttpClient { BaseAddress = endpoint };
+        var provider = new TigerGraphProvider(httpClient, options, graphName);
+        var context = new SocialContext(provider);
+        var suffix = Guid.NewGuid().ToString("N");
+        var source = new Person($"nodal-depth-source-{suffix}", "Source");
+        var middle = new Person($"nodal-depth-middle-{suffix}", "Middle");
+        var target = new Person($"nodal-depth-target-{suffix}", "Target");
+
+        try
+        {
+            context.People.Add(source);
+            context.People.Add(middle);
+            context.People.Add(target);
+            context.Friendships.Connect(source, new Knows(2020), middle);
+            context.Friendships.Connect(middle, new Knows(2021), target);
+            await context.SaveChangesAsync();
+
+            var readContext = new SocialContext(provider);
+            var result = await readContext.People
+                .Match(person => person.Id == source.Id)
+                .Traverse(readContext.Friendships, minDepth: 1, maxDepth: 2)
+                .ToListAsync();
+
+            Assert.Equal(
+                [middle.Id, target.Id],
+                result.Select(person => person.Id).OrderBy(identity => identity));
+        }
+        finally
+        {
+            await DeleteVertexAsync(httpClient, options, graphName, source.Id);
+            await DeleteVertexAsync(httpClient, options, graphName, middle.Id);
+            await DeleteVertexAsync(httpClient, options, graphName, target.Id);
+        }
+    }
+
+    [TigerGraphIntegrationFact]
+    [Trait("Category", "Integration")]
+    [Trait("Provider", "TigerGraph")]
     public async Task SyntaxV2RowProjectionGroupsAggregatesAndMaterializesRows()
     {
         var endpoint = new Uri(Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_ENDPOINT")!, UriKind.Absolute);
@@ -274,11 +317,15 @@ public sealed class TigerGraphConnectionTests
         var name = $"Nodal row {suffix}";
         var first = new Person($"nodal-row-first-{suffix}", name);
         var second = new Person($"nodal-row-second-{suffix}", name);
+        var third = new Person($"nodal-row-third-{suffix}", name);
 
         try
         {
             context.People.Add(first);
             context.People.Add(second);
+            context.People.Add(third);
+            context.Friendships.Connect(first, new Knows(2020), second);
+            context.Friendships.Connect(first, new Knows(2024), third);
             await context.SaveChangesAsync();
 
             var rows = await new SocialContext(provider).People.Query()
@@ -293,12 +340,39 @@ public sealed class TigerGraphConnectionTests
 
             var row = Assert.Single(rows);
             Assert.Equal(name, row.Get<string>("name"));
-            Assert.Equal(2L, row.Get<long>("personCount"));
+            Assert.Equal(3L, row.Get<long>("personCount"));
+
+            var traversal = new SocialContext(provider).People
+                .Match(person => person.Id == first.Id)
+                .Traverse(new SocialContext(provider).Friendships)
+                .ToQueryModel();
+            var relationAlias = traversal.Traversals.Single().RelationAlias;
+            var numericAggregate = traversal with
+            {
+                Projection = GraphQueryProjection.Row,
+                RowProjection = new GraphRowProjection(
+                [
+                    new GraphRowColumn("totalSince", GraphRowColumnKind.Sum, relationAlias, "SinceYear"),
+                    new GraphRowColumn("averageSince", GraphRowColumnKind.Average, relationAlias, "SinceYear"),
+                    new GraphRowColumn("earliestSince", GraphRowColumnKind.Minimum, relationAlias, "SinceYear"),
+                    new GraphRowColumn("latestSince", GraphRowColumnKind.Maximum, relationAlias, "SinceYear"),
+                ]),
+            };
+            GraphQueryPreflight.Validate(numericAggregate, provider.QueryCapabilities);
+            var numericResult = await provider.CommandExecutor.ExecuteAsync(
+                provider.QueryCompiler.Compile(numericAggregate));
+            var numericRow = Assert.Single(numericResult.ResultRows).Values;
+
+            Assert.Equal(4044d, Convert.ToDouble(numericRow["totalSince"], System.Globalization.CultureInfo.InvariantCulture));
+            Assert.Equal(2022d, Convert.ToDouble(numericRow["averageSince"], System.Globalization.CultureInfo.InvariantCulture));
+            Assert.Equal(2020d, Convert.ToDouble(numericRow["earliestSince"], System.Globalization.CultureInfo.InvariantCulture));
+            Assert.Equal(2024d, Convert.ToDouble(numericRow["latestSince"], System.Globalization.CultureInfo.InvariantCulture));
         }
         finally
         {
             await DeleteVertexAsync(httpClient, options, graphName, first.Id);
             await DeleteVertexAsync(httpClient, options, graphName, second.Id);
+            await DeleteVertexAsync(httpClient, options, graphName, third.Id);
         }
     }
 
@@ -383,6 +457,86 @@ public sealed class TigerGraphConnectionTests
                 catch (InvalidOperationException)
                 {
                 }
+            }
+        }
+    }
+
+    [TigerGraphMigrationIntegrationFact]
+    [Trait("Category", "Integration")]
+    [Trait("Provider", "TigerGraph")]
+    public async Task PreinstalledExtensionManifestIsDiscoveredBeforeProviderStartup()
+    {
+        var endpoint = new Uri(Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_ENDPOINT")!, UriKind.Absolute);
+        var graphName = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GRAPH")!;
+        var baseOptions = CreateOptions(endpoint);
+        var processOptions = new TigerGraphGsqlProcessOptions
+        {
+            FileName = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GSQL_FILE")!,
+            PrefixArguments = JsonSerializer.Deserialize<string[]>(
+                Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GSQL_PREFIX")!)!,
+            Username = baseOptions.Username,
+            Password = baseOptions.Password,
+            AccessToken = baseOptions.AccessToken,
+            GraphName = graphName,
+            VerifiedServerVersion = "4.2.4 Community",
+        };
+        var controlPlane = new TigerGraphGsqlProcessTransport(processOptions);
+        var suffix = Guid.NewGuid().ToString("N")[..12];
+        var discoveryQuery = $"nodal_extension_capabilities_{suffix}";
+        var manifest = new TigerGraphQueryExtensionManifest(
+            new Version(1, 0, 0),
+            new Dictionary<TigerGraphQueryExtensionFeature, string>
+            {
+                [TigerGraphQueryExtensionFeature.CorrelatedExistence] = $"nodal_exists_{suffix}",
+            },
+            discoveryQuery);
+        var options = new TigerGraphOptions
+        {
+            Endpoint = baseOptions.Endpoint,
+            AccessToken = baseOptions.AccessToken,
+            Username = baseOptions.Username,
+            Password = baseOptions.Password,
+            QueryExtensions = manifest,
+        };
+        using var httpClient = new HttpClient { BaseAddress = endpoint };
+
+        try
+        {
+            await controlPlane.ExecuteAsync(new MigrationCommand(
+                $$"""
+                CREATE OR REPLACE QUERY {{discoveryQuery}}() FOR GRAPH {{graphName}} {
+                    SetAccum<STRING> @@nodal_extension_features;
+                    @@nodal_extension_features += "CorrelatedExistence";
+                    PRINT "1.0.0" AS nodal_extension_version,
+                        @@nodal_extension_features AS nodal_extension_features;
+                }
+                INSTALL QUERY -FORCE {{discoveryQuery}}
+                """,
+                false,
+                MigrationCommandKind.QueryDefinition));
+
+            var provider = await TigerGraphProviderFactory.CreateAsync(
+                httpClient,
+                options,
+                graphName);
+
+            var verified = Assert.IsType<TigerGraphQueryExtensionSnapshot>(provider.VerifiedQueryExtensions);
+            Assert.Equal(new Version(1, 0, 0), verified.Version);
+            Assert.Contains(
+                TigerGraphQueryExtensionFeature.CorrelatedExistence,
+                verified.Features);
+        }
+        finally
+        {
+            try
+            {
+                await controlPlane.ExecuteAsync(new MigrationCommand(
+                    $"DROP QUERY {discoveryQuery}",
+                    false,
+                    MigrationCommandKind.QueryDefinition));
+            }
+            catch (InvalidOperationException)
+            {
             }
         }
     }

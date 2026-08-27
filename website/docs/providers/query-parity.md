@@ -40,7 +40,9 @@ automatic grouping for mixed property/aggregate projections, `Having`, row
 ordering, and bounded results. The provider normalizes both TigerGraph table
 shapes: a multi-row JSON array and a one-row aggregate JSON object. The
 baseline includes a live test for property projection, `Count`, `GROUP BY`,
-`HAVING`, `ORDER BY`, and `LIMIT` against TigerGraph 4.2.4 Community.
+`HAVING`, `ORDER BY`, `LIMIT`, `Sum`, `Average`, `Min`, and `Max` against
+TigerGraph 4.2.4 Community. Result-column names must not be reserved GSQL
+identifiers; the compiler rejects them before transport.
 
 ## Verification ledger
 
@@ -48,9 +50,9 @@ baseline includes a live test for property projection, `Count`, `GROUP BY`,
 | --- | --- | --- | --- |
 | Parameter filters and fixed traversal | Compiler + unit + live container | Compiler + unit + live container | Not applicable |
 | Node `Distinct` | Compiler + unit + live container | Compiler + unit + live convergence test | Not applicable |
-| Variable-depth traversal | Compiler + unit | Compiler + unit; Syntax V2 route | Unsupported combinations fail during compilation |
+| Variable-depth traversal | Compiler + unit | Compiler + unit + live bounded Syntax V2 traversal | Unsupported combinations fail during compilation |
 | Fixed vertex-simple path | Compiler + unit | Compiler + unit + live subgraph test | Variable-depth simple path fails pre-transport |
-| Scalar and aggregate rows | Compiler + unit | Compiler + unit + live grouping/count test | Unsupported row shapes fail during compilation |
+| Scalar and aggregate rows | Compiler + unit | Compiler + unit + live grouping/count/numeric aggregate test | Unsupported row shapes and reserved aliases fail during compilation |
 | Correlated existence | Compiler + unit + live container | Generated-query unit + live `WhereExists`/`WhereNotExists` container test | Capability preflight rejects it unless runtime generation and administration are configured |
 | Optional traversal | Compiler + unit | Explicitly excluded | `NODAL-QUERY-OPTIONAL-TRAVERSAL` |
 | Additional required patterns | Compiler + unit | Explicitly excluded | `NODAL-QUERY-MULTIPLE-PATTERNS` |
@@ -120,3 +122,34 @@ one installation task. The live suite verifies positive and negative existence w
 and relationship predicates against TigerGraph 4.2.4 Community. Enabling the
 feature requires query create/update/install privileges; configuring a
 preinstalled-query manifest alone does not enable runtime generation.
+
+For a separately deployed installed-query bundle, use the asynchronous factory
+at application startup. It calls the manifest's discovery query, checks the
+exact semantic version and declared features, and does not return a provider
+when the deployed contract is missing or incompatible:
+
+```csharp
+var manifest = new TigerGraphQueryExtensionManifest(
+    new Version(1, 0, 0),
+    new Dictionary<TigerGraphQueryExtensionFeature, string>
+    {
+        [TigerGraphQueryExtensionFeature.CorrelatedExistence] = "nodal_exists_v1"
+    });
+
+var options = new TigerGraphOptions
+{
+    Endpoint = new Uri("https://example.i.tgcloud.io/"),
+    AccessToken = "secret-token",
+    QueryExtensions = manifest
+};
+
+var provider = await TigerGraphProviderFactory.CreateAsync(
+    httpClient,
+    options,
+    "SocialGraph",
+    cancellationToken);
+```
+
+The verified snapshot is available through
+`provider.VerifiedQueryExtensions`. Direct constructors remain I/O-free and do
+not claim that a configured manifest has been verified.

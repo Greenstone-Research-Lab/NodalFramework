@@ -15,6 +15,16 @@ namespace Nodal.TigerGraph;
 /// </remarks>
 public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
 {
+    private static readonly HashSet<string> ReservedRowIdentifiers = new(StringComparer.OrdinalIgnoreCase)
+    {
+        "ABORT", "ALL", "AND", "AS", "ASC", "AVG", "BOOL", "BY", "CASE", "COUNT",
+        "CREATE", "DATETIME", "DELETE", "DESC", "DISTINCT", "DOUBLE", "EDGE", "ELSE",
+        "FALSE", "FOR", "FROM", "GRAPH", "GROUP", "HAVING", "IF", "IN", "INSERT", "INT",
+        "INTERPRET", "INTO", "IS", "LIKE", "LIMIT", "LIST", "MAP", "MATCH", "MAX", "MIN",
+        "NOT", "NULL", "OFFSET", "OR", "ORDER", "PATH", "PER", "PRINT", "QUERY", "RANGE",
+        "RETURN", "SELECT", "SET", "STRING", "SUM", "TARGET", "TO", "TRUE", "UNION",
+        "UPDATE", "VALUES", "VERTEX", "WHEN", "WHERE", "WHILE", "WITH",
+    };
     private readonly string graphName;
     private readonly TigerGraphInstalledQueryCatalog? installedQueries;
 
@@ -153,6 +163,10 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
         query = NormalizeRowAliases(query);
         var projection = query.RowProjection ?? throw new InvalidOperationException(
             "A row projection is required when compiling a row query.");
+        foreach (var column in projection.Columns)
+        {
+            ValidateRowIdentifier(column.Name);
+        }
         var hasAggregates = projection.Columns.Any(column => column.Kind != GraphRowColumnKind.Property);
         var propertyExpressions = projection.Columns
             .Where(column => column.Kind == GraphRowColumnKind.Property)
@@ -173,7 +187,7 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
         }
         else
         {
-            builder.Append('(').Append(query.Alias).Append(':').Append(query.NodeType).Append(')');
+            builder.Append(query.NodeType).Append(':').Append(query.Alias);
         }
 
         foreach (var traversal in query.Traversals)
@@ -254,6 +268,17 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
                 }).ToArray(),
             },
         };
+    }
+
+    private static void ValidateRowIdentifier(string name)
+    {
+        ValidateIdentifier(name, nameof(name));
+        if (ReservedRowIdentifiers.Contains(name))
+        {
+            throw new ArgumentException(
+                $"Row column '{name}' is a reserved TigerGraph query identifier.",
+                nameof(name));
+        }
     }
 
     private static string RenderRowColumn(GraphRowColumn column) =>
@@ -340,7 +365,7 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
 
         if (useSyntaxV2)
         {
-            builder.Append('(').Append(query.Alias).Append(':').Append(query.NodeType).Append(')');
+            builder.Append(query.NodeType).Append(':').Append(query.Alias);
         }
         else
         {
@@ -416,15 +441,17 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
         if (useSyntaxV2)
         {
             var v2Types = string.Join('|', traversal.RelationTypes);
-            var edge = $"[{traversal.RelationAlias}:{v2Types}{depth}]";
-            var v2Target = $"({traversal.TargetAlias}:{traversal.TargetNodeType})";
-            return traversal.Direction switch
+            var directedTypes = traversal.Direction switch
             {
-                GraphTraversalDirection.Outgoing => $"-{edge}->{v2Target}",
-                GraphTraversalDirection.Incoming => $"<-{edge}-{v2Target}",
-                GraphTraversalDirection.Undirected => $"-{edge}-{v2Target}",
+                GraphTraversalDirection.Outgoing => $"{v2Types}>",
+                GraphTraversalDirection.Incoming => $"<{v2Types}",
+                GraphTraversalDirection.Undirected => v2Types,
                 _ => throw new ArgumentOutOfRangeException(nameof(traversal), traversal.Direction, null),
             };
+            var edge = string.IsNullOrEmpty(depth)
+                ? $"({directedTypes}:{traversal.RelationAlias})"
+                : $"({directedTypes}{depth})";
+            return $" -{edge}- {traversal.TargetNodeType}:{traversal.TargetAlias}";
         }
         var relation = $"({types}{depth}:{traversal.RelationAlias})";
         var target = $" {traversal.TargetNodeType}:{traversal.TargetAlias}";

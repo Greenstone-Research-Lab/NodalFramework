@@ -75,13 +75,13 @@ public sealed class TigerGraphQueryCompilerTests
             GraphQueryProjection.Row,
             RowProjection: new GraphRowProjection(
             [
-                new GraphRowColumn("count", GraphRowColumnKind.Count, "person"),
+                new GraphRowColumn("personCount", GraphRowColumnKind.Count, "person"),
             ]));
 
         var command = new TigerGraphQueryCompiler("Social").Compile(model);
 
         Assert.Equal(
-            "INTERPRET QUERY () FOR GRAPH Social SYNTAX V2 { SELECT COUNT(nodal_v0) AS count INTO nodal_rows FROM Person:nodal_v0; PRINT nodal_rows; }",
+            "INTERPRET QUERY () FOR GRAPH Social SYNTAX V2 { SELECT COUNT(nodal_v0) AS personCount INTO nodal_rows FROM Person:nodal_v0; PRINT nodal_rows; }",
             command.Text);
     }
 
@@ -99,20 +99,42 @@ public sealed class TigerGraphQueryCompilerTests
             RowProjection: new GraphRowProjection(
             [
                 new GraphRowColumn("name", GraphRowColumnKind.Property, "node", "Name"),
-                new GraphRowColumn("count", GraphRowColumnKind.Count, "node", Distinct: true),
-                new GraphRowColumn("sum", GraphRowColumnKind.Sum, "node", "Score"),
-                new GraphRowColumn("average", GraphRowColumnKind.Average, "node", "Score"),
-                new GraphRowColumn("minimum", GraphRowColumnKind.Minimum, "node", "Score"),
-                new GraphRowColumn("maximum", GraphRowColumnKind.Maximum, "node", "Score"),
+                new GraphRowColumn("personCount", GraphRowColumnKind.Count, "node", Distinct: true),
+                new GraphRowColumn("totalScore", GraphRowColumnKind.Sum, "node", "Score"),
+                new GraphRowColumn("averageScore", GraphRowColumnKind.Average, "node", "Score"),
+                new GraphRowColumn("minimumScore", GraphRowColumnKind.Minimum, "node", "Score"),
+                new GraphRowColumn("maximumScore", GraphRowColumnKind.Maximum, "node", "Score"),
             ],
-            [new GraphRowOrdering("count", GraphSortDirection.Descending)],
-            [new GraphRowPredicate("count", GraphComparisonOperator.GreaterThan, "p0")]));
+            [new GraphRowOrdering("personCount", GraphSortDirection.Descending)],
+            [new GraphRowPredicate("personCount", GraphComparisonOperator.GreaterThan, "p0")]));
 
         var command = new TigerGraphQueryCompiler("Social").Compile(model);
 
         Assert.Equal(
-            "INTERPRET QUERY (INT p0) FOR GRAPH Social SYNTAX V2 { SELECT nodal_v0.Name AS name, COUNT(DISTINCT nodal_v0) AS count, SUM(nodal_v0.Score) AS sum, AVG(nodal_v0.Score) AS average, MIN(nodal_v0.Score) AS minimum, MAX(nodal_v0.Score) AS maximum INTO nodal_rows FROM Person:nodal_v0 GROUP BY nodal_v0.Name HAVING count > p0 ORDER BY count DESC LIMIT 10; PRINT nodal_rows; }",
+            "INTERPRET QUERY (INT p0) FOR GRAPH Social SYNTAX V2 { SELECT nodal_v0.Name AS name, COUNT(DISTINCT nodal_v0) AS personCount, SUM(nodal_v0.Score) AS totalScore, AVG(nodal_v0.Score) AS averageScore, MIN(nodal_v0.Score) AS minimumScore, MAX(nodal_v0.Score) AS maximumScore INTO nodal_rows FROM Person:nodal_v0 GROUP BY nodal_v0.Name HAVING personCount > p0 ORDER BY personCount DESC LIMIT 10; PRINT nodal_rows; }",
             command.Text);
+    }
+
+    [Fact]
+    public void CompileRejectsReservedTigerGraphRowColumnBeforeTransport()
+    {
+        var model = new GraphQueryModel(
+            "Person",
+            "node",
+            null,
+            [],
+            null,
+            [],
+            GraphQueryProjection.Row,
+            RowProjection: new GraphRowProjection(
+            [
+                new GraphRowColumn("sum", GraphRowColumnKind.Sum, "node", "Score"),
+            ]));
+
+        var exception = Assert.Throws<ArgumentException>(() =>
+            new TigerGraphQueryCompiler("Social").Compile(model));
+
+        Assert.Contains("reserved TigerGraph query identifier", exception.Message, StringComparison.Ordinal);
     }
 
     [Fact]
@@ -256,13 +278,13 @@ public sealed class TigerGraphQueryCompilerTests
         var command = new TigerGraphQueryCompiler("SocialGraph").Compile(model);
 
         Assert.Equal(
-            "INTERPRET QUERY () FOR GRAPH SocialGraph SYNTAX V2 { result = SELECT node1 FROM (node:Person)-[relation1:KNOWS*1..3]->(node1:Person) LIMIT 10; PRINT result; }",
+            "INTERPRET QUERY () FOR GRAPH SocialGraph SYNTAX V2 { result = SELECT node1 FROM Person:node -(KNOWS>*1..3)- Person:node1 LIMIT 10; PRINT result; }",
             command.Text);
     }
 
     [Theory]
-    [InlineData(GraphTraversalDirection.Incoming, "<-[relation1:KNOWS*1..3]-(node1:Person)")]
-    [InlineData(GraphTraversalDirection.Undirected, "-[relation1:KNOWS*1..3]-(node1:Person)")]
+    [InlineData(GraphTraversalDirection.Incoming, " -(<KNOWS*1..3)- Person:node1")]
+    [InlineData(GraphTraversalDirection.Undirected, " -(KNOWS*1..3)- Person:node1")]
     public void CompileUsesSyntaxV2ForEveryVariableDepthDirection(
         GraphTraversalDirection direction,
         string expected)
