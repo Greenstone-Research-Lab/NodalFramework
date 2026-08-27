@@ -20,6 +20,7 @@ if (Test-Path -LiteralPath $outputDirectory) {
 
 New-Item -ItemType Directory -Path $outputDirectory | Out-Null
 
+Write-Host 'Validating public package API compatibility against the approved NuGet baseline.'
 dotnet pack "$repositoryRoot/Nodal.slnx" `
     --configuration Release `
     --no-restore `

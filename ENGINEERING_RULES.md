@@ -55,6 +55,9 @@ an explicit architecture decision record and approval in the pull request.
 - Do not expose provider payload types from provider-neutral APIs.
 - Do not silently change public behavior. Breaking changes require a documented
   migration note and a deliberate pre-release decision.
+- Every public library package is validated against the approved NuGet API
+  baseline during packing. Advancing that baseline or suppressing a comparison
+  requires an explicit compatibility decision and release note.
 - Nullable reference types remain enabled. Avoid null-forgiving operators
   unless the invariant is proven and documented.
 
