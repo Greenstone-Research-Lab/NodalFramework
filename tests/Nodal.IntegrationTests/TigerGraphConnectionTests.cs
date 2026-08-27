@@ -215,6 +215,93 @@ public sealed class TigerGraphConnectionTests
         }
     }
 
+    [TigerGraphIntegrationFact]
+    [Trait("Category", "Integration")]
+    [Trait("Provider", "TigerGraph")]
+    public async Task DistinctNodeQueryUsesTigerGraphVertexSetSemantics()
+    {
+        var endpoint = new Uri(Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_ENDPOINT")!, UriKind.Absolute);
+        var graphName = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GRAPH")!;
+        var options = CreateOptions(endpoint);
+        using var httpClient = new HttpClient { BaseAddress = endpoint };
+        var provider = new TigerGraphProvider(httpClient, options, graphName);
+        var context = new SocialContext(provider);
+        var suffix = Guid.NewGuid().ToString("N");
+        var first = new Person($"nodal-distinct-first-{suffix}", "First");
+        var second = new Person($"nodal-distinct-second-{suffix}", "Second");
+        var shared = new Person($"nodal-distinct-shared-{suffix}", "Shared");
+
+        try
+        {
+            context.People.Add(first);
+            context.People.Add(second);
+            context.People.Add(shared);
+            context.Friendships.Connect(first, new Knows(2020), shared);
+            context.Friendships.Connect(second, new Knows(2021), shared);
+            await context.SaveChangesAsync();
+
+            string[] sourceIds = [first.Id, second.Id];
+            var readContext = new SocialContext(provider);
+            var result = await readContext.People.Query()
+                .Where(person => sourceIds.Contains(person.Id))
+                .Traverse(readContext.Friendships)
+                .Distinct()
+                .ToListAsync();
+
+            Assert.Equal(shared.Id, Assert.Single(result).Id);
+        }
+        finally
+        {
+            await DeleteVertexAsync(httpClient, options, graphName, first.Id);
+            await DeleteVertexAsync(httpClient, options, graphName, second.Id);
+            await DeleteVertexAsync(httpClient, options, graphName, shared.Id);
+        }
+    }
+
+    [TigerGraphIntegrationFact]
+    [Trait("Category", "Integration")]
+    [Trait("Provider", "TigerGraph")]
+    public async Task SyntaxV2RowProjectionGroupsAggregatesAndMaterializesRows()
+    {
+        var endpoint = new Uri(Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_ENDPOINT")!, UriKind.Absolute);
+        var graphName = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GRAPH")!;
+        var options = CreateOptions(endpoint);
+        using var httpClient = new HttpClient { BaseAddress = endpoint };
+        var provider = new TigerGraphProvider(httpClient, options, graphName);
+        var context = new SocialContext(provider);
+        var suffix = Guid.NewGuid().ToString("N");
+        var name = $"Nodal row {suffix}";
+        var first = new Person($"nodal-row-first-{suffix}", name);
+        var second = new Person($"nodal-row-second-{suffix}", name);
+
+        try
+        {
+            context.People.Add(first);
+            context.People.Add(second);
+            await context.SaveChangesAsync();
+
+            var rows = await new SocialContext(provider).People.Query()
+                .Where(person => person.Name == name)
+                .ToRows()
+                .Select("name", person => person.Name)
+                .Count("personCount")
+                .Having("personCount", GraphComparisonOperator.GreaterThan, 1)
+                .OrderByDescending("personCount")
+                .Take(1)
+                .ToListAsync();
+
+            var row = Assert.Single(rows);
+            Assert.Equal(name, row.Get<string>("name"));
+            Assert.Equal(2L, row.Get<long>("personCount"));
+        }
+        finally
+        {
+            await DeleteVertexAsync(httpClient, options, graphName, first.Id);
+            await DeleteVertexAsync(httpClient, options, graphName, second.Id);
+        }
+    }
+
+
     private static TigerGraphOptions CreateOptions(Uri endpoint) => new()
     {
         Endpoint = endpoint,

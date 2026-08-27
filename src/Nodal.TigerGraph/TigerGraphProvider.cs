@@ -5,6 +5,7 @@ using Nodal.Core.Migrations;
 using Nodal.Core.Mutations;
 using Nodal.Core.Providers;
 using Nodal.Core.Query;
+using Nodal.TigerGraph.Extensions;
 
 namespace Nodal.TigerGraph;
 
@@ -27,6 +28,7 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
     public TigerGraphProvider(HttpClient httpClient, TigerGraphOptions options, string graphName)
     {
         this.graphName = graphName;
+        QueryExtensions = options.QueryExtensions;
         QueryCompiler = new TigerGraphQueryCompiler(graphName);
         CommandExecutor = new TigerGraphCommandExecutor(httpClient, options);
         MutationExecutor = new TigerGraphMutationExecutor(httpClient, options, graphName);
@@ -114,6 +116,9 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
     /// <inheritdoc />
     public IGraphQueryCompiler QueryCompiler { get; }
 
+    /// <summary>Gets the explicitly configured installed-query extension manifest, when present.</summary>
+    public TigerGraphQueryExtensionManifest? QueryExtensions { get; }
+
     /// <inheritdoc />
     public IGraphCommandExecutor CommandExecutor { get; }
 
@@ -125,7 +130,11 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
     {
         ProviderName = "TigerGraph",
         TestedProviderVersion = "4.2.4 Community",
-        Features = GraphQueryCapability.VariableLengthTraversal,
+        Features = GraphQueryCapability.VariableLengthTraversal |
+            GraphQueryCapability.Distinct |
+            GraphQueryCapability.SimplePath |
+            GraphQueryCapability.ServerSideProjection |
+            GraphQueryCapability.Aggregation,
     };
 
     /// <inheritdoc />

@@ -12,6 +12,9 @@ $expectedPackages = @{
     'Nodal.Analytics' = @('Nodal.Core')
     'Nodal.TigerGraph' = @('Nodal.Core')
     'Nodal.Tool' = @()
+    'Nodal.Import' = @()
+    'Nodal.Import.Csv' = @('Nodal.Import')
+    'Nodal.Import.Relational' = @('Nodal.Import')
 }
 
 if (Test-Path -LiteralPath $outputDirectory) {

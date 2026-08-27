@@ -50,12 +50,6 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
                 "TigerGraph interpreted GSQL does not provide a portable multiple-pattern execution path. " +
                 "Use an installed provider extension until Nodal supplies an installed-query implementation.");
         }
-        if (query.Projection == GraphQueryProjection.Row)
-        {
-            throw new NotSupportedException(
-                "TigerGraph interpreted GSQL does not provide a portable server-side row-projection execution path. " +
-                "Use an installed provider extension until Nodal supplies an installed-query implementation.");
-        }
         foreach (var traversal in query.Traversals)
         {
             foreach (var relationType in traversal.RelationTypes)
@@ -71,7 +65,8 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
             }
         }
 
-        var useSyntaxV2 = query.Traversals.Any(traversal => traversal.MinDepth != 1 || traversal.MaxDepth != 1);
+        var useSyntaxV2 = query.Projection == GraphQueryProjection.Row ||
+            query.Traversals.Any(traversal => traversal.MinDepth != 1 || traversal.MaxDepth != 1);
         if (useSyntaxV2 && query.CycleBehavior == GraphCycleBehavior.SimplePath)
         {
             throw new NotSupportedException(
@@ -93,7 +88,12 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
             .Append(graphName)
             .Append(useSyntaxV2 ? " SYNTAX V2 { " : " { ");
 
-        if (query.Projection == GraphQueryProjection.Count)
+        if (query.Projection == GraphQueryProjection.Row)
+        {
+            builder.Append(RenderRowSelection(query))
+                .Append("PRINT nodal_rows; }");
+        }
+        else if (query.Projection == GraphQueryProjection.Count)
         {
             builder.Append(RenderSelection(query, "result", query.ResultAlias, false, useSyntaxV2))
                 .Append("PRINT result.size() AS nodal_count; }");
@@ -129,6 +129,163 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
         return new GraphCommand(
             builder.ToString(),
             query.Parameters.ToDictionary(parameter => parameter.Name, parameter => NormalizeValue(parameter.Value)));
+    }
+
+    private static string RenderRowSelection(GraphQueryModel query)
+    {
+        query = NormalizeRowAliases(query);
+        var projection = query.RowProjection ?? throw new InvalidOperationException(
+            "A row projection is required when compiling a row query.");
+        var hasAggregates = projection.Columns.Any(column => column.Kind != GraphRowColumnKind.Property);
+        var propertyExpressions = projection.Columns
+            .Where(column => column.Kind == GraphRowColumnKind.Property)
+            .Select(RenderRowExpression)
+            .ToArray();
+        var builder = new StringBuilder("SELECT ");
+
+        if (query.Distinct)
+        {
+            builder.Append("DISTINCT ");
+        }
+
+        builder.Append(string.Join(", ", projection.Columns.Select(RenderRowColumn)))
+            .Append(" INTO nodal_rows FROM ");
+        if (query.Traversals.Count == 0)
+        {
+            builder.Append(query.NodeType).Append(':').Append(query.Alias);
+        }
+        else
+        {
+            builder.Append('(').Append(query.Alias).Append(':').Append(query.NodeType).Append(')');
+        }
+
+        foreach (var traversal in query.Traversals)
+        {
+            builder.Append(RenderTraversal(traversal, useSyntaxV2: true));
+        }
+
+        var filters = RenderFilters(query);
+        if (filters.Count > 0)
+        {
+            builder.Append(" WHERE ").Append(string.Join(" AND ", filters));
+        }
+
+        if (hasAggregates && propertyExpressions.Length > 0)
+        {
+            builder.Append(" GROUP BY ").Append(string.Join(", ", propertyExpressions));
+        }
+
+        if (projection.EffectiveHavingPredicates.Count > 0)
+        {
+            builder.Append(" HAVING ")
+                .Append(string.Join(" AND ", projection.EffectiveHavingPredicates.Select(predicate =>
+                    $"{predicate.ColumnName} {RenderOperator(predicate.Operator)} {predicate.ParameterName}")));
+        }
+
+        if (projection.EffectiveOrderings.Count > 0)
+        {
+            builder.Append(" ORDER BY ")
+                .Append(string.Join(", ", projection.EffectiveOrderings.Select(ordering =>
+                    $"{ordering.ColumnName} {(ordering.Direction == GraphSortDirection.Ascending ? "ASC" : "DESC")}")));
+        }
+
+        if (query.Limit is not null && query.Offset is not null)
+        {
+            builder.Append(" LIMIT ").Append(query.Limit.Value).Append(" OFFSET ").Append(query.Offset.Value);
+        }
+        else if (query.Limit is not null)
+        {
+            builder.Append(" LIMIT ").Append(query.Limit.Value);
+        }
+        else if (query.Offset is not null)
+        {
+            throw new NotSupportedException("TigerGraph requires Take when Skip is used.");
+        }
+
+        return builder.Append("; ").ToString();
+    }
+
+    private static GraphQueryModel NormalizeRowAliases(GraphQueryModel query)
+    {
+        var aliases = new Dictionary<string, string>(StringComparer.Ordinal)
+        {
+            [query.Alias] = "nodal_v0",
+        };
+        var traversals = query.Traversals.Select((traversal, index) =>
+        {
+            var relationAlias = $"nodal_e{index}";
+            var targetAlias = $"nodal_v{index + 1}";
+            aliases[traversal.RelationAlias] = relationAlias;
+            aliases[traversal.TargetAlias] = targetAlias;
+            return traversal with { RelationAlias = relationAlias, TargetAlias = targetAlias };
+        }).ToArray();
+        var projection = query.RowProjection ?? throw new InvalidOperationException(
+            "A row projection is required when normalizing a row query.");
+
+        return query with
+        {
+            Alias = aliases[query.Alias],
+            Traversals = traversals,
+            RowProjection = projection with
+            {
+                Columns = projection.Columns.Select(column => column with
+                {
+                    SourceAlias = aliases.TryGetValue(column.SourceAlias, out var alias)
+                        ? alias
+                        : throw new InvalidOperationException(
+                            $"Row column '{column.Name}' refers to unknown alias '{column.SourceAlias}'."),
+                }).ToArray(),
+            },
+        };
+    }
+
+    private static string RenderRowColumn(GraphRowColumn column) =>
+        $"{RenderRowExpression(column)} AS {column.Name}";
+
+    private static string RenderRowExpression(GraphRowColumn column)
+    {
+        var property = string.IsNullOrEmpty(column.PropertyName)
+            ? null
+            : $"{column.SourceAlias}.{column.PropertyName}";
+        return column.Kind switch
+        {
+            GraphRowColumnKind.Property when property is not null => property,
+            GraphRowColumnKind.Count => $"COUNT({(column.Distinct ? "DISTINCT " : string.Empty)}{column.SourceAlias})",
+            GraphRowColumnKind.Sum when property is not null => $"SUM({property})",
+            GraphRowColumnKind.Average when property is not null => $"AVG({property})",
+            GraphRowColumnKind.Minimum when property is not null => $"MIN({property})",
+            GraphRowColumnKind.Maximum when property is not null => $"MAX({property})",
+            _ => throw new InvalidOperationException(
+                $"Row column '{column.Name}' requires a mapped property for '{column.Kind}'."),
+        };
+    }
+
+    private static List<string> RenderFilters(GraphQueryModel query)
+    {
+        var filters = new List<string>();
+        if (query.CycleBehavior == GraphCycleBehavior.SimplePath)
+        {
+            var aliases = new[] { query.Alias }.Concat(query.Traversals.Select(step => step.TargetAlias)).ToArray();
+            for (var left = 0; left < aliases.Length; left++)
+            {
+                for (var right = left + 1; right < aliases.Length; right++)
+                {
+                    filters.Add($"{aliases[left]} != {aliases[right]}");
+                }
+            }
+        }
+        if (query.Predicate is not null)
+        {
+            filters.Add(RenderPredicate(query.Predicate, query.Alias));
+        }
+
+        filters.AddRange(query.Traversals
+            .Where(traversal => traversal.Predicate is not null)
+            .Select(traversal => RenderPredicate(traversal.Predicate!, traversal.TargetAlias)));
+        filters.AddRange(query.Traversals
+            .Where(traversal => traversal.RelationPredicate is not null)
+            .Select(traversal => RenderPredicate(traversal.RelationPredicate!, traversal.RelationAlias)));
+        return filters;
     }
 
     private static string AddRelationAccumulation(string selection, GraphQueryModel query)
@@ -178,29 +335,7 @@ public sealed partial class TigerGraphQueryCompiler : IGraphQueryCompiler
             builder.Append(RenderTraversal(traversal, useSyntaxV2));
         }
 
-        var filters = new List<string>();
-        if (query.CycleBehavior == GraphCycleBehavior.SimplePath)
-        {
-            var aliases = new[] { query.Alias }.Concat(query.Traversals.Select(step => step.TargetAlias)).ToArray();
-            for (var left = 0; left < aliases.Length; left++)
-            {
-                for (var right = left + 1; right < aliases.Length; right++)
-                {
-                    filters.Add($"{aliases[left]} != {aliases[right]}");
-                }
-            }
-        }
-        if (query.Predicate is not null)
-        {
-            filters.Add(RenderPredicate(query.Predicate, query.Alias));
-        }
-
-        filters.AddRange(query.Traversals
-            .Where(traversal => traversal.Predicate is not null)
-            .Select(traversal => RenderPredicate(traversal.Predicate!, traversal.TargetAlias)));
-        filters.AddRange(query.Traversals
-            .Where(traversal => traversal.RelationPredicate is not null)
-            .Select(traversal => RenderPredicate(traversal.RelationPredicate!, traversal.RelationAlias)));
+        var filters = RenderFilters(query);
         if (filters.Count > 0)
         {
             builder.Append(" WHERE ").Append(string.Join(" AND ", filters));

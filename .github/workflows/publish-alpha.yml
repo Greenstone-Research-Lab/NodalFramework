@@ -110,6 +110,9 @@ jobs:
             'Nodal.Analytics',
             'Nodal.TigerGraph',
             'Nodal.Tool'
+            ,'Nodal.Import'
+            ,'Nodal.Import.Csv'
+            ,'Nodal.Import.Relational'
           )
 
           foreach ($packageId in $packageIds) {
@@ -128,7 +131,7 @@ jobs:
             }
           }
 
-          "Published all six public packages to NuGet.org." | Out-File `
+          "Published all public packages to NuGet.org." | Out-File `
             -FilePath $env:GITHUB_STEP_SUMMARY `
             -Encoding utf8 `
             -Append

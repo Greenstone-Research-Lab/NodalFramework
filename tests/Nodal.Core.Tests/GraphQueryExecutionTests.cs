@@ -248,7 +248,8 @@ public sealed class GraphQueryExecutionTests
             Features = GraphQueryCapability.ServerSideProjection |
                 GraphQueryCapability.Aggregation |
                 GraphQueryCapability.SetOperations |
-                GraphQueryCapability.MultiplePatterns,
+                GraphQueryCapability.MultiplePatterns |
+                GraphQueryCapability.Distinct,
         };
 
         public GraphCommand Compile(GraphQueryModel query)

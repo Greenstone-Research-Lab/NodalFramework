@@ -17,7 +17,7 @@ public enum GraphQueryCapability
     /// <summary>Supports repeated relationship traversal with inclusive depth bounds.</summary>
     VariableLengthTraversal = 1 << 1,
 
-    /// <summary>Supports vertex-simple path semantics.</summary>
+    /// <summary>Supports vertex-simple semantics for fixed-depth traversals.</summary>
     SimplePath = 1 << 2,
 
     /// <summary>Supports multiple named graph patterns in one query.</summary>
@@ -34,6 +34,12 @@ public enum GraphQueryCapability
 
     /// <summary>Supports portable set combination operations such as union.</summary>
     SetOperations = 1 << 7,
+
+    /// <summary>Supports duplicate elimination for node and count projections.</summary>
+    Distinct = 1 << 8,
+
+    /// <summary>Supports vertex-simple semantics for variable-depth traversals.</summary>
+    VariableLengthSimplePath = 1 << 9,
 }
 
 /// <summary>
@@ -104,6 +110,10 @@ public static class GraphQueryPreflight
         if (query.CycleBehavior == GraphCycleBehavior.SimplePath)
         {
             Require(capabilities, GraphQueryCapability.SimplePath, "NODAL-QUERY-SIMPLE-PATH");
+            if (query.Traversals.Any(traversal => traversal.MinDepth != 1 || traversal.MaxDepth != 1))
+            {
+                Require(capabilities, GraphQueryCapability.VariableLengthSimplePath, "NODAL-QUERY-VARIABLE-SIMPLE-PATH");
+            }
         }
 
         if (query.EffectiveExistencePatterns.Count > 0)
@@ -129,6 +139,10 @@ public static class GraphQueryPreflight
             Require(capabilities, GraphQueryCapability.SetOperations, "NODAL-QUERY-SET-OPERATIONS");
             Validate(query.SetOperation.Left, capabilities);
             Validate(query.SetOperation.Right, capabilities);
+        }
+        if (query.Distinct)
+        {
+            Require(capabilities, GraphQueryCapability.Distinct, "NODAL-QUERY-DISTINCT");
         }
     }
 

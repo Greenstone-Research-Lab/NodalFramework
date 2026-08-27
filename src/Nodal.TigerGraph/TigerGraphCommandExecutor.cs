@@ -180,6 +180,12 @@ public sealed class TigerGraphCommandExecutor : IGraphCommandExecutor
             rows.Add(new GraphResultRow(node, values));
             return;
         }
+        if (element.ValueKind == JsonValueKind.Object &&
+            element.TryGetProperty("nodal_rows", out var table))
+        {
+            CollectTabularRows(table, rows);
+            return;
+        }
         if (element.ValueKind == JsonValueKind.Object)
         {
             foreach (var property in element.EnumerateObject())
@@ -193,6 +199,38 @@ public sealed class TigerGraphCommandExecutor : IGraphCommandExecutor
             {
                 CollectAnalyticsRows(item, rows);
             }
+        }
+    }
+
+    private static void CollectTabularRows(JsonElement table, ICollection<GraphResultRow> rows)
+    {
+        if (table.ValueKind == JsonValueKind.Object)
+        {
+            rows.Add(new GraphResultRow(
+                null,
+                table.EnumerateObject().ToDictionary(item => item.Name, item => ConvertJsonValue(item.Value))));
+            return;
+        }
+
+        if (table.ValueKind != JsonValueKind.Array)
+        {
+            rows.Add(new GraphResultRow(null, new Dictionary<string, object?>
+            {
+                ["value"] = ConvertJsonValue(table),
+            }));
+            return;
+        }
+
+        foreach (var item in table.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                throw new InvalidOperationException("TigerGraph returned a tabular row that was not a JSON object.");
+            }
+
+            rows.Add(new GraphResultRow(
+                null,
+                item.EnumerateObject().ToDictionary(property => property.Name, property => ConvertJsonValue(property.Value))));
         }
     }
 
