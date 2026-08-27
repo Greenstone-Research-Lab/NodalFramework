@@ -67,6 +67,10 @@ jobs:
             -PackageVersion $env:PACKAGE_VERSION `
             -CommitSha '${{ github.sha }}'
 
+      - name: Audit NuGet dependencies and attach release evidence
+        shell: pwsh
+        run: ./eng/verify-dependencies.ps1 -OutputFile 'TestResults/release-evidence/dependency-audit.json'
+
       - name: Upload verified package artifacts
         uses: actions/upload-artifact@v4
         with:

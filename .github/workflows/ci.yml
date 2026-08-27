@@ -63,6 +63,10 @@ jobs:
             -PackageSource "$PWD/TestResults/package-verification" `
             -AdditionalPackageSource 'https://api.nuget.org/v3/index.json'
 
+      - name: Audit NuGet dependencies
+        shell: pwsh
+        run: ./eng/verify-dependencies.ps1
+
   neo4j-smoke:
     name: Neo4j live smoke
     needs: quality
