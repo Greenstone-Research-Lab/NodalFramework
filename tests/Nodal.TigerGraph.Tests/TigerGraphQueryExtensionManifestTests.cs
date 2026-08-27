@@ -75,6 +75,44 @@ public sealed class TigerGraphQueryExtensionManifestTests
         Assert.Equal("NODAL-TIGERGRAPH-EXTENSION-CONTRACT-MISMATCH", incompatible.CapabilityCode);
     }
 
+    [Fact]
+    public async Task FactoryValidatesConfiguredManifestBeforeReturningProvider()
+    {
+        var manifest = Manifest();
+        var handler = new StubHandler("""
+        {"error":false,"results":[{"nodal_extension_version":"1.0.0","nodal_extension_features":["CorrelatedExistence"]}]}
+        """);
+        using var client = new HttpClient(handler);
+        var provider = await TigerGraphProviderFactory.CreateAsync(
+            client,
+            Options(manifest),
+            "Social");
+
+        Assert.Same(manifest, provider.QueryExtensions);
+        var verified = Assert.IsType<TigerGraphQueryExtensionSnapshot>(provider.VerifiedQueryExtensions);
+        Assert.Equal(new Version(1, 0, 0), verified.Version);
+        Assert.Contains(
+            TigerGraphQueryExtensionFeature.CorrelatedExistence,
+            verified.Features);
+        Assert.Equal(1, handler.RequestCount);
+    }
+
+    [Fact]
+    public async Task FactorySkipsDiscoveryWithoutManifestAndSupportsAdministrativeComposition()
+    {
+        var handler = new StubHandler("not used", HttpStatusCode.InternalServerError);
+        using var client = new HttpClient(handler);
+        var provider = await TigerGraphProviderFactory.CreateAsync(
+            client,
+            Options(),
+            "Social",
+            new StubAdministrativeTransport());
+
+        Assert.Null(provider.QueryExtensions);
+        Assert.Null(provider.VerifiedQueryExtensions);
+        Assert.Equal(0, handler.RequestCount);
+    }
+
     private static TigerGraphQueryExtensionManifest Manifest() => new(
         new Version(1, 0, 0),
         new Dictionary<TigerGraphQueryExtensionFeature, string>
@@ -82,19 +120,22 @@ public sealed class TigerGraphQueryExtensionManifestTests
             [TigerGraphQueryExtensionFeature.CorrelatedExistence] = "nodal_exists_v1",
         });
 
-    private static TigerGraphOptions Options() => new()
+    private static TigerGraphOptions Options(TigerGraphQueryExtensionManifest? manifest = null) => new()
     {
         Endpoint = new Uri("https://tigergraph.example/"),
         AccessToken = "token",
+        QueryExtensions = manifest,
     };
 
     private sealed class StubHandler(string payload, HttpStatusCode statusCode = HttpStatusCode.OK) : HttpMessageHandler
     {
         public Uri? RequestUri { get; private set; }
         public AuthenticationHeaderValue? Authorization { get; private set; }
+        public int RequestCount { get; private set; }
 
         protected override Task<HttpResponseMessage> SendAsync(HttpRequestMessage request, CancellationToken cancellationToken)
         {
+            RequestCount++;
             RequestUri = request.RequestUri;
             Authorization = request.Headers.Authorization;
             return Task.FromResult(new HttpResponseMessage(statusCode)
@@ -102,5 +143,12 @@ public sealed class TigerGraphQueryExtensionManifestTests
                 Content = new StringContent(payload, Encoding.UTF8, "application/json"),
             });
         }
+    }
+
+    private sealed class StubAdministrativeTransport : ITigerGraphAdministrativeTransport
+    {
+        public ValueTask ExecuteAsync(
+            MigrationCommand command,
+            CancellationToken cancellationToken = default) => ValueTask.CompletedTask;
     }
 }

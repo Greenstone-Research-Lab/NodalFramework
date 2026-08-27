@@ -67,11 +67,11 @@ Nodal distinguishes vendor client compatibility from versions verified by this r
 | Capability | Neo4j | TigerGraph |
 | --- | --- | --- |
 | Parameterized queries and fixed traversals | Supported | Supported |
-| Variable-depth traversal | Supported | GSQL Syntax V2 with documented restrictions |
+| Variable-depth traversal | Supported | GSQL Syntax V2; live verified for bounded node traversal |
 | Optional match | Supported | Not supported |
 | Correlated `WhereExists` / `WhereNotExists` | Supported | Conditional: explicit runtime-generated extension plus administrative transport; live verified |
 | Additional patterns and set operations | Supported | Not supported; rejected before transport |
-| Scalar and aggregate rows | Supported | Supported through SQL-like GSQL Syntax V2 |
+| Scalar and aggregate rows | Supported | SQL-like GSQL Syntax V2; `Count`, `Sum`, `Average`, `Min`, and `Max` live verified |
 | Transaction boundary | Client-managed transaction | Atomic request or installed query |
 | Migration execution | Supported | Requires administrative transport |
 | Centrality and community detection | Requires compatible GDS and named projection | Requires explicitly configured installed GSQL query |

@@ -131,6 +131,12 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
     /// <summary>Gets the explicitly configured installed-query extension manifest, when present.</summary>
     public TigerGraphQueryExtensionManifest? QueryExtensions { get; }
 
+    /// <summary>
+    /// Gets the installed-query extension contract verified during asynchronous provider creation.
+    /// A direct constructor does not perform network I/O and therefore leaves this value unset.
+    /// </summary>
+    public TigerGraphQueryExtensionSnapshot? VerifiedQueryExtensions { get; private set; }
+
     /// <inheritdoc />
     public IGraphCommandExecutor CommandExecutor { get; private set; }
 
@@ -209,6 +215,12 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
         SupportsAtomicBatch = true,
         TransactionScope = GraphTransactionScope.RequestOrQuery,
     };
+
+    internal void SetVerifiedQueryExtensions(TigerGraphQueryExtensionSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        VerifiedQueryExtensions = snapshot;
+    }
 }
 
 [ExcludeFromCodeCoverage]
