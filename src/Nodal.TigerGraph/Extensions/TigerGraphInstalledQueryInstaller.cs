@@ -3,10 +3,10 @@ using Nodal.Core.Migrations;
 
 namespace Nodal.TigerGraph.Extensions;
 
-/// <summary>Installs generated TigerGraph extension queries once per process and graph fingerprint.</summary>
+/// <summary>Installs generated TigerGraph extension queries once per installer and graph fingerprint.</summary>
 public sealed class TigerGraphInstalledQueryInstaller
 {
-    private static readonly ConcurrentDictionary<string, Lazy<Task>> Installations = new(StringComparer.Ordinal);
+    private readonly ConcurrentDictionary<string, Lazy<Task>> installations = new(StringComparer.Ordinal);
     private readonly ITigerGraphAdministrativeTransport transport;
     private readonly string graphName;
 
@@ -24,14 +24,14 @@ public sealed class TigerGraphInstalledQueryInstaller
     {
         ArgumentNullException.ThrowIfNull(definition);
         var key = $"{graphName}:{definition.Fingerprint}";
-        var lazy = Installations.GetOrAdd(key, _ => new Lazy<Task>(() => InstallCoreAsync(definition), LazyThreadSafetyMode.ExecutionAndPublication));
+        var lazy = installations.GetOrAdd(key, _ => new Lazy<Task>(() => InstallCoreAsync(definition), LazyThreadSafetyMode.ExecutionAndPublication));
         try
         {
             await lazy.Value.WaitAsync(cancellationToken).ConfigureAwait(false);
         }
         catch
         {
-            Installations.TryRemove(new KeyValuePair<string, Lazy<Task>>(key, lazy));
+            installations.TryRemove(new KeyValuePair<string, Lazy<Task>>(key, lazy));
             throw;
         }
     }

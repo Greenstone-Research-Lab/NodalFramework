@@ -5,6 +5,7 @@ using Nodal.Core.Metadata;
 using Nodal.Core.Migrations;
 using Nodal.Core.Query;
 using Nodal.TigerGraph;
+using Nodal.TigerGraph.Extensions;
 
 namespace Nodal.IntegrationTests;
 
@@ -298,6 +299,91 @@ public sealed class TigerGraphConnectionTests
         {
             await DeleteVertexAsync(httpClient, options, graphName, first.Id);
             await DeleteVertexAsync(httpClient, options, graphName, second.Id);
+        }
+    }
+
+    [TigerGraphMigrationIntegrationFact]
+    [Trait("Category", "Integration")]
+    [Trait("Provider", "TigerGraph")]
+    public async Task CorrelatedExistenceExtensionInstallsAndExecutesOnLiveServer()
+    {
+        var endpoint = new Uri(Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_ENDPOINT")!, UriKind.Absolute);
+        var graphName = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GRAPH")!;
+        var baseOptions = CreateOptions(endpoint);
+        var options = new TigerGraphOptions
+        {
+            Endpoint = baseOptions.Endpoint,
+            AccessToken = baseOptions.AccessToken,
+            Username = baseOptions.Username,
+            Password = baseOptions.Password,
+            GeneratedQueryExtensions = new HashSet<TigerGraphQueryExtensionFeature>
+            {
+                TigerGraphQueryExtensionFeature.CorrelatedExistence,
+            },
+        };
+        var processOptions = new TigerGraphGsqlProcessOptions
+        {
+            FileName = Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GSQL_FILE")!,
+            PrefixArguments = JsonSerializer.Deserialize<string[]>(
+                Environment.GetEnvironmentVariable("NODAL_TIGERGRAPH_GSQL_PREFIX")!)!,
+            Username = options.Username,
+            Password = options.Password,
+            AccessToken = options.AccessToken,
+            GraphName = graphName,
+            VerifiedServerVersion = "4.2.4 Community",
+        };
+        var controlPlane = new TigerGraphGsqlProcessTransport(processOptions);
+        using var httpClient = new HttpClient { BaseAddress = endpoint };
+        var provider = new TigerGraphProvider(httpClient, options, graphName, controlPlane);
+        var context = new SocialContext(provider);
+        var suffix = Guid.NewGuid().ToString("N");
+        var source = new Person($"nodal-exists-source-{suffix}", "Source");
+        var target = new Person($"nodal-exists-target-{suffix}", "Target");
+        var isolated = new Person($"nodal-exists-isolated-{suffix}", "Isolated");
+        var installedQueries = new HashSet<string>(StringComparer.Ordinal);
+
+        try
+        {
+            context.People.Add(source);
+            context.People.Add(target);
+            context.People.Add(isolated);
+            context.Friendships.Connect(source, new Knows(2020), target);
+            await context.SaveChangesAsync();
+
+            var readContext = new SocialContext(provider);
+            var exists = readContext.People
+                .Match(person => person.Id == source.Id)
+                .WhereExists(
+                    readContext.Friendships,
+                    person => person.Id == target.Id,
+                    relation => relation.SinceYear >= 2020);
+            var missing = readContext.People
+                .Match(person => person.Id == isolated.Id)
+                .WhereNotExists(readContext.Friendships, person => person.Id == target.Id);
+            installedQueries.Add(provider.QueryCompiler.Compile(exists.ToQueryModel()).Route!.Split('/')[^1]);
+            installedQueries.Add(provider.QueryCompiler.Compile(missing.ToQueryModel()).Route!.Split('/')[^1]);
+
+            Assert.Equal(source.Id, Assert.Single(await exists.ToListAsync()).Id);
+            Assert.Equal(isolated.Id, Assert.Single(await missing.ToListAsync()).Id);
+        }
+        finally
+        {
+            await DeleteVertexAsync(httpClient, options, graphName, source.Id);
+            await DeleteVertexAsync(httpClient, options, graphName, target.Id);
+            await DeleteVertexAsync(httpClient, options, graphName, isolated.Id);
+            foreach (var queryName in installedQueries)
+            {
+                try
+                {
+                    await controlPlane.ExecuteAsync(new MigrationCommand(
+                        $"DROP QUERY {queryName}",
+                        false,
+                        MigrationCommandKind.QueryDefinition));
+                }
+                catch (InvalidOperationException)
+                {
+                }
+            }
         }
     }
 

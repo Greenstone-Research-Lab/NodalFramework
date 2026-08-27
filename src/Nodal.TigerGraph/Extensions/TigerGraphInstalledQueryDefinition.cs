@@ -41,7 +41,10 @@ public static partial class TigerGraphInstalledQueryDefinitionFactory
         var body = pattern.Negated
             ? $"OrAccum<BOOL> @nodal_match; matched = SELECT {source} FROM {query.NodeType}:{source}{traversal}{Where(matchFilter)} ACCUM {source}.@nodal_match = true; result = SELECT {source} FROM {query.NodeType}:{source}{Where(antiFilter)}; PRINT result;"
             : $"result = SELECT {source} FROM {query.NodeType}:{source}{traversal}{Where(matchFilter)}; PRINT result;";
-        return new TigerGraphInstalledQueryDefinition(name, fingerprint, $"CREATE QUERY {name}({parameters}) FOR GRAPH {graphName} {{ {body} }}\nINSTALL QUERY {name}");
+        return new TigerGraphInstalledQueryDefinition(
+            name,
+            fingerprint,
+            $"CREATE OR REPLACE QUERY {name}({parameters}) FOR GRAPH {graphName} {{ {body} }}\nINSTALL QUERY -FORCE {name}");
     }
 
     private static string RenderTraversal(GraphExistencePattern pattern, string relation, string target) => pattern.Direction switch

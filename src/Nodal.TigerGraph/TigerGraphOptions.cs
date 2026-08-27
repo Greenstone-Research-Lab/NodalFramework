@@ -40,4 +40,11 @@ public sealed class TigerGraphOptions
     /// execution contract before the corresponding fluent query shape is enabled.
     /// </summary>
     public TigerGraphQueryExtensionManifest? QueryExtensions { get; init; }
+
+    /// <summary>
+    /// Gets query shapes that Nodal may generate and install at runtime through the explicitly
+    /// supplied administrative transport. No generated extension is enabled by default.
+    /// </summary>
+    public IReadOnlySet<TigerGraphQueryExtensionFeature> GeneratedQueryExtensions { get; init; } =
+        new HashSet<TigerGraphQueryExtensionFeature>();
 }

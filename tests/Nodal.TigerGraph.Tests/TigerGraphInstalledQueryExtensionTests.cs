@@ -1,3 +1,4 @@
+using System.Net;
 using Nodal.Core.Migrations;
 using Nodal.Core.Query;
 using Nodal.TigerGraph.Extensions;
@@ -18,11 +19,11 @@ public sealed class TigerGraphInstalledQueryExtensionTests
         Assert.Equal(first.Fingerprint, second.Fingerprint);
         Assert.Equal(first.Text, second.Text);
         Assert.StartsWith("nodal_exists_", first.Name, StringComparison.Ordinal);
-        Assert.Contains("CREATE QUERY", first.Text, StringComparison.Ordinal);
+        Assert.Contains("CREATE OR REPLACE QUERY", first.Text, StringComparison.Ordinal);
         Assert.Contains("INT minimumAge", first.Text, StringComparison.Ordinal);
         Assert.Contains("STRING name", first.Text, StringComparison.Ordinal);
         Assert.Contains("nodal_source.Age >= minimumAge AND nodal_target.Name LIKE name + \"%\"", first.Text, StringComparison.Ordinal);
-        Assert.EndsWith($"INSTALL QUERY {first.Name}", first.Text, StringComparison.Ordinal);
+        Assert.EndsWith($"INSTALL QUERY -FORCE {first.Name}", first.Text, StringComparison.Ordinal);
     }
 
     [Theory]
@@ -171,6 +172,105 @@ public sealed class TigerGraphInstalledQueryExtensionTests
     }
 
     [Fact]
+    public async Task ProviderInstallsAndExecutesConfiguredCorrelatedExistenceQueryOnce()
+    {
+        var graphName = UniqueGraph();
+        var handler = new QueryHandler("""
+        {"error":false,"results":[{"result":[{"v_id":"person-1","v_type":"Person","attributes":{"Name":"Ada"}}]}]}
+        """);
+        using var client = new HttpClient(handler);
+        var transport = new RecordingTransport();
+        var options = new TigerGraphOptions
+        {
+            Endpoint = new Uri("https://tigergraph.example/"),
+            AccessToken = "token",
+            GeneratedQueryExtensions = new HashSet<TigerGraphQueryExtensionFeature>
+            {
+                TigerGraphQueryExtensionFeature.CorrelatedExistence,
+            },
+        };
+        var provider = new TigerGraphProvider(client, options, graphName, transport);
+        var command = provider.QueryCompiler.Compile(Query());
+
+        var first = await provider.CommandExecutor.ExecuteAsync(command);
+        var second = await provider.CommandExecutor.ExecuteAsync(command);
+
+        Assert.True(provider.QueryCapabilities.Supports(GraphQueryCapability.CorrelatedSubquery));
+        Assert.StartsWith($"restpp/query/{graphName}/nodal_exists_", command.Route, StringComparison.Ordinal);
+        Assert.Equal(2, transport.Commands.Count);
+        Assert.Equal(2, handler.RequestCount);
+        Assert.Equal("person-1", Assert.Single(first.Nodes).Id);
+        Assert.Equal("person-1", Assert.Single(second.Nodes).Id);
+    }
+
+    [Fact]
+    public void ProviderDoesNotAdvertiseUnconfiguredCorrelatedExistence()
+    {
+        using var client = new HttpClient(new QueryHandler("{\"error\":false,\"results\":[]}"));
+        var provider = new TigerGraphProvider(
+            client,
+            new TigerGraphOptions { Endpoint = new Uri("https://tigergraph.example/") },
+            UniqueGraph(),
+            new RecordingTransport());
+
+        Assert.False(provider.QueryCapabilities.Supports(GraphQueryCapability.CorrelatedSubquery));
+        Assert.Throws<NotSupportedException>(() => provider.QueryCompiler.Compile(Query()));
+    }
+
+    [Fact]
+    public void ProviderRejectsUnimplementedGeneratedExtensionFlagsBeforeTransport()
+    {
+        using var client = new HttpClient(new QueryHandler("{\"error\":false,\"results\":[]}"));
+        var provider = new TigerGraphProvider(
+            client,
+            new TigerGraphOptions
+            {
+                Endpoint = new Uri("https://tigergraph.example/"),
+                GeneratedQueryExtensions = new HashSet<TigerGraphQueryExtensionFeature>
+                {
+                    TigerGraphQueryExtensionFeature.MultiplePatterns,
+                    TigerGraphQueryExtensionFeature.SetOperations,
+                    TigerGraphQueryExtensionFeature.OptionalTraversal,
+                },
+            },
+            UniqueGraph(),
+            new RecordingTransport());
+        var operand = new GraphQueryModel("Person", "person", null, [], null, []);
+        var optional = operand with
+        {
+            Traversals =
+            [
+                new GraphTraversalStep(
+                    "KNOWS", "Person", "person", "knows", "friend",
+                    GraphTraversalDirection.Outgoing, null, Optional: true),
+            ],
+        };
+        var multiple = operand with
+        {
+            MatchPatterns =
+            [
+                new GraphTraversalStep(
+                    "KNOWS", "Person", "person", "knows", "friend",
+                    GraphTraversalDirection.Outgoing, null),
+            ],
+        };
+        var set = operand with
+        {
+            SetOperation = new GraphSetOperation(GraphSetOperationKind.Union, operand, operand),
+        };
+
+        Assert.False(provider.QueryCapabilities.Supports(GraphQueryCapability.OptionalTraversal));
+        Assert.False(provider.QueryCapabilities.Supports(GraphQueryCapability.MultiplePatterns));
+        Assert.False(provider.QueryCapabilities.Supports(GraphQueryCapability.SetOperations));
+        Assert.Equal("NODAL-QUERY-OPTIONAL-TRAVERSAL", Assert.Throws<NodalCapabilityNotSupportedException>(
+            () => GraphQueryPreflight.Validate(optional, provider.QueryCapabilities)).CapabilityCode);
+        Assert.Equal("NODAL-QUERY-MULTIPLE-PATTERNS", Assert.Throws<NodalCapabilityNotSupportedException>(
+            () => GraphQueryPreflight.Validate(multiple, provider.QueryCapabilities)).CapabilityCode);
+        Assert.Equal("NODAL-QUERY-SET-OPERATIONS", Assert.Throws<NodalCapabilityNotSupportedException>(
+            () => GraphQueryPreflight.Validate(set, provider.QueryCapabilities)).CapabilityCode);
+    }
+
+    [Fact]
     public async Task InstallerExecutesDefinitionAndInstallationOnlyOnce()
     {
         var transport = new RecordingTransport();
@@ -183,6 +283,21 @@ public sealed class TigerGraphInstalledQueryExtensionTests
             transport.Commands,
             command => Assert.Equal(MigrationCommandKind.QueryDefinition, command.Kind),
             command => Assert.Equal(MigrationCommandKind.QueryInstallation, command.Kind));
+    }
+
+    [Fact]
+    public async Task InstallerInstancesDoNotShareStateAcrossAdministrativeTargets()
+    {
+        var firstTransport = new RecordingTransport();
+        var secondTransport = new RecordingTransport();
+        var graphName = UniqueGraph();
+        var definition = Definition();
+
+        await new TigerGraphInstalledQueryInstaller(firstTransport, graphName).InstallAsync(definition);
+        await new TigerGraphInstalledQueryInstaller(secondTransport, graphName).InstallAsync(definition);
+
+        Assert.Equal(2, firstTransport.Commands.Count);
+        Assert.Equal(2, secondTransport.Commands.Count);
     }
 
     [Fact]
@@ -271,6 +386,22 @@ public sealed class TigerGraphInstalledQueryExtensionTests
                 throw new InvalidOperationException("Simulated installation failure.");
             }
             return ValueTask.CompletedTask;
+        }
+    }
+
+    private sealed class QueryHandler(string payload) : HttpMessageHandler
+    {
+        public int RequestCount { get; private set; }
+
+        protected override Task<HttpResponseMessage> SendAsync(
+            HttpRequestMessage request,
+            CancellationToken cancellationToken)
+        {
+            RequestCount++;
+            return Task.FromResult(new HttpResponseMessage(HttpStatusCode.OK)
+            {
+                Content = new StringContent(payload),
+            });
         }
     }
 }

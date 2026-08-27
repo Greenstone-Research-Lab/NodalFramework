@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Nodal.Core.Execution;
 using Nodal.Core.Providers;
+using Nodal.TigerGraph.Extensions;
 
 namespace Nodal.TigerGraph;
 
@@ -13,17 +14,30 @@ public sealed class TigerGraphCommandExecutor : IGraphCommandExecutor
 {
     private readonly HttpClient httpClient;
     private readonly TigerGraphOptions options;
+    private readonly TigerGraphInstalledQueryCatalog? installedQueries;
+    private readonly TigerGraphInstalledQueryInstaller? installedQueryInstaller;
 
     /// <summary>
     /// Initializes an executor with an externally managed <see cref="HttpClient"/>.
     /// </summary>
     public TigerGraphCommandExecutor(HttpClient httpClient, TigerGraphOptions options)
+        : this(httpClient, options, null, null)
+    {
+    }
+
+    internal TigerGraphCommandExecutor(
+        HttpClient httpClient,
+        TigerGraphOptions options,
+        TigerGraphInstalledQueryCatalog? installedQueries,
+        TigerGraphInstalledQueryInstaller? installedQueryInstaller)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(options);
         httpClient.BaseAddress ??= options.Endpoint;
         this.httpClient = httpClient;
         this.options = options;
+        this.installedQueries = installedQueries;
+        this.installedQueryInstaller = installedQueryInstaller;
     }
 
     /// <inheritdoc />
@@ -32,6 +46,12 @@ public sealed class TigerGraphCommandExecutor : IGraphCommandExecutor
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
+
+        if (installedQueryInstaller is not null &&
+            installedQueries?.TryGet(command.Route, out var definition) == true)
+        {
+            await installedQueryInstaller.InstallAsync(definition, cancellationToken).ConfigureAwait(false);
+        }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, BuildRequestUri(command));
         TigerGraphAuthentication.Apply(request, options);
