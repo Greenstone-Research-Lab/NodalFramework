@@ -120,7 +120,9 @@ public sealed class Neo4jProvider :
             GraphQueryCapability.MultiplePatterns |
             GraphQueryCapability.ServerSideProjection |
             GraphQueryCapability.Aggregation |
-            GraphQueryCapability.SetOperations,
+            GraphQueryCapability.SetOperations |
+            GraphQueryCapability.Distinct |
+            GraphQueryCapability.VariableLengthSimplePath,
     };
 
     /// <inheritdoc />

@@ -20,6 +20,9 @@ Nodal Framework is a provider-based .NET graph data access prototype. It keeps t
 | `Nodal.Analytics` | Provider-neutral analytics contracts and capability integration |
 | `Nodal.TigerGraph` | TigerGraph/GSQL provider using REST++ and an optional administrative transport |
 | `Nodal.Tool` | .NET global tool for deterministic migration snapshots, diffs, plans, and validation |
+| `Nodal.Import` | Provider-neutral, bounded import orchestration and diagnostics |
+| `Nodal.Import.Csv` | Streaming CSV records with deterministic header normalization |
+| `Nodal.Import.Relational` | Relational schema metadata discovery and graph import-plan drafting |
 
 The initial alpha targets .NET 10. Package versions move together so provider and core contracts remain compatible during the pre-release period.
 
@@ -164,7 +167,7 @@ The same provider-neutral traversal model compiles to directed Cypher patterns f
 
 ### Query engine
 
-The fluent query surface keeps values parameterized while pushing filtering, ordering, paging, distinctness, traversal, and aggregates into the selected provider:
+The fluent query surface keeps values parameterized while pushing filtering, ordering, paging, traversal, duplicate elimination, and provider-supported projections into the selected provider. Requested operations that a provider has not verified fail before transport:
 
 ```csharp
 string[] selectedIds = ["person-42", "person-84"];

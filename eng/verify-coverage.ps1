@@ -10,7 +10,10 @@ $targets = @(
     @{ Package = 'Nodal.Migrations'; Project = 'tests/Nodal.Migrations.Tests/Nodal.Migrations.Tests.csproj' },
     @{ Package = 'Nodal.Neo4j'; Project = 'tests/Nodal.Neo4j.Tests/Nodal.Neo4j.Tests.csproj' },
     @{ Package = 'Nodal.TigerGraph'; Project = 'tests/Nodal.TigerGraph.Tests/Nodal.TigerGraph.Tests.csproj' },
-    @{ Package = 'Nodal.Tool'; Project = 'tests/Nodal.Tool.Tests/Nodal.Tool.Tests.csproj' }
+    @{ Package = 'Nodal.Tool'; Project = 'tests/Nodal.Tool.Tests/Nodal.Tool.Tests.csproj' },
+    @{ Package = 'Nodal.Import'; Project = 'tests/Nodal.Import.Tests/Nodal.Import.Tests.csproj' },
+    @{ Package = 'Nodal.Import.Csv'; Project = 'tests/Nodal.Import.Tests/Nodal.Import.Tests.csproj' },
+    @{ Package = 'Nodal.Import.Relational'; Project = 'tests/Nodal.Import.Tests/Nodal.Import.Tests.csproj' }
 )
 
 foreach ($target in $targets) {

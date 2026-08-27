@@ -36,13 +36,15 @@ Legend: **Yes** is implemented; **Conditional** requires the condition shown; **
 | Capability | Neo4j | TigerGraph |
 | --- | --- | --- |
 | Parameterized node filtering and ordering | Yes, Cypher | Yes, interpreted GSQL |
+| Duplicate elimination (`Distinct`) for node results | Yes | Yes: TigerGraph vertex-set selection is naturally unique; verified by live traversal convergence test |
 | Fixed directed/undirected traversal | Yes | Yes |
 | Variable-depth traversal | Yes | Conditional: GSQL Syntax V2 |
 | Optional match | Yes | No |
+| Vertex-simple fixed-depth path | Yes | Yes |
 | Vertex-simple variable-depth path | Yes | No: intermediate aliases are unavailable |
 | Correlated existence pattern | Yes: Cypher `EXISTS` subquery | No: use a separately verified installed-query extension |
 | Additional named required pattern | Yes: Cypher `MATCH` | No: use a separately verified installed-query extension |
-| Provider-side scalar/aggregate rows | Yes | No: interpreted GSQL route rejects it before transport |
+| Provider-side scalar/aggregate rows | Yes | Yes: SQL-like GSQL Syntax V2; property rows, grouping, `Having`, ordering, bounded results, and aggregate projection |
 | Compatible node-query `Union` / `UnionAll` | Yes | No: use a separately verified installed-query extension |
 | Client-managed multi-command transaction | Yes | No: request or installed-query boundary |
 | Atomic mutation plan | Yes | Conditional: REST++ or installed mutation query |

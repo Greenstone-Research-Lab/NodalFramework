@@ -1,0 +1,10 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Nodal.Import</AssemblyName>
+    <PackageId>Nodal.Import</PackageId>
+    <Title>Nodal Framework Import</Title>
+    <Description>Provider-neutral, bounded graph import orchestration for Nodal Framework.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+</Project>

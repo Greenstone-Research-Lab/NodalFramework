@@ -63,7 +63,7 @@ public sealed class TigerGraphQueryCompilerTests
     }
 
     [Fact]
-    public void CompileRejectsServerSideRowProjectionInsteadOfIgnoringIt()
+    public void CompileProducesSyntaxV2ServerSideRowProjection()
     {
         var model = new GraphQueryModel(
             "Person",
@@ -78,10 +78,41 @@ public sealed class TigerGraphQueryCompilerTests
                 new GraphRowColumn("count", GraphRowColumnKind.Count, "person"),
             ]));
 
-        var exception = Assert.Throws<NotSupportedException>(() =>
-            new TigerGraphQueryCompiler("Social").Compile(model));
+        var command = new TigerGraphQueryCompiler("Social").Compile(model);
 
-        Assert.Contains("row-projection", exception.Message, StringComparison.Ordinal);
+        Assert.Equal(
+            "INTERPRET QUERY () FOR GRAPH Social SYNTAX V2 { SELECT COUNT(nodal_v0) AS count INTO nodal_rows FROM Person:nodal_v0; PRINT nodal_rows; }",
+            command.Text);
+    }
+
+    [Fact]
+    public void CompileRendersEveryRowAggregateWithGroupingHavingAndOrdering()
+    {
+        var model = new GraphQueryModel(
+            "Person",
+            "node",
+            null,
+            [new GraphQueryParameter("p0", 2, typeof(int))],
+            10,
+            [],
+            GraphQueryProjection.Row,
+            RowProjection: new GraphRowProjection(
+            [
+                new GraphRowColumn("name", GraphRowColumnKind.Property, "node", "Name"),
+                new GraphRowColumn("count", GraphRowColumnKind.Count, "node", Distinct: true),
+                new GraphRowColumn("sum", GraphRowColumnKind.Sum, "node", "Score"),
+                new GraphRowColumn("average", GraphRowColumnKind.Average, "node", "Score"),
+                new GraphRowColumn("minimum", GraphRowColumnKind.Minimum, "node", "Score"),
+                new GraphRowColumn("maximum", GraphRowColumnKind.Maximum, "node", "Score"),
+            ],
+            [new GraphRowOrdering("count", GraphSortDirection.Descending)],
+            [new GraphRowPredicate("count", GraphComparisonOperator.GreaterThan, "p0")]));
+
+        var command = new TigerGraphQueryCompiler("Social").Compile(model);
+
+        Assert.Equal(
+            "INTERPRET QUERY (INT p0) FOR GRAPH Social SYNTAX V2 { SELECT nodal_v0.Name AS name, COUNT(DISTINCT nodal_v0) AS count, SUM(nodal_v0.Score) AS sum, AVG(nodal_v0.Score) AS average, MIN(nodal_v0.Score) AS minimum, MAX(nodal_v0.Score) AS maximum INTO nodal_rows FROM Person:nodal_v0 GROUP BY nodal_v0.Name HAVING count > p0 ORDER BY count DESC LIMIT 10; PRINT nodal_rows; }",
+            command.Text);
     }
 
     [Fact]
