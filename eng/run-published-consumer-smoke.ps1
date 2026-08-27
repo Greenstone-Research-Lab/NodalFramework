@@ -36,6 +36,8 @@ try {
     dotnet run --project $project --no-restore -p:NodalPackageVersion=$PackageVersion -- (Join-Path $workspace 'orders.csv')
     if ($LASTEXITCODE -ne 0) { throw 'The clean-room consumer execution failed.' }
     $evidence = [ordered]@{ packageVersion = $PackageVersion; packageSource = $PackageSource; packages = $nodalLibraries; verifiedAtUtc = [DateTimeOffset]::UtcNow.ToString('O') } | ConvertTo-Json
-    $evidence | Set-Content -LiteralPath (Join-Path $root 'TestResults/published-consumer-smoke.json')
+    $evidenceDirectory = Join-Path $root 'TestResults'
+    New-Item -ItemType Directory -Path $evidenceDirectory -Force | Out-Null
+    $evidence | Set-Content -LiteralPath (Join-Path $evidenceDirectory 'published-consumer-smoke.json')
 }
 finally { if (Test-Path $workspace) { Remove-Item -LiteralPath $workspace -Recurse -Force } }
