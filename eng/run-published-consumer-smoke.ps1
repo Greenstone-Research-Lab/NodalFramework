@@ -2,7 +2,7 @@ param(
     [Parameter(Mandatory)] [string]$PackageVersion,
     [string]$PackageSource = 'https://api.nuget.org/v3/index.json',
     [string]$AdditionalPackageSource,
-    [int]$RestoreAttempts = 6
+    [int]$RestoreAttempts = 12
 )
 
 $ErrorActionPreference = 'Stop'
@@ -24,7 +24,9 @@ try {
     for ($attempt = 1; $attempt -le $RestoreAttempts; $attempt++) {
         dotnet restore $project --configfile (Join-Path $workspace 'NuGet.Config') --packages $packages -p:NodalPackageVersion=$PackageVersion
         if ($LASTEXITCODE -eq 0) { break }
-        if ($attempt -eq $RestoreAttempts) { throw "Could not restore published Nodal $PackageVersion after $RestoreAttempts attempts." }
+        if ($attempt -eq $RestoreAttempts) {
+            throw "Could not restore published Nodal $PackageVersion after $RestoreAttempts attempts. NuGet.org may still be indexing the newly published version."
+        }
         Start-Sleep -Seconds ([Math]::Min(30, $attempt * 5))
     }
     if (Select-String -Path $project -Pattern '<ProjectReference' -Quiet) { throw 'Clean-room consumer projects must not contain ProjectReference entries.' }
