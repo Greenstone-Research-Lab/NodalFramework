@@ -55,6 +55,14 @@ jobs:
         shell: pwsh
         run: ./eng/verify-packages.ps1
 
+      - name: Verify clean-room consumer against package artifacts
+        shell: pwsh
+        run: |
+          ./eng/run-published-consumer-smoke.ps1 `
+            -PackageVersion '0.1.0-alpha.1' `
+            -PackageSource "$PWD/TestResults/package-verification" `
+            -AdditionalPackageSource 'https://api.nuget.org/v3/index.json'
+
   neo4j-smoke:
     name: Neo4j live smoke
     needs: quality
