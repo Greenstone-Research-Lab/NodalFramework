@@ -136,7 +136,7 @@ is an explicit manifest produced after provider compilation:
   "migrationId": "20260825_001_people",
   "providerName": "Neo4j",
   "providerVersion": "5.26",
-  "frameworkVersion": "0.1.0-alpha.1",
+  "frameworkVersion": "0.1.0-beta.1",
   "requirements": ["SchemaWrite"],
   "commands": [
     {
@@ -227,7 +227,7 @@ before destructive execution. The optional
 `NODAL_MIGRATION_HOST_CONFIGURATION` environment secret is passed only to the
 trusted host process and is never printed by the workflow or CLI.
 
-Every alpha publication also emits `nodal-release-evidence.json` and the
+Every beta publication also emits `nodal-release-evidence.json`, an SPDX SBOM, package provenance attestations, and the
 canonical capability JSON-LD beside the verified packages. The evidence records
 the commit, exact package version, package set, migration bundle format,
 certified provider baselines, and SHA-256 hash of the capability graph.

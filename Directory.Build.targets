@@ -4,9 +4,10 @@
     The baseline moves only through an explicit release-compatibility decision.
   -->
   <PropertyGroup Condition="'$(IsPackable)' != 'false'">
-    <NodalPublicApiBaselineVersion>0.1.0-alpha.10</NodalPublicApiBaselineVersion>
+    <!-- A baseline exists only for packages that have already been published. -->
+    <NodalPublicApiBaselineVersion Condition="'$(PackageId)' == 'Nodal.Core' Or '$(PackageId)' == 'Nodal.Migrations' Or '$(PackageId)' == 'Nodal.Neo4j' Or '$(PackageId)' == 'Nodal.Analytics' Or '$(PackageId)' == 'Nodal.TigerGraph' Or '$(PackageId)' == 'Nodal.Tool'">0.1.0-alpha.10</NodalPublicApiBaselineVersion>
     <EnablePackageValidation>true</EnablePackageValidation>
-    <PackageValidationBaselineVersion>$(NodalPublicApiBaselineVersion)</PackageValidationBaselineVersion>
+    <PackageValidationBaselineVersion Condition="'$(NodalPublicApiBaselineVersion)' != ''">$(NodalPublicApiBaselineVersion)</PackageValidationBaselineVersion>
     <ApiCompatEnableRuleCannotChangeParameterName>true</ApiCompatEnableRuleCannotChangeParameterName>
   </PropertyGroup>
 </Project>

@@ -1,6 +1,7 @@
 namespace Nodal.TigerGraph;
 
 using Nodal.Core.Analytics;
+using Nodal.TigerGraph.Extensions;
 
 /// <summary>
 /// Configures TigerGraph HTTP and GSQL access for a Nodal provider.
@@ -32,4 +33,18 @@ public sealed class TigerGraphOptions
     /// </summary>
     public IReadOnlySet<GraphAnalyticsAlgorithm> WeightedAnalyticsAlgorithms { get; init; } =
         new HashSet<GraphAnalyticsAlgorithm>();
+
+    /// <summary>
+    /// Gets the optional installed-query extension contract for advanced TigerGraph query shapes.
+    /// Configuring a manifest alone does not advertise a capability; Nodal requires a verified
+    /// execution contract before the corresponding fluent query shape is enabled.
+    /// </summary>
+    public TigerGraphQueryExtensionManifest? QueryExtensions { get; init; }
+
+    /// <summary>
+    /// Gets query shapes that Nodal may generate and install at runtime through the explicitly
+    /// supplied administrative transport. No generated extension is enabled by default.
+    /// </summary>
+    public IReadOnlySet<TigerGraphQueryExtensionFeature> GeneratedQueryExtensions { get; init; } =
+        new HashSet<TigerGraphQueryExtensionFeature>();
 }

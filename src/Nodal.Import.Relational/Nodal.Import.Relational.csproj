@@ -1,0 +1,11 @@
+<Project Sdk="Microsoft.NET.Sdk">
+  <PropertyGroup>
+    <TargetFramework>net10.0</TargetFramework>
+    <AssemblyName>Nodal.Import.Relational</AssemblyName>
+    <PackageId>Nodal.Import.Relational</PackageId>
+    <Title>Nodal Framework Relational Import</Title>
+    <Description>Provider-neutral SQL Server and PostgreSQL metadata discovery, bounded streaming reads, and deterministic relational interaction models for Nodal Framework.</Description>
+    <GenerateDocumentationFile>true</GenerateDocumentationFile>
+  </PropertyGroup>
+  <ItemGroup><ProjectReference Include="..\Nodal.Import\Nodal.Import.csproj" /></ItemGroup>
+</Project>

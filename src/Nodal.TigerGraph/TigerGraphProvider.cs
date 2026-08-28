@@ -5,6 +5,7 @@ using Nodal.Core.Migrations;
 using Nodal.Core.Mutations;
 using Nodal.Core.Providers;
 using Nodal.Core.Query;
+using Nodal.TigerGraph.Extensions;
 
 namespace Nodal.TigerGraph;
 
@@ -27,8 +28,10 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
     public TigerGraphProvider(HttpClient httpClient, TigerGraphOptions options, string graphName)
     {
         this.graphName = graphName;
+        QueryExtensions = options.QueryExtensions;
         QueryCompiler = new TigerGraphQueryCompiler(graphName);
         CommandExecutor = new TigerGraphCommandExecutor(httpClient, options);
+        QueryCapabilities = CreateQueryCapabilities(GraphQueryCapability.None);
         MutationExecutor = new TigerGraphMutationExecutor(httpClient, options, graphName);
         ResultMaterializer = new JsonGraphResultMaterializer();
         MigrationDialect = new TigerGraphMigrationDialect(graphName);
@@ -65,6 +68,17 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
         : this(httpClient, options, graphName)
     {
         ArgumentNullException.ThrowIfNull(administrativeTransport);
+        if (options.GeneratedQueryExtensions.Contains(TigerGraphQueryExtensionFeature.CorrelatedExistence))
+        {
+            var installedQueries = new TigerGraphInstalledQueryCatalog(graphName);
+            QueryCompiler = new TigerGraphQueryCompiler(graphName, installedQueries);
+            CommandExecutor = new TigerGraphCommandExecutor(
+                httpClient,
+                options,
+                installedQueries,
+                new TigerGraphInstalledQueryInstaller(administrativeTransport, graphName));
+            QueryCapabilities = CreateQueryCapabilities(GraphQueryCapability.CorrelatedSubquery);
+        }
         MutationExecutor = new TigerGraphMutationExecutor(
             httpClient,
             options,
@@ -112,20 +126,36 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
     }
 
     /// <inheritdoc />
-    public IGraphQueryCompiler QueryCompiler { get; }
+    public IGraphQueryCompiler QueryCompiler { get; private set; }
+
+    /// <summary>Gets the explicitly configured installed-query extension manifest, when present.</summary>
+    public TigerGraphQueryExtensionManifest? QueryExtensions { get; }
+
+    /// <summary>
+    /// Gets the installed-query extension contract verified during asynchronous provider creation.
+    /// A direct constructor does not perform network I/O and therefore leaves this value unset.
+    /// </summary>
+    public TigerGraphQueryExtensionSnapshot? VerifiedQueryExtensions { get; private set; }
 
     /// <inheritdoc />
-    public IGraphCommandExecutor CommandExecutor { get; }
+    public IGraphCommandExecutor CommandExecutor { get; private set; }
 
     /// <inheritdoc />
     public IGraphResultMaterializer ResultMaterializer { get; }
 
     /// <inheritdoc />
-    public GraphQueryCapabilities QueryCapabilities { get; } = new()
+    public GraphQueryCapabilities QueryCapabilities { get; private set; }
+
+    private static GraphQueryCapabilities CreateQueryCapabilities(GraphQueryCapability extensions) => new()
     {
         ProviderName = "TigerGraph",
         TestedProviderVersion = "4.2.4 Community",
-        Features = GraphQueryCapability.VariableLengthTraversal,
+        Features = GraphQueryCapability.VariableLengthTraversal |
+            GraphQueryCapability.Distinct |
+            GraphQueryCapability.SimplePath |
+            GraphQueryCapability.ServerSideProjection |
+            GraphQueryCapability.Aggregation |
+            extensions,
     };
 
     /// <inheritdoc />
@@ -185,6 +215,12 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
         SupportsAtomicBatch = true,
         TransactionScope = GraphTransactionScope.RequestOrQuery,
     };
+
+    internal void SetVerifiedQueryExtensions(TigerGraphQueryExtensionSnapshot snapshot)
+    {
+        ArgumentNullException.ThrowIfNull(snapshot);
+        VerifiedQueryExtensions = snapshot;
+    }
 }
 
 [ExcludeFromCodeCoverage]

@@ -1,6 +1,8 @@
 using System.Text.Json;
 using Nodal.Core.Analytics;
 using Nodal.Core.Providers;
+using Nodal.Import;
+using Nodal.Import.Relational;
 using Nodal.Tool;
 
 namespace Nodal.ArchitectureTests;
@@ -21,7 +23,7 @@ public sealed class DependencyDirectionTests
     }
 
     [Fact]
-    public void MigrationToolDependsOnlyOnProviderNeutralProductAssemblies()
+    public void ToolDependsOnlyOnProviderNeutralProductAssemblies()
     {
         var references = typeof(NodalCli).Assembly
             .GetReferencedAssemblies()
@@ -29,7 +31,37 @@ public sealed class DependencyDirectionTests
             .ToArray();
 
         Assert.Contains("Nodal.Core", references);
+        Assert.Contains("Nodal.Import", references);
+        Assert.Contains("Nodal.Import.Csv", references);
+        Assert.Contains("Nodal.Import.Relational", references);
         Assert.Contains("Nodal.Migrations", references);
+        Assert.DoesNotContain("Nodal.Neo4j", references);
+        Assert.DoesNotContain("Nodal.TigerGraph", references);
+    }
+
+    [Fact]
+    public void ImportPlanningDependsOnCoreButNotProviderImplementations()
+    {
+        var references = typeof(GraphImportPlanner<>).Assembly
+            .GetReferencedAssemblies()
+            .Select(reference => reference.Name)
+            .ToArray();
+
+        Assert.Contains("Nodal.Core", references);
+        Assert.DoesNotContain("Nodal.Neo4j", references);
+        Assert.DoesNotContain("Nodal.TigerGraph", references);
+    }
+
+    [Fact]
+    public void RelationalAdaptersUseAdoNetWithoutVendorClientDependencies()
+    {
+        var references = typeof(IRelationalSourceAdapter).Assembly
+            .GetReferencedAssemblies()
+            .Select(reference => reference.Name)
+            .ToArray();
+
+        Assert.DoesNotContain("Microsoft.Data.SqlClient", references);
+        Assert.DoesNotContain("Npgsql", references);
         Assert.DoesNotContain("Nodal.Neo4j", references);
         Assert.DoesNotContain("Nodal.TigerGraph", references);
     }

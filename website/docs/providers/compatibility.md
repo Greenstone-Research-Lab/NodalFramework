@@ -21,7 +21,7 @@ Nodal does not infer that a feature exists merely because a driver can connect t
 | Neo4j driver | `Neo4j.Driver` 6.3.0 | Driver 6.x supports Neo4j 4.4.x, 5.x, 2025.x, and 2026.x | Package and compiler tests |
 | Neo4j database | Neo4j 5.26 Community | Wider connectivity follows the official driver policy | Live query, mutation, and rollback baseline; migration compiler/unit verified |
 | Neo4j GDS | GDS 2.13 is the official match for Neo4j 5.26 | GDS must match the server according to Neo4j's compatibility matrix | Current procedure compiler verified; per-algorithm 2.13 live certification pending |
-| TigerGraph | TigerGraph 4.2.4 Community | No wider Nodal compatibility promise yet | Live REST++ query/mutation plus GSQL migration apply, cleanup, restart, history, and revert baseline; analytics endpoint contract verified |
+| TigerGraph | TigerGraph 4.2.4 Community | No wider Nodal compatibility promise yet | Live REST++ query/mutation, bounded Syntax V2 traversal and numeric aggregates, installed-extension discovery, plus GSQL migration apply, cleanup, restart, history, and revert baseline |
 
 References: [Neo4j .NET Driver compatibility](https://neo4j.com/docs/dotnet-manual/current/install/) and [Neo4j–GDS compatibility matrix](https://neo4j.com/docs/graph-data-science/current/installation/supported-neo4j-versions/).
 
@@ -36,13 +36,16 @@ Legend: **Yes** is implemented; **Conditional** requires the condition shown; **
 | Capability | Neo4j | TigerGraph |
 | --- | --- | --- |
 | Parameterized node filtering and ordering | Yes, Cypher | Yes, interpreted GSQL |
+| Duplicate elimination (`Distinct`) for node results | Yes | Yes: TigerGraph vertex-set selection is naturally unique; verified by live traversal convergence test |
 | Fixed directed/undirected traversal | Yes | Yes |
-| Variable-depth traversal | Yes | Conditional: GSQL Syntax V2 |
+| Variable-depth traversal | Yes | Conditional: GSQL Syntax V2; bounded node traversal live verified |
 | Optional match | Yes | No |
+| Vertex-simple fixed-depth path | Yes | Yes |
 | Vertex-simple variable-depth path | Yes | No: intermediate aliases are unavailable |
-| Correlated existence pattern | Yes: Cypher `EXISTS` subquery | No: use a separately verified installed-query extension |
+| Correlated existence pattern | Yes: Cypher `EXISTS` subquery | Conditional: explicit Nodal-generated installed-query extension and administrative transport; TigerGraph 4.2.4 live verified |
 | Additional named required pattern | Yes: Cypher `MATCH` | No: use a separately verified installed-query extension |
-| Provider-side scalar/aggregate rows | Yes | No: interpreted GSQL route rejects it before transport |
+| Provider-side scalar/aggregate rows | Yes | Yes: SQL-like GSQL Syntax V2; property rows, grouping, `Having`, ordering, bounded results, and `Count`/`Sum`/`Average`/`Min`/`Max` live verified |
+| Installed-query startup discovery | Not applicable | Conditional: `TigerGraphProviderFactory.CreateAsync` validates the versioned manifest before returning a provider |
 | Compatible node-query `Union` / `UnionAll` | Yes | No: use a separately verified installed-query extension |
 | Client-managed multi-command transaction | Yes | No: request or installed-query boundary |
 | Atomic mutation plan | Yes | Conditional: REST++ or installed mutation query |

@@ -19,9 +19,12 @@ Nodal Framework is a provider-based .NET graph data access prototype. It keeps t
 | `Nodal.Neo4j` | Neo4j/Cypher provider using the official pooled Bolt driver |
 | `Nodal.Analytics` | Provider-neutral analytics contracts and capability integration |
 | `Nodal.TigerGraph` | TigerGraph/GSQL provider using REST++ and an optional administrative transport |
-| `Nodal.Tool` | .NET global tool for deterministic migration snapshots, diffs, plans, and validation |
+| `Nodal.Tool` | .NET global tool for deterministic migrations and evidence-driven CSV imports |
+| `Nodal.Import` | Provider-neutral, bounded import orchestration and diagnostics |
+| `Nodal.Import.Csv` | Streaming CSV records with deterministic header normalization |
+| `Nodal.Import.Relational` | SQL Server/PostgreSQL discovery, bounded reads, and deterministic relational interaction models |
 
-The initial alpha targets .NET 10. Package versions move together so provider and core contracts remain compatible during the pre-release period.
+The beta line targets .NET 10. Package versions move together so provider and core contracts remain compatible during the pre-release period.
 
 Install one provider package; it brings `Nodal.Core` transitively. Add the
 migration package only when the application owns schema evolution:
@@ -32,12 +35,90 @@ dotnet add package Nodal.Neo4j --prerelease
 dotnet add package Nodal.Migrations --prerelease
 ```
 
-Install the migration CLI separately as a .NET tool:
+Install the CLI separately as a .NET tool:
 
 ```bash
 dotnet tool install --global Nodal.Tool --prerelease
 nodal migrations validate --snapshot nodal.snapshot.json
 ```
+
+The same tool validates a CSV import without connecting to a database and
+writes deterministic JSON evidence for review:
+
+```bash
+nodal import csv \
+  --input world-food-delivery.csv \
+  --mapping world-food-delivery.mapping.json \
+  --evidence import-evidence.json
+```
+
+Relational inspection uses an application-owned composition host, so database
+credentials and provider clients never become CLI arguments. It writes the
+canonical interaction model and optional visualization projections in one
+metadata pass:
+
+```bash
+nodal import relational \
+  --output northwind.nodalmodel.json \
+  --graphml northwind.graphml \
+  --gexf northwind.gexf \
+  --dot northwind.dot
+```
+
+The trusted host is selected through `NODAL_RELATIONAL_HOST_ASSEMBLY` and
+`NODAL_RELATIONAL_HOST_TYPE`. It implements `IRelationalInspectionHost` and
+owns connection creation, pooling, authentication, secret retrieval, and the
+SQL Server or PostgreSQL adapter choice.
+
+The repository also contains a structured [World Food Delivery clean-room
+consumer](consumer-smoke/WorldFoodDelivery/README.md). It restores only NuGet
+packages and exercises CSV-to-POCO mapping, graph mutation planning, portable
+Neo4j/TigerGraph queries, migrations, and a normalized relational interaction
+network. Its domain nodes and relations use one type per file so the example
+can serve as an application template rather than an opaque CI fixture.
+
+Dry-run is the default. Applying a CSV requires both `--apply true` and, when
+property upserts or omissions are detected, `--approve-destructive true` plus a
+trusted provider-composed mutation host. The complete mapping format and apply
+boundary are documented in the [import guide](website/docs/imports.md).
+
+For one-time onboarding, `Nodal.Import` converts an explicitly mapped, bounded
+source batch into the same provider-neutral mutation plan accepted by Neo4j and
+TigerGraph. Planning performs no database I/O and returns reviewable dry-run
+evidence before a provider executes anything:
+
+```csharp
+var mapping = GraphImportMapping.For<OrderRow>()
+    .Node<Customer>("customer", "Customer", "Id", row => row.CustomerId,
+        node => node.Property("Name", row => row.CustomerName))
+    .Node<Order>("order", "Order", "Id", row => row.OrderId,
+        node => node.Property("Total", row => row.Total))
+    .Relation("placed", "customer", "order", "PLACED")
+    .Build();
+
+var planned = new GraphImportPlanner<OrderRow>().Plan(
+    new GraphImportBatch<OrderRow>(1, rows),
+    mapping,
+    new GraphImportPlanningOptions(MaxOperations: 5_000));
+
+if (!planned.DryRun.Succeeded || planned.DryRun.HasDestructiveRisks)
+{
+    Review(planned.DryRun);
+}
+```
+
+Duplicate identities are coalesced deterministically within the batch, nodes
+always precede relations, and missing identities or potential property
+overwrites remain visible in payload-safe diagnostics and risk indicators. See
+the [import guide](website/docs/imports.md) for the complete contract.
+
+`Nodal.Import.Relational` can also turn discovered tables, views, columns,
+primary keys, composite foreign keys, and referential actions into a canonical
+Relational Interaction Model. The JSON document preserves physical database
+evidence; GraphML, GEXF, and DOT exports provide readable visualization
+projections for tools such as Gephi. Suggested labels are structural hints
+marked for review, not inferred business semantics. Domain-level transformation
+into a knowledge graph remains an explicit application decision.
 
 Immutable migration bundles capture provider identity, required capabilities,
 ordered up/down commands, execution channels, and destructive flags under a
@@ -54,7 +135,7 @@ the query and migration foundations. Advanced analytics implementations are not
 part of the open-source package contract.
 
 Pin all packages to the same version for reproducible builds, for example
-`0.1.0-alpha.2`. The complete console, worker, and ASP.NET Core setup is in the
+`0.1.0-beta.1`. The complete console, worker, and ASP.NET Core setup is in the
 [installation guide](website/docs/installation.md).
 
 ## Compatibility and provider capabilities
@@ -64,9 +145,11 @@ Nodal distinguishes vendor client compatibility from versions verified by this r
 | Capability | Neo4j | TigerGraph |
 | --- | --- | --- |
 | Parameterized queries and fixed traversals | Supported | Supported |
-| Variable-depth traversal | Supported | GSQL Syntax V2 with documented restrictions |
+| Variable-depth traversal | Supported | GSQL Syntax V2; live verified for bounded node traversal |
 | Optional match | Supported | Not supported |
-| Correlated existence, additional patterns, row aggregates, and set operations | Supported | Not supported by interpreted GSQL; use an installed provider extension |
+| Correlated `WhereExists` / `WhereNotExists` | Supported | Conditional: explicit runtime-generated extension plus administrative transport; live verified |
+| Additional patterns and set operations | Supported | Not supported; rejected before transport |
+| Scalar and aggregate rows | Supported | SQL-like GSQL Syntax V2; `Count`, `Sum`, `Average`, `Min`, and `Max` live verified |
 | Transaction boundary | Client-managed transaction | Atomic request or installed query |
 | Migration execution | Supported | Requires administrative transport |
 | Centrality and community detection | Requires compatible GDS and named projection | Requires explicitly configured installed GSQL query |
@@ -164,7 +247,7 @@ The same provider-neutral traversal model compiles to directed Cypher patterns f
 
 ### Query engine
 
-The fluent query surface keeps values parameterized while pushing filtering, ordering, paging, distinctness, traversal, and aggregates into the selected provider:
+The fluent query surface keeps values parameterized while pushing filtering, ordering, paging, traversal, duplicate elimination, and provider-supported projections into the selected provider. Requested operations that a provider has not verified fail before transport:
 
 ```csharp
 string[] selectedIds = ["person-42", "person-84"];
@@ -206,7 +289,7 @@ var summary = await context.People.Query()
     .ToListAsync();
 ```
 
-Scalar columns selected together with aggregate columns define the provider-side grouping key. TigerGraph's interpreted GSQL route does not advertise these query shapes: Nodal rejects them before database transport rather than attempting an in-memory fallback. An installed TigerGraph provider extension can expose a separately verified execution path.
+Scalar columns selected together with aggregate columns define the provider-side grouping key. TigerGraph compiles these shapes through SQL-like GSQL Syntax V2 and normalizes its tabular response. Optional traversal, additional named patterns, and set operations remain explicitly unavailable on TigerGraph and fail before transport rather than being simulated in memory. Correlated existence is available only when the host opts into Nodal-generated queries and supplies an administrative transport; the provider then creates or replaces, installs, and executes a deterministic query through REST++.
 
 Graph analytics retain the same typed model while executing centrality and community algorithms on the provider:
 
@@ -440,13 +523,13 @@ The repository has one local command matching the CI quality job:
 powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify.ps1
 ```
 
-It restores dependencies, verifies formatting, builds in Release mode, runs the complete test suite, enforces the Core package's minimum 95% line-coverage gate, and validates the publishable NuGet archives. Coverage can also be run independently:
+It restores dependencies, verifies formatting, builds in Release mode, runs the complete test suite, enforces at least 95% line coverage for every governed production package, and validates the publishable NuGet archives. Coverage can also be run independently:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-core-coverage.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-coverage.ps1
 ```
 
-The script rebuilds the Core tests, produces a Cobertura report under the ignored `TestResults` directory, and fails when line coverage falls below the threshold.
+The script rebuilds each governed package's tests, produces Cobertura reports under the ignored `TestResults` directory, and fails when any package falls below the threshold.
 
 Package verification can also be run independently:
 
@@ -454,15 +537,15 @@ Package verification can also be run independently:
 powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-packages.ps1
 ```
 
-The package gate produces all six `.nupkg` and `.snupkg` artifacts, then inspects their manifests and contents for the MPL-2.0 expression, repository metadata, README, license, IntelliSense XML, target framework, and required package dependencies.
+The package gate produces all nine `.nupkg` and `.snupkg` artifacts, then inspects their manifests and contents for the MPL-2.0 expression, repository metadata, README, license, IntelliSense XML, target framework, and required package dependencies.
 
 ## Publishing
 
-Alpha packages are published only after a pull request promotes `developer` to `staging`. The `Publish Alpha Packages` workflow assigns one immutable `0.1.0-alpha.<run>` version to all six packages, runs the complete QA gate, exchanges GitHub's OIDC identity for a short-lived NuGet credential, and publishes `Nodal.Core` before its dependent packages. No long-lived NuGet API key is stored by the repository.
+Beta packages are published only after a pull request promotes `developer` to `staging`. The `Publish Beta Packages` workflow assigns one immutable `0.1.0-beta.<run>` version to all nine packages, runs the complete QA gate, generates release evidence and an SPDX SBOM, attests package provenance, exchanges GitHub's OIDC identity for a short-lived NuGet credential, and publishes `Nodal.Core` before its dependent packages. No long-lived NuGet API key is stored by the repository.
 
 After publication, the same workflow runs a clean-room World Food Delivery consumer smoke test. It copies a small CSV order dataset into a fresh temporary console application, restores only the immutable packages from NuGet.org, imports customers, restaurants, foods, orders, couriers, and relationship payloads in one bounded unit of work, and validates migration planning plus Neo4j and TigerGraph query boundaries. The consumer project contains no `ProjectReference`; its resolved package identities are retained as a workflow artifact. This verifies the experience an external application receives, rather than merely rebuilding this repository.
 
-The GitHub `staging` environment must define `NUGET_USER` as the NuGet profile name. NuGet Trusted Publishing must match repository owner `Greenstone-Research-Lab`, repository `NodalFramework`, workflow file `publish-alpha.yml`, and environment `staging`. Publishing deliberately does not use `--skip-duplicate`, ensuring package conflicts and reserved identifiers fail visibly.
+The GitHub `staging` environment must define `NUGET_USER` as the NuGet profile name. NuGet Trusted Publishing must match repository owner `Greenstone-Research-Lab`, repository `NodalFramework`, workflow file `publish-alpha.yml`, and environment `staging`. The historical workflow filename is retained because it forms part of the existing trusted-publishing identity; its workflow and job names now describe the beta channel. Publishing deliberately does not use `--skip-duplicate`, ensuring package conflicts and reserved identifiers fail visibly.
 
 ## Live integration tests
 

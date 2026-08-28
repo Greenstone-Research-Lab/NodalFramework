@@ -28,6 +28,28 @@ public sealed class TigerGraphCommandExecutorTests
     }
 
     [Fact]
+    public async Task ExecuteAsyncNormalizesSyntaxV2TabularRowsAndAggregateObjects()
+    {
+        var handler = new RecordingHandler("""
+        {"error":false,"results":[{"nodal_rows":[{"name":"Ada","orders":2},{"name":"Alan","orders":1}]},{"nodal_rows":{"total":3}}]}
+        """);
+        using var client = new HttpClient(handler);
+        var result = await new TigerGraphCommandExecutor(client, TokenOptions()).ExecuteAsync(
+            new GraphCommand("INTERPRET QUERY", new Dictionary<string, object?>()));
+
+        Assert.Collection(
+            result.ResultRows,
+            row =>
+            {
+                Assert.Null(row.Node);
+                Assert.Equal("Ada", row.Values["name"]);
+                Assert.Equal(2L, row.Values["orders"]);
+            },
+            row => Assert.Equal("Alan", row.Values["name"]),
+            row => Assert.Equal(3L, row.Values["total"]));
+    }
+
+    [Fact]
     public async Task InstalledPathRoutePreservesOrderingRelationsAndCost()
     {
         var handler = new RecordingHandler("""

@@ -8,9 +8,11 @@ const sidebars: SidebarsConfig = {
     {type: 'category', label: 'Core concepts', items: ['concepts/graph-model', 'concepts/context-and-sets', 'concepts/analytics-boundary']},
     {type: 'category', label: 'Querying', items: ['querying/query-engine', 'querying/traversals-and-paths', 'querying/graph-analytics', 'querying/compiled-and-native-queries']},
     {type: 'category', label: 'Data changes', items: ['data-changes/unit-of-work', 'data-changes/change-tracking']},
-    {type: 'category', label: 'Providers', items: ['providers/overview', 'providers/compatibility', 'providers/neo4j', 'providers/tigergraph']},
+    'imports',
+    {type: 'category', label: 'Providers', items: ['providers/overview', 'providers/query-parity', 'providers/compatibility', 'providers/neo4j', 'providers/tigergraph']},
     'migrations',
     'architecture',
+    {type: 'category', label: 'Releases and security', items: ['releases/0.1-beta', 'releases/versioning-policy', 'security/dependency-risk']},
     'roadmap',
   ],
 };

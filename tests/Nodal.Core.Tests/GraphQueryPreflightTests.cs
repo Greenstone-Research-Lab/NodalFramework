@@ -14,7 +14,8 @@ public sealed class GraphQueryPreflightTests
         var query = CreateQuery(minDepth: 1, maxDepth: 3, cycleBehavior: GraphCycleBehavior.SimplePath);
         var capabilities = CreateCapabilities(
             GraphQueryCapability.VariableLengthTraversal |
-            GraphQueryCapability.SimplePath);
+            GraphQueryCapability.SimplePath |
+            GraphQueryCapability.VariableLengthSimplePath);
 
         GraphQueryPreflight.Validate(query, capabilities);
     }
@@ -52,6 +53,19 @@ public sealed class GraphQueryPreflightTests
             GraphQueryPreflight.Validate(query, CreateCapabilities(GraphQueryCapability.None)));
 
         Assert.Equal("NODAL-QUERY-SIMPLE-PATH", exception.CapabilityCode);
+    }
+
+    [Fact]
+    public void ValidateRejectsVariableSimplePathWhenOnlyFixedSimplePathsAreAdvertised()
+    {
+        var query = CreateQuery(minDepth: 1, maxDepth: 3, cycleBehavior: GraphCycleBehavior.SimplePath);
+
+        var exception = Assert.Throws<NodalCapabilityNotSupportedException>(() =>
+            GraphQueryPreflight.Validate(query, CreateCapabilities(
+                GraphQueryCapability.VariableLengthTraversal |
+                GraphQueryCapability.SimplePath)));
+
+        Assert.Equal("NODAL-QUERY-VARIABLE-SIMPLE-PATH", exception.CapabilityCode);
     }
 
     [Fact]
@@ -97,6 +111,17 @@ public sealed class GraphQueryPreflightTests
             GraphQueryCapability.Aggregation);
 
         GraphQueryPreflight.Validate(query, capabilities);
+    }
+
+    [Fact]
+    public void ValidateRejectsDistinctBeforeTransportWhenTheProviderDoesNotAdvertiseIt()
+    {
+        var query = CreateQuery() with { Distinct = true };
+
+        var exception = Assert.Throws<NodalCapabilityNotSupportedException>(() =>
+            GraphQueryPreflight.Validate(query, CreateCapabilities(GraphQueryCapability.None)));
+
+        Assert.Equal("NODAL-QUERY-DISTINCT", exception.CapabilityCode);
     }
 
     [Fact]

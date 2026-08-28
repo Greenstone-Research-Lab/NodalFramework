@@ -1,4 +1,4 @@
-name: Publish Alpha Packages
+name: Publish Beta Packages
 
 on:
   push:
@@ -18,9 +18,10 @@ env:
   NUGET_SOURCE: https://api.nuget.org/v3/index.json
 
 jobs:
-  publish-alpha:
-    name: Validate and publish alpha packages
+  publish-beta:
+    name: Validate and publish beta packages
     permissions:
+      attestations: write
       contents: read
       id-token: write
     outputs:
@@ -32,20 +33,20 @@ jobs:
 
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Install .NET SDK
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: global.json
 
-      - name: Select immutable alpha version
+      - name: Select immutable beta version
         id: version
         shell: pwsh
         run: |
-          $version = "0.1.0-alpha.${{ github.run_number }}"
+          $version = "0.1.0-beta.${{ github.run_number }}"
           "PACKAGE_VERSION=$version" | Out-File `
             -FilePath $env:GITHUB_ENV `
             -Encoding utf8 `
@@ -71,8 +72,12 @@ jobs:
         shell: pwsh
         run: ./eng/verify-dependencies.ps1 -OutputFile 'TestResults/release-evidence/dependency-audit.json'
 
+      - name: Generate SPDX SBOM
+        shell: pwsh
+        run: ./eng/generate-sbom.ps1 -PackageVersion $env:PACKAGE_VERSION
+
       - name: Upload verified package artifacts
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
           name: nodal-${{ env.PACKAGE_VERSION }}
           path: |
@@ -81,6 +86,13 @@ jobs:
             TestResults/release-evidence/*
           if-no-files-found: error
           retention-days: 30
+
+      - name: Attest package build provenance
+        uses: actions/attest-build-provenance@43d14bc2b83dec42d39ecae14e916627a18bb661 # v3
+        with:
+          subject-path: |
+            TestResults/package-verification/*.nupkg
+            TestResults/package-verification/*.snupkg
 
       - name: Validate NuGet publishing identity
         shell: pwsh
@@ -93,11 +105,11 @@ jobs:
 
       - name: Sign in to NuGet with trusted publishing
         id: nuget-login
-        uses: NuGet/login@v1
+        uses: NuGet/login@ebc737b6fc418a6ca0073cf116ec8dc156d8b81e # v1
         with:
           user: ${{ vars.NUGET_USER }}
 
-      - name: Publish alpha packages to NuGet
+      - name: Publish beta packages to NuGet
         shell: pwsh
         env:
           TEMPORARY_NUGET_API_KEY: ${{ steps.nuget-login.outputs.NUGET_API_KEY }}
@@ -109,7 +121,10 @@ jobs:
             'Nodal.Neo4j',
             'Nodal.Analytics',
             'Nodal.TigerGraph',
-            'Nodal.Tool'
+            'Nodal.Tool',
+            'Nodal.Import',
+            'Nodal.Import.Csv',
+            'Nodal.Import.Relational'
           )
 
           foreach ($packageId in $packageIds) {
@@ -128,35 +143,35 @@ jobs:
             }
           }
 
-          "Published all six public packages to NuGet.org." | Out-File `
+          "Published all public packages to NuGet.org." | Out-File `
             -FilePath $env:GITHUB_STEP_SUMMARY `
             -Encoding utf8 `
             -Append
 
   published-consumer-smoke:
     name: Validate published package consumer
-    needs: publish-alpha
+    needs: publish-beta
     runs-on: ubuntu-latest
     timeout-minutes: 15
     steps:
       - name: Checkout
-        uses: actions/checkout@v7
+        uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7
         with:
           persist-credentials: false
 
       - name: Install .NET SDK
-        uses: actions/setup-dotnet@v6
+        uses: actions/setup-dotnet@a98b56852c35b8e3190ac28c8c2271da59106c68 # v6
         with:
           global-json-file: global.json
 
       - name: Restore and run the World Food Delivery consumer
         shell: pwsh
-        run: ./eng/run-published-consumer-smoke.ps1 -PackageVersion '${{ needs.publish-alpha.outputs.package_version }}'
+        run: ./eng/run-published-consumer-smoke.ps1 -PackageVersion '${{ needs.publish-beta.outputs.package_version }}'
 
       - name: Upload consumer verification evidence
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
         with:
-          name: published-consumer-smoke-${{ needs.publish-alpha.outputs.package_version }}
+          name: published-consumer-smoke-${{ needs.publish-beta.outputs.package_version }}
           path: TestResults/published-consumer-smoke.json
           if-no-files-found: error
           retention-days: 30

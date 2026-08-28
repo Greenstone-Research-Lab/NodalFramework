@@ -3,6 +3,7 @@ using System.Text;
 using System.Text.Json;
 using Nodal.Core.Execution;
 using Nodal.Core.Providers;
+using Nodal.TigerGraph.Extensions;
 
 namespace Nodal.TigerGraph;
 
@@ -13,17 +14,30 @@ public sealed class TigerGraphCommandExecutor : IGraphCommandExecutor
 {
     private readonly HttpClient httpClient;
     private readonly TigerGraphOptions options;
+    private readonly TigerGraphInstalledQueryCatalog? installedQueries;
+    private readonly TigerGraphInstalledQueryInstaller? installedQueryInstaller;
 
     /// <summary>
     /// Initializes an executor with an externally managed <see cref="HttpClient"/>.
     /// </summary>
     public TigerGraphCommandExecutor(HttpClient httpClient, TigerGraphOptions options)
+        : this(httpClient, options, null, null)
+    {
+    }
+
+    internal TigerGraphCommandExecutor(
+        HttpClient httpClient,
+        TigerGraphOptions options,
+        TigerGraphInstalledQueryCatalog? installedQueries,
+        TigerGraphInstalledQueryInstaller? installedQueryInstaller)
     {
         ArgumentNullException.ThrowIfNull(httpClient);
         ArgumentNullException.ThrowIfNull(options);
         httpClient.BaseAddress ??= options.Endpoint;
         this.httpClient = httpClient;
         this.options = options;
+        this.installedQueries = installedQueries;
+        this.installedQueryInstaller = installedQueryInstaller;
     }
 
     /// <inheritdoc />
@@ -32,6 +46,12 @@ public sealed class TigerGraphCommandExecutor : IGraphCommandExecutor
         CancellationToken cancellationToken = default)
     {
         ArgumentNullException.ThrowIfNull(command);
+
+        if (installedQueryInstaller is not null &&
+            installedQueries?.TryGet(command.Route, out var definition) == true)
+        {
+            await installedQueryInstaller.InstallAsync(definition, cancellationToken).ConfigureAwait(false);
+        }
 
         using var request = new HttpRequestMessage(HttpMethod.Post, BuildRequestUri(command));
         TigerGraphAuthentication.Apply(request, options);
@@ -180,6 +200,12 @@ public sealed class TigerGraphCommandExecutor : IGraphCommandExecutor
             rows.Add(new GraphResultRow(node, values));
             return;
         }
+        if (element.ValueKind == JsonValueKind.Object &&
+            element.TryGetProperty("nodal_rows", out var table))
+        {
+            CollectTabularRows(table, rows);
+            return;
+        }
         if (element.ValueKind == JsonValueKind.Object)
         {
             foreach (var property in element.EnumerateObject())
@@ -193,6 +219,38 @@ public sealed class TigerGraphCommandExecutor : IGraphCommandExecutor
             {
                 CollectAnalyticsRows(item, rows);
             }
+        }
+    }
+
+    private static void CollectTabularRows(JsonElement table, ICollection<GraphResultRow> rows)
+    {
+        if (table.ValueKind == JsonValueKind.Object)
+        {
+            rows.Add(new GraphResultRow(
+                null,
+                table.EnumerateObject().ToDictionary(item => item.Name, item => ConvertJsonValue(item.Value))));
+            return;
+        }
+
+        if (table.ValueKind != JsonValueKind.Array)
+        {
+            rows.Add(new GraphResultRow(null, new Dictionary<string, object?>
+            {
+                ["value"] = ConvertJsonValue(table),
+            }));
+            return;
+        }
+
+        foreach (var item in table.EnumerateArray())
+        {
+            if (item.ValueKind != JsonValueKind.Object)
+            {
+                throw new InvalidOperationException("TigerGraph returned a tabular row that was not a JSON object.");
+            }
+
+            rows.Add(new GraphResultRow(
+                null,
+                item.EnumerateObject().ToDictionary(property => property.Name, property => ConvertJsonValue(property.Value))));
         }
     }
 

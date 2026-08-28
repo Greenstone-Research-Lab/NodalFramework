@@ -27,7 +27,7 @@ Documentation license: CC BY 4.0
 - Install exactly one provider package: `Nodal.Neo4j` or `Nodal.TigerGraph`.
 - Provider packages include `Nodal.Core` transitively.
 - Add `Nodal.Migrations` only when the application owns schema evolution.
-- During the alpha period, keep every explicit Nodal package on the same version.
+- During the beta period, keep every explicit Nodal package on the same version.
 
 ## Providers
 
