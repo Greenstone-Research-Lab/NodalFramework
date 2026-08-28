@@ -2,6 +2,7 @@ using System.Text.Json;
 using Nodal.Core.Analytics;
 using Nodal.Core.Providers;
 using Nodal.Import;
+using Nodal.Import.Relational;
 using Nodal.Tool;
 
 namespace Nodal.ArchitectureTests;
@@ -46,6 +47,20 @@ public sealed class DependencyDirectionTests
             .ToArray();
 
         Assert.Contains("Nodal.Core", references);
+        Assert.DoesNotContain("Nodal.Neo4j", references);
+        Assert.DoesNotContain("Nodal.TigerGraph", references);
+    }
+
+    [Fact]
+    public void RelationalAdaptersUseAdoNetWithoutVendorClientDependencies()
+    {
+        var references = typeof(IRelationalSourceAdapter).Assembly
+            .GetReferencedAssemblies()
+            .Select(reference => reference.Name)
+            .ToArray();
+
+        Assert.DoesNotContain("Microsoft.Data.SqlClient", references);
+        Assert.DoesNotContain("Npgsql", references);
         Assert.DoesNotContain("Nodal.Neo4j", references);
         Assert.DoesNotContain("Nodal.TigerGraph", references);
     }

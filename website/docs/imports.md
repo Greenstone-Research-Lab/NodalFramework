@@ -191,11 +191,63 @@ during apply stops subsequent batches and remains a deployment-level recovery
 concern; continuous synchronization, reconciliation, and resumable enterprise
 ingestion are outside this free onboarding slice.
 
+## SQL Server and PostgreSQL sources
+
+`Nodal.Import.Relational` includes provider-family adapters without taking a
+dependency on `Microsoft.Data.SqlClient` or `Npgsql`. The application creates
+and pools its normal ADO.NET connection; Nodal neither owns nor closes it:
+
+```bash
+dotnet add package Nodal.Import.Relational --prerelease
+```
+
+```csharp
+IRelationalSourceAdapter source = new PostgreSqlRelationalSourceAdapter();
+
+RelationalSchemaSnapshot schema = await source.ReadAsync(connection, cancellationToken);
+
+var request = new RelationalReadRequest(
+    Schema: "delivery",
+    Table: "orders",
+    Columns: ["order_id", "customer_id", "total"],
+    OrderByColumns: ["order_id"],
+    MaxRows: 10_000,
+    CommandTimeoutSeconds: 30);
+
+await foreach (RelationalRow row in source.ReadRowsAsync(connection, request, cancellationToken))
+{
+    Console.WriteLine(row["order_id"]);
+}
+```
+
+Use `SqlServerRelationalSourceAdapter` for SQL Server. Both implementations
+return the same table, column, primary-key, and foreign-key metadata model.
+They preserve provider type names as evidence rather than guessing lossy CLR
+conversions.
+
+### Relational performance contract
+
+- Catalog discovery is one set-based command with two normalized result sets,
+  not an N+1 query per table or column.
+- Data reads use forward-only `SequentialAccess | SingleResult` readers.
+- SQL contains a server-side parameterized row limit; the client does not read
+  and discard an unbounded result.
+- At least one selected `ORDER BY` column is mandatory, keeping batches
+  reproducible across runs.
+- Column names and name-to-ordinal lookup are cached once per result set.
+- Each yielded row allocates only its value array; schema and ordinal state are
+  shared by every row in that result.
+- Identifiers are provider-quoted, values remain parameters, cancellation flows
+  to command execution and every asynchronous row read.
+
+The adapter intentionally does not infer pagination tokens or silently execute
+all tables. The caller selects a bounded table slice, reviews the discovered
+schema, and maps the streamed rows into `Nodal.Import` batches.
+
 ## Current scope
 
 This slice covers explicit mapping, bounded planning, streaming CSV input,
 deterministic CLI evidence, and a trusted provider execution boundary.
-Relational metadata discovery and graph draft proposals are available in
-`Nodal.Import.Relational`. SQL Server/PostgreSQL data adapters, clean-room
-package samples, and live provider acceptance tests remain separate
-beta-readiness slices.
+SQL Server/PostgreSQL metadata and bounded streaming source adapters are
+available in `Nodal.Import.Relational`. Clean-room package samples and live
+provider acceptance tests remain separate beta-readiness slices.
