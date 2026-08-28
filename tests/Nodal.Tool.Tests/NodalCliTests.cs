@@ -1,6 +1,8 @@
 using System.Text.Json;
+using System.Xml.Linq;
 using Nodal.Core.Migrations;
 using Nodal.Core.Mutations;
+using Nodal.Import.Relational;
 using Nodal.Migrations;
 using Nodal.Tool;
 
@@ -522,6 +524,94 @@ public sealed class NodalCliTests
         Assert.Throws<ArgumentNullException>(() => CsvImportEvidenceSerializer.Serialize(null!));
     }
 
+    [Fact]
+    public async Task RelationalInspectionWritesCanonicalModelAndRequestedVisualizations()
+    {
+        var files = Files();
+        var host = new RecordingRelationalInspectionHost();
+
+        var result = await RunWithRelationalHostAsync(
+            files,
+            host,
+            "import", "relational", "--output", "northwind.nodalmodel.json",
+            "--graphml", "northwind.graphml", "--gexf", "northwind.gexf", "--dot", "northwind.dot");
+
+        Assert.Equal(NodalCli.Success, result.ExitCode);
+        Assert.Equal(1, host.InspectionCount);
+        Assert.Contains("provider=SqlServer database=Northwind objects=2 relations=1 exports=3", result.Output, StringComparison.Ordinal);
+        var model = RelationalInteractionModelJson.Deserialize(files.Content["northwind.nodalmodel.json"]);
+        Assert.Equal("SqlServer", model.Source.Provider);
+        Assert.Equal(2, model.Objects.Count);
+        Assert.Single(model.Relations);
+        Assert.NotNull(XDocument.Parse(files.Content["northwind.graphml"]).Root);
+        Assert.NotNull(XDocument.Parse(files.Content["northwind.gexf"]).Root);
+        Assert.Contains("digraph RelationalInteractionNetwork", files.Content["northwind.dot"], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RelationalInspectionSupportsCanonicalOnlyAndDoesNotDisposeInjectedHost()
+    {
+        var files = Files();
+        var host = new RecordingRelationalInspectionHost(providerName: " ", databaseName: null);
+
+        var result = await RunWithRelationalHostAsync(
+            files,
+            host,
+            "import", "relational", "--output", "model.json");
+
+        Assert.Equal(NodalCli.Success, result.ExitCode);
+        Assert.Contains("provider=unknown database=unknown", result.Output, StringComparison.Ordinal);
+        Assert.Contains("exports=0", result.Output, StringComparison.Ordinal);
+        Assert.False(host.Disposed);
+        Assert.Single(files.Content);
+    }
+
+    [Theory]
+    [InlineData(new[] { "import", "relational" }, "Required option '--output' was not supplied.")]
+    [InlineData(new[] { "import", "relational", "--output", "model.json", "--dot", " " }, "Option '--dot' requires a non-empty destination.")]
+    [InlineData(new[] { "import", "relational", "--output", "model.json", "--gexf", "MODEL.JSON" }, "Relational inspection output destinations must be distinct.")]
+    [InlineData(new[] { "import", "relational", "--output", "model.json", "--unknown", "x" }, "Unknown option '--unknown'.")]
+    public async Task RelationalInspectionUsageFailuresAreStable(string[] arguments, string expected)
+    {
+        var result = await RunWithRelationalHostAsync(Files(), new RecordingRelationalInspectionHost(), arguments);
+
+        Assert.Equal(NodalCli.UsageError, result.ExitCode);
+        Assert.StartsWith(expected, result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task RelationalInspectionRequiresTrustedHostConfiguration()
+    {
+        var result = await RunAsync(Files(), "import", "relational", "--output", "model.json");
+
+        Assert.Equal(NodalCli.InvalidData, result.ExitCode);
+        Assert.Contains(CliRelationalInspectionHostLoader.AssemblyVariable, result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void RelationalInspectionHostLoaderValidatesConfigurationAndCreatesPublicHost()
+    {
+        Assert.Throws<ArgumentNullException>(() => CliRelationalInspectionHostLoader.Load(null!));
+        Assert.Throws<InvalidOperationException>(() => CliRelationalInspectionHostLoader.Load(_ => null));
+        Assert.Throws<InvalidOperationException>(() => CliRelationalInspectionHostLoader.Load(name =>
+            name == CliRelationalInspectionHostLoader.AssemblyVariable
+                ? typeof(NodalCliTests).Assembly.Location
+                : typeof(string).FullName));
+
+        var host = CliRelationalInspectionHostLoader.Load(name =>
+            name == CliRelationalInspectionHostLoader.AssemblyVariable
+                ? typeof(NodalCliTests).Assembly.Location
+                : typeof(PublicRelationalInspectionHost).FullName);
+        var creationFailure = Assert.Throws<InvalidOperationException>(() =>
+            CliRelationalInspectionHostLoader.Load(name =>
+                name == CliRelationalInspectionHostLoader.AssemblyVariable
+                    ? typeof(NodalCliTests).Assembly.Location
+                    : typeof(ThrowingRelationalInspectionHost).FullName));
+
+        Assert.IsType<PublicRelationalInspectionHost>(host);
+        Assert.IsType<NotSupportedException>(creationFailure.InnerException);
+    }
+
     private static async Task<CliResult> RunAsync(MemoryFileSystem files, params string[] arguments)
     {
         using var output = new StringWriter();
@@ -561,6 +651,25 @@ public sealed class NodalCliTests
             files,
             executionHost: null,
             executor,
+            CancellationToken.None);
+        return new CliResult(exitCode, output.ToString(), error.ToString());
+    }
+
+    private static async Task<CliResult> RunWithRelationalHostAsync(
+        MemoryFileSystem files,
+        IRelationalInspectionHost host,
+        params string[] arguments)
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var exitCode = await NodalCli.RunAsync(
+            arguments,
+            output,
+            error,
+            files,
+            executionHost: null,
+            importExecutor: null,
+            host,
             CancellationToken.None);
         return new CliResult(exitCode, output.ToString(), error.ToString());
     }
@@ -669,6 +778,64 @@ public sealed class NodalCliTests
             CancellationToken cancellationToken = default) =>
             ValueTask.FromResult(new GraphMutationResult(0, 0, true));
     }
+
+    public sealed class PublicRelationalInspectionHost : IRelationalInspectionHost
+    {
+        public string ProviderName => "Test";
+
+        public ValueTask<RelationalSchemaSnapshot> InspectAsync(
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(RelationalSnapshot("Test", "Test"));
+    }
+
+    public sealed class ThrowingRelationalInspectionHost : IRelationalInspectionHost
+    {
+        public ThrowingRelationalInspectionHost() => throw new NotSupportedException("host failure");
+
+        public string ProviderName => "Never";
+
+        public ValueTask<RelationalSchemaSnapshot> InspectAsync(
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+    }
+
+    private sealed class RecordingRelationalInspectionHost(
+        string providerName = "SqlServer",
+        string? databaseName = "Northwind") : IRelationalInspectionHost, IAsyncDisposable
+    {
+        public string ProviderName { get; } = providerName;
+
+        public int InspectionCount { get; private set; }
+
+        public bool Disposed { get; private set; }
+
+        public ValueTask<RelationalSchemaSnapshot> InspectAsync(
+            CancellationToken cancellationToken = default)
+        {
+            cancellationToken.ThrowIfCancellationRequested();
+            InspectionCount++;
+            return ValueTask.FromResult(RelationalSnapshot(databaseName, ProviderName));
+        }
+
+        public ValueTask DisposeAsync()
+        {
+            Disposed = true;
+            return ValueTask.CompletedTask;
+        }
+    }
+
+    private static RelationalSchemaSnapshot RelationalSnapshot(string? databaseName, string provider) => new(
+        databaseName,
+        [
+            new RelationalTable("dbo", "Orders", "TABLE", [new RelationalColumn("Id", "int", false, 1, true)]),
+            new RelationalTable("dbo", "Customers", "TABLE", [new RelationalColumn("Id", "int", false, 1, true)]),
+        ],
+        [
+            new RelationalForeignKey("FK_Orders_Customers", "dbo", "Orders", "dbo", "Customers")
+            {
+                Columns = [new RelationalForeignKeyColumn("CustomerId", "Id", 1)],
+            },
+        ],
+        provider.Length == 0 ? ["provider missing"] : []);
 
     private sealed class RecordingMutationExecutor : IGraphMutationExecutor
     {

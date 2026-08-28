@@ -33,6 +33,7 @@ public sealed class DependencyDirectionTests
         Assert.Contains("Nodal.Core", references);
         Assert.Contains("Nodal.Import", references);
         Assert.Contains("Nodal.Import.Csv", references);
+        Assert.Contains("Nodal.Import.Relational", references);
         Assert.Contains("Nodal.Migrations", references);
         Assert.DoesNotContain("Nodal.Neo4j", references);
         Assert.DoesNotContain("Nodal.TigerGraph", references);

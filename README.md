@@ -52,6 +52,24 @@ nodal import csv \
   --evidence import-evidence.json
 ```
 
+Relational inspection uses an application-owned composition host, so database
+credentials and provider clients never become CLI arguments. It writes the
+canonical interaction model and optional visualization projections in one
+metadata pass:
+
+```bash
+nodal import relational \
+  --output northwind.nodalmodel.json \
+  --graphml northwind.graphml \
+  --gexf northwind.gexf \
+  --dot northwind.dot
+```
+
+The trusted host is selected through `NODAL_RELATIONAL_HOST_ASSEMBLY` and
+`NODAL_RELATIONAL_HOST_TYPE`. It implements `IRelationalInspectionHost` and
+owns connection creation, pooling, authentication, secret retrieval, and the
+SQL Server or PostgreSQL adapter choice.
+
 Dry-run is the default. Applying a CSV requires both `--apply true` and, when
 property upserts or omissions are detected, `--approve-destructive true` plus a
 trusted provider-composed mutation host. The complete mapping format and apply
