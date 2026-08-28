@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Nodal.Core.Migrations;
+using Nodal.Core.Mutations;
 using Nodal.Migrations;
 
 namespace Nodal.Tool;
@@ -24,6 +25,7 @@ internal static class NodalCli
             error,
             fileSystem,
             executionHost: null,
+            importExecutor: null,
             cancellationToken).ConfigureAwait(false);
 
     internal static async Task<int> RunAsync(
@@ -32,6 +34,23 @@ internal static class NodalCli
         TextWriter error,
         ICliFileSystem fileSystem,
         INodalMigrationBundleExecutionHost? executionHost,
+        CancellationToken cancellationToken)
+        => await RunAsync(
+            arguments,
+            output,
+            error,
+            fileSystem,
+            executionHost,
+            importExecutor: null,
+            cancellationToken).ConfigureAwait(false);
+
+    internal static async Task<int> RunAsync(
+        IReadOnlyList<string> arguments,
+        TextWriter output,
+        TextWriter error,
+        ICliFileSystem fileSystem,
+        INodalMigrationBundleExecutionHost? executionHost,
+        IGraphMutationExecutor? importExecutor,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(arguments);
@@ -42,6 +61,14 @@ internal static class NodalCli
         try
         {
             var request = CliArguments.Parse(arguments);
+            if (request.Area == "import")
+            {
+                return request.Command == "csv"
+                    ? await CliCsvImportCommand.RunAsync(
+                        request, output, fileSystem, importExecutor, cancellationToken).ConfigureAwait(false)
+                    : throw new CliUsageException($"Unknown import command '{request.Command}'.");
+            }
+
             return request.Command switch
             {
                 "snapshot" => await SnapshotAsync(request, output, fileSystem, cancellationToken)
@@ -79,6 +106,11 @@ internal static class NodalCli
         catch (JsonException)
         {
             await error.WriteLineAsync("A schema snapshot contains invalid JSON.").ConfigureAwait(false);
+            return InvalidData;
+        }
+        catch (FormatException)
+        {
+            await error.WriteLineAsync("A CSV input is structurally invalid.").ConfigureAwait(false);
             return InvalidData;
         }
         catch (NodalSchemaSnapshotVersionException exception)
@@ -119,7 +151,8 @@ internal static class NodalCli
     }
 
     private const string Usage =
-        "Usage: nodal migrations <snapshot|diff|plan|validate|bundle|list|apply|rollback> [--name value]";
+        "Usage: nodal migrations <snapshot|diff|plan|validate|bundle|list|apply|rollback> [--name value]" +
+        " or nodal import csv --input <file> --mapping <file> --evidence <file> [--name value]";
 
     private static async Task<int> SnapshotAsync(
         CliArguments request,

@@ -4,6 +4,8 @@ namespace Nodal.Tool;
 
 internal interface ICliFileSystem
 {
+    TextReader OpenText(string path);
+
     ValueTask<string> ReadAllTextAsync(string path, CancellationToken cancellationToken);
 
     ValueTask WriteAllTextAsync(string path, string content, CancellationToken cancellationToken);
@@ -20,6 +22,8 @@ internal sealed class PhysicalCliFileSystem : ICliFileSystem
     private PhysicalCliFileSystem()
     {
     }
+
+    public TextReader OpenText(string path) => new StreamReader(path, Encoding.UTF8, true);
 
     public async ValueTask<string> ReadAllTextAsync(
         string path,

@@ -1,9 +1,9 @@
 ---
-title: Import planning
-description: Build bounded, provider-neutral graph mutation plans with reviewable dry-run evidence.
+title: Import and onboarding
+description: Stream CSV data into bounded, provider-neutral mutation plans with reviewable JSON evidence.
 ---
 
-# Import planning
+# Import and onboarding
 
 `Nodal.Import` is the free, provider-neutral onboarding boundary for finite data
 loads. It deliberately separates source reading, explicit graph mapping,
@@ -103,10 +103,99 @@ the current providers. Consequently, a dry run marks mapped property writes as
 a destructive risk: applying the plan can replace an existing mapped property.
 The application owns the approval decision and provider execution step.
 
+## CSV command-line workflow
+
+Install the global tool and create a versioned mapping document:
+
+```bash
+dotnet tool install --global Nodal.Tool --prerelease
+```
+
+```json title="world-food-delivery.mapping.json"
+{
+  "formatVersion": 1,
+  "nodes": [
+    {
+      "name": "customer",
+      "type": "Customer",
+      "keyColumn": "customer_id",
+      "keyProperty": "Id",
+      "properties": [
+        { "column": "customer_name", "property": "Name" }
+      ]
+    },
+    {
+      "name": "order",
+      "type": "Order",
+      "keyColumn": "order_id",
+      "keyProperty": "Id",
+      "properties": [
+        { "column": "total", "property": "Total" }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "name": "placed",
+      "source": "customer",
+      "target": "order",
+      "type": "PLACED",
+      "directed": true,
+      "properties": []
+    }
+  ]
+}
+```
+
+Run the default, side-effect-free validation pass:
+
+```bash
+nodal import csv \
+  --input world-food-delivery.csv \
+  --mapping world-food-delivery.mapping.json \
+  --evidence import-evidence.json \
+  --batch-size 500 \
+  --max-operations 5000
+```
+
+The evidence records the outcome, source and planned operation counts, batch
+count, every mapping decision, record-addressed diagnostics, and aggregated
+risk indicators. It deliberately excludes source payloads, credentials, file
+paths, and connection details.
+
+### Controlled apply boundary
+
+CSV apply uses two passes. The first pass validates the complete source without
+database I/O. Only a successful validation can start the second, bounded apply
+pass. Applying property upserts requires explicit approval:
+
+```bash
+nodal import csv \
+  --input world-food-delivery.csv \
+  --mapping world-food-delivery.mapping.json \
+  --evidence import-evidence.json \
+  --apply true \
+  --approve-destructive true
+```
+
+`Nodal.Tool` does not reference Neo4j or TigerGraph. The application supplies a
+public, parameterless `IGraphMutationExecutor` composition type through
+`NODAL_IMPORT_HOST_ASSEMBLY` and `NODAL_IMPORT_HOST_TYPE`. That host owns
+provider selection, pooled connections, authentication, and secret retrieval.
+Each batch receives the provider's atomicity guarantee; the complete multi-batch
+file is intentionally not presented as one distributed transaction.
+
+An invalid record, missing identity, operation-limit violation, or missing
+destructive approval prevents the apply pass from starting. A provider failure
+during apply stops subsequent batches and remains a deployment-level recovery
+concern; continuous synchronization, reconciliation, and resumable enterprise
+ingestion are outside this free onboarding slice.
+
 ## Current scope
 
-This slice covers mapping and planning. Streaming CSV parsing is available in
-`Nodal.Import.Csv`, while relational metadata discovery and graph draft
-proposals are available in `Nodal.Import.Relational`. CLI import execution,
-SQL Server/PostgreSQL data adapters, clean-room package samples, and live
-provider acceptance tests remain separate beta-readiness slices.
+This slice covers explicit mapping, bounded planning, streaming CSV input,
+deterministic CLI evidence, and a trusted provider execution boundary.
+Relational metadata discovery and graph draft proposals are available in
+`Nodal.Import.Relational`. SQL Server/PostgreSQL data adapters, clean-room
+package samples, and live provider acceptance tests remain separate
+beta-readiness slices.
