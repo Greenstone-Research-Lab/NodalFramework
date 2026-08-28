@@ -7,7 +7,18 @@ namespace Nodal.Import.Relational;
 /// <summary>Reads SQL Server catalog metadata and streams bounded table data.</summary>
 public sealed class SqlServerRelationalSourceAdapter : RelationalSourceAdapter
 {
-    private const string SchemaSql = """
+    private protected override RelationalDialect Dialect => RelationalDialects.SqlServer;
+}
+
+/// <summary>Reads PostgreSQL catalog metadata and streams bounded table data.</summary>
+public sealed class PostgreSqlRelationalSourceAdapter : RelationalSourceAdapter
+{
+    private protected override RelationalDialect Dialect => RelationalDialects.PostgreSql;
+}
+
+internal static class RelationalDialects
+{
+    private const string SqlServerSchemaSql = """
         WITH nodal_objects AS (
             SELECT object_id, schema_id, name, CAST('TABLE' AS nvarchar(16)) AS object_kind FROM sys.tables
             UNION ALL
@@ -40,26 +51,7 @@ public sealed class SqlServerRelationalSourceAdapter : RelationalSourceAdapter
         ORDER BY source_schema.name, source_table.name, fk.name;
         """;
 
-    /// <inheritdoc />
-    public override string ProviderName => "SqlServer";
-
-    /// <inheritdoc/>
-    protected override string MetadataCommandText => SchemaSql;
-
-    /// <inheritdoc/>
-    protected override string BuildDataCommandText(RelationalReadRequest request) =>
-        $"SELECT TOP (@nodal_max_rows) {JoinIdentifiers(request.Columns)} " +
-        $"FROM {Quote(request.Schema)}.{Quote(request.Table)} " +
-        $"ORDER BY {JoinIdentifiers(request.OrderByColumns)};";
-
-    /// <inheritdoc/>
-    protected override string Quote(string identifier) => $"[{identifier.Replace("]", "]]", StringComparison.Ordinal)}]";
-}
-
-/// <summary>Reads PostgreSQL catalog metadata and streams bounded table data.</summary>
-public sealed class PostgreSqlRelationalSourceAdapter : RelationalSourceAdapter
-{
-    private const string SchemaSql = """
+    private const string PostgreSqlSchemaSql = """
         WITH nodal_objects AS (
             SELECT c.oid, c.relnamespace, c.relname,
                    CASE WHEN c.relkind IN ('v', 'm') THEN 'VIEW' ELSE 'TABLE' END AS object_kind
@@ -92,30 +84,30 @@ public sealed class PostgreSqlRelationalSourceAdapter : RelationalSourceAdapter
         ORDER BY source_schema.nspname, source_table.relname, con.conname;
         """;
 
-    /// <inheritdoc />
-    public override string ProviderName => "PostgreSql";
+    public static RelationalDialect SqlServer { get; } = new(
+        "SqlServer",
+        SqlServerSchemaSql,
+        "[",
+        "]",
+        "]]",
+        RelationalLimitPlacement.BeforeColumns);
 
-    /// <inheritdoc/>
-    protected override string MetadataCommandText => SchemaSql;
-
-    /// <inheritdoc/>
-    protected override string BuildDataCommandText(RelationalReadRequest request) =>
-        $"SELECT {JoinIdentifiers(request.Columns)} " +
-        $"FROM {Quote(request.Schema)}.{Quote(request.Table)} " +
-        $"ORDER BY {JoinIdentifiers(request.OrderByColumns)} LIMIT @nodal_max_rows;";
-
-    /// <inheritdoc/>
-    protected override string Quote(string identifier) => $"\"{identifier.Replace("\"", "\"\"", StringComparison.Ordinal)}\"";
+    public static RelationalDialect PostgreSql { get; } = new(
+        "PostgreSql",
+        PostgreSqlSchemaSql,
+        "\"",
+        "\"",
+        "\"\"",
+        RelationalLimitPlacement.AfterOrderBy);
 }
 
 /// <summary>Provides the shared, allocation-conscious relational source execution pipeline.</summary>
 public abstract class RelationalSourceAdapter : IRelationalSourceAdapter
 {
     /// <inheritdoc />
-    public abstract string ProviderName { get; }
+    public string ProviderName => Dialect.ProviderName;
 
-    /// <inheritdoc/>
-    protected abstract string MetadataCommandText { get; }
+    private protected abstract RelationalDialect Dialect { get; }
 
     /// <inheritdoc />
     public async ValueTask<RelationalSchemaSnapshot> ReadAsync(
@@ -124,7 +116,7 @@ public abstract class RelationalSourceAdapter : IRelationalSourceAdapter
     {
         ValidateOpen(connection);
         await using var command = connection.CreateCommand();
-        command.CommandText = MetadataCommandText;
+        command.CommandText = Dialect.MetadataCommandText;
         await using var reader = await command.ExecuteReaderAsync(
             CommandBehavior.SequentialAccess,
             cancellationToken).ConfigureAwait(false);
@@ -172,14 +164,20 @@ public abstract class RelationalSourceAdapter : IRelationalSourceAdapter
         }
     }
 
-    /// <inheritdoc/>
-    protected abstract string BuildDataCommandText(RelationalReadRequest request);
+    private string BuildDataCommandText(RelationalReadRequest request)
+    {
+        var columns = JoinIdentifiers(request.Columns);
+        var source = $"{Quote(request.Schema)}.{Quote(request.Table)}";
+        var order = JoinIdentifiers(request.OrderByColumns);
+        return Dialect.LimitPlacement == RelationalLimitPlacement.BeforeColumns
+            ? $"SELECT TOP (@nodal_max_rows) {columns} FROM {source} ORDER BY {order};"
+            : $"SELECT {columns} FROM {source} ORDER BY {order} LIMIT @nodal_max_rows;";
+    }
 
-    /// <inheritdoc/>
-    protected abstract string Quote(string identifier);
+    private string Quote(string identifier) =>
+        $"{Dialect.OpeningQuote}{identifier.Replace(Dialect.ClosingQuote, Dialect.EscapedClosingQuote, StringComparison.Ordinal)}{Dialect.ClosingQuote}";
 
-    /// <inheritdoc/>
-    protected string JoinIdentifiers(IEnumerable<string> identifiers) => string.Join(", ", identifiers.Select(Quote));
+    private string JoinIdentifiers(IEnumerable<string> identifiers) => string.Join(", ", identifiers.Select(Quote));
 
     private static async ValueTask<IReadOnlyList<RelationalTable>> ReadTablesAsync(
         DbDataReader reader,
@@ -277,4 +275,18 @@ public abstract class RelationalSourceAdapter : IRelationalSourceAdapter
             reader.GetOrdinal("ordinal_position"),
             reader.GetOrdinal("is_primary_key"));
     }
+}
+
+internal sealed record RelationalDialect(
+    string ProviderName,
+    string MetadataCommandText,
+    string OpeningQuote,
+    string ClosingQuote,
+    string EscapedClosingQuote,
+    RelationalLimitPlacement LimitPlacement);
+
+internal enum RelationalLimitPlacement
+{
+    BeforeColumns,
+    AfterOrderBy,
 }
