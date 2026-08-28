@@ -42,6 +42,36 @@ dotnet tool install --global Nodal.Tool --prerelease
 nodal migrations validate --snapshot nodal.snapshot.json
 ```
 
+For one-time onboarding, `Nodal.Import` converts an explicitly mapped, bounded
+source batch into the same provider-neutral mutation plan accepted by Neo4j and
+TigerGraph. Planning performs no database I/O and returns reviewable dry-run
+evidence before a provider executes anything:
+
+```csharp
+var mapping = GraphImportMapping.For<OrderRow>()
+    .Node<Customer>("customer", "Customer", "Id", row => row.CustomerId,
+        node => node.Property("Name", row => row.CustomerName))
+    .Node<Order>("order", "Order", "Id", row => row.OrderId,
+        node => node.Property("Total", row => row.Total))
+    .Relation("placed", "customer", "order", "PLACED")
+    .Build();
+
+var planned = new GraphImportPlanner<OrderRow>().Plan(
+    new GraphImportBatch<OrderRow>(1, rows),
+    mapping,
+    new GraphImportPlanningOptions(MaxOperations: 5_000));
+
+if (!planned.DryRun.Succeeded || planned.DryRun.HasDestructiveRisks)
+{
+    Review(planned.DryRun);
+}
+```
+
+Duplicate identities are coalesced deterministically within the batch, nodes
+always precede relations, and missing identities or potential property
+overwrites remain visible in payload-safe diagnostics and risk indicators. See
+the [import planning guide](website/docs/imports.md) for the complete contract.
+
 Immutable migration bundles capture provider identity, required capabilities,
 ordered up/down commands, execution channels, and destructive flags under a
 canonical SHA-256 checksum. `NodalMigrationBundleExecutor` provides idempotent,

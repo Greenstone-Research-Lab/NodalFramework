@@ -12,7 +12,7 @@ $expectedPackages = @{
     'Nodal.Analytics' = @('Nodal.Core')
     'Nodal.TigerGraph' = @('Nodal.Core')
     'Nodal.Tool' = @()
-    'Nodal.Import' = @()
+    'Nodal.Import' = @('Nodal.Core')
     'Nodal.Import.Csv' = @('Nodal.Import')
     'Nodal.Import.Relational' = @('Nodal.Import')
 }
