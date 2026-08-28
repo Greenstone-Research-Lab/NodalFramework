@@ -22,7 +22,7 @@ Nodal Framework is a provider-based .NET graph data access prototype. It keeps t
 | `Nodal.Tool` | .NET global tool for deterministic migrations and evidence-driven CSV imports |
 | `Nodal.Import` | Provider-neutral, bounded import orchestration and diagnostics |
 | `Nodal.Import.Csv` | Streaming CSV records with deterministic header normalization |
-| `Nodal.Import.Relational` | SQL Server/PostgreSQL metadata discovery and bounded streaming source reads |
+| `Nodal.Import.Relational` | SQL Server/PostgreSQL discovery, bounded reads, and deterministic relational interaction models |
 
 The initial alpha targets .NET 10. Package versions move together so provider and core contracts remain compatible during the pre-release period.
 
@@ -86,6 +86,14 @@ Duplicate identities are coalesced deterministically within the batch, nodes
 always precede relations, and missing identities or potential property
 overwrites remain visible in payload-safe diagnostics and risk indicators. See
 the [import guide](website/docs/imports.md) for the complete contract.
+
+`Nodal.Import.Relational` can also turn discovered tables, views, columns,
+primary keys, composite foreign keys, and referential actions into a canonical
+Relational Interaction Model. The JSON document preserves physical database
+evidence; GraphML, GEXF, and DOT exports provide readable visualization
+projections for tools such as Gephi. Suggested labels are structural hints
+marked for review, not inferred business semantics. Domain-level transformation
+into a knowledge graph remains an explicit application decision.
 
 Immutable migration bundles capture provider identity, required capabilities,
 ordered up/down commands, execution channels, and destructive flags under a

@@ -1,6 +1,6 @@
 ---
 title: Import and onboarding
-description: Stream CSV data into bounded, provider-neutral mutation plans with reviewable JSON evidence.
+description: Stream bounded imports and inspect relational databases as deterministic interaction models.
 ---
 
 # Import and onboarding
@@ -225,6 +225,50 @@ return the same table, column, primary-key, and foreign-key metadata model.
 They preserve provider type names as evidence rather than guessing lossy CLR
 conversions.
 
+## Relational Interaction Model
+
+Schema discovery can be converted into an open, deterministic model before any
+domain interpretation is attempted:
+
+```csharp
+var schema = await source.ReadAsync(connection, cancellationToken);
+var model = RelationalInteractionModelBuilder.Build(schema, source.ProviderName);
+
+string json = RelationalInteractionModelJson.Serialize(model);
+await File.WriteAllTextAsync("northwind.nodalmodel.json", json, cancellationToken);
+
+await using var stream = File.CreateText("northwind.graphml");
+RelationalInteractionModelExporter.Write(
+    model,
+    RelationalInteractionExportFormat.GraphMl,
+    stream);
+```
+
+The canonical JSON records:
+
+- tables, views, columns, provider type names, nullability, ordinals, and keys;
+- ordered column pairs for single-column and composite foreign keys;
+- delete and update referential actions;
+- physical source and target endpoints for every relationship;
+- a stable SHA-256 schema fingerprint and deterministic ordering;
+- explicit diagnostics and external endpoint stubs for partial discovery.
+
+The model classifies structural roles such as entity, association, view, and
+external object. It may also attach a readable display direction and a neutral
+label such as `HAS_ORDER_DETAIL` or `REFERENCES_PRODUCT`. Every such suggestion
+is marked `RequiresReview`; it never claims that a foreign key means `SELLS`,
+`BUYS`, or another business concept.
+
+JSON is the lossless interchange format. GraphML, GEXF, and DOT are display
+projections intended for graph visualization and exploration, including tools
+such as Gephi. They use the suggested display direction while the canonical
+model continues to retain the physical foreign-key direction.
+
+No LLM client, semantic inference service, or hosted dependency is included in
+the free package. Turning a relational interaction network into a curated
+knowledge network is deliberately left to the consuming application and its
+domain experts.
+
 ### Relational performance contract
 
 - Catalog discovery is one set-based command with two normalized result sets,
@@ -248,6 +292,7 @@ schema, and maps the streamed rows into `Nodal.Import` batches.
 
 This slice covers explicit mapping, bounded planning, streaming CSV input,
 deterministic CLI evidence, and a trusted provider execution boundary.
-SQL Server/PostgreSQL metadata and bounded streaming source adapters are
-available in `Nodal.Import.Relational`. Clean-room package samples and live
-provider acceptance tests remain separate beta-readiness slices.
+SQL Server/PostgreSQL metadata, bounded streaming adapters, canonical relational
+interaction models, and visualization exports are available in
+`Nodal.Import.Relational`. Clean-room package samples and live provider
+acceptance tests remain separate beta-readiness slices.

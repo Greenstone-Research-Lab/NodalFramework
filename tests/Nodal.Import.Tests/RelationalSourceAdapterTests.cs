@@ -28,7 +28,11 @@ public sealed class RelationalSourceAdapterTests
         var order = Assert.Single(schema.Tables, table => table.Name == "Orders");
         Assert.Equal(["Id", "CustomerId"], order.Columns.Select(column => column.Name));
         Assert.True(order.Columns[0].IsPrimaryKey);
-        Assert.Equal("FK_Orders_Customers", Assert.Single(schema.ForeignKeys).Name);
+        var foreignKey = Assert.Single(schema.ForeignKeys);
+        Assert.Equal("FK_Orders_Customers", foreignKey.Name);
+        Assert.Equal(new RelationalForeignKeyColumn("CustomerId", "Id", 1), Assert.Single(foreignKey.Columns));
+        Assert.Equal(RelationalReferentialAction.Cascade, foreignKey.OnDelete);
+        Assert.Equal(RelationalReferentialAction.NoAction, foreignKey.OnUpdate);
         Assert.Empty(schema.Diagnostics);
         Assert.Equal(1, connection.ExecuteCount);
         Assert.Equal(CommandBehavior.SequentialAccess, connection.LastBehavior);
@@ -83,6 +87,33 @@ public sealed class RelationalSourceAdapterTests
 
         Assert.NotEmpty(schema.Tables);
         Assert.Empty(schema.ForeignKeys);
+    }
+
+    [Theory]
+    [InlineData("SqlServer")]
+    [InlineData("PostgreSql")]
+    public async Task CompositeForeignKeyColumnsAreGroupedAndOrdered(string provider)
+    {
+        var foreignKeys = MetadataForeignKeys();
+        foreignKeys.Rows.Clear();
+        foreignKeys.Rows.Add("FK_Lines_Orders", "sales", "Lines", "sales", "Orders", "TenantId", "TenantId", 2, "RESTRICT", "CASCADE");
+        foreignKeys.Rows.Add("FK_Lines_Orders", "sales", "Lines", "sales", "Orders", "OrderId", "OrderId", 1, "RESTRICT", "CASCADE");
+        await using var connection = new RecordingDbConnection([MetadataTables(), foreignKeys])
+        {
+            StateValue = ConnectionState.Open,
+        };
+
+        var schema = await Create(provider).ReadAsync(connection);
+
+        var foreignKey = Assert.Single(schema.ForeignKeys);
+        Assert.Equal(
+            [
+                new RelationalForeignKeyColumn("OrderId", "OrderId", 1),
+                new RelationalForeignKeyColumn("TenantId", "TenantId", 2),
+            ],
+            foreignKey.Columns);
+        Assert.Equal(RelationalReferentialAction.Restrict, foreignKey.OnDelete);
+        Assert.Equal(RelationalReferentialAction.Cascade, foreignKey.OnUpdate);
     }
 
     [Fact]
@@ -157,8 +188,13 @@ public sealed class RelationalSourceAdapterTests
             ("source_schema", typeof(string)),
             ("source_table", typeof(string)),
             ("target_schema", typeof(string)),
-            ("target_table", typeof(string)));
-        table.Rows.Add("FK_Orders_Customers", "dbo", "Orders", "dbo", "Customers");
+            ("target_table", typeof(string)),
+            ("source_column", typeof(string)),
+            ("target_column", typeof(string)),
+            ("column_ordinal", typeof(int)),
+            ("delete_action", typeof(string)),
+            ("update_action", typeof(string)));
+        table.Rows.Add("FK_Orders_Customers", "dbo", "Orders", "dbo", "Customers", "CustomerId", "Id", 1, "CASCADE", "NO_ACTION");
         return table;
     }
 
