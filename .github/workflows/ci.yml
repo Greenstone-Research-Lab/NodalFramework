@@ -56,6 +56,22 @@ jobs:
       - name: Run test suite
         run: dotnet test Nodal.slnx --configuration Release --no-build --logger "console;verbosity=normal"
 
+      - name: Enforce architecture rules with debug artifacts
+        run: >-
+          dotnet test tests/Nodal.ArchitectureTests/Nodal.ArchitectureTests.csproj
+          --configuration Debug
+          --no-restore
+          --filter FullyQualifiedName~ProductArchitectureRules
+          --logger "console;verbosity=normal"
+
+      - name: Enforce provider contracts
+        run: >-
+          dotnet test tests/Nodal.ProviderContractTests/Nodal.ProviderContractTests.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --logger "console;verbosity=normal"
+
       - name: Enforce product coverage
         shell: pwsh
         run: ./eng/verify-coverage.ps1
