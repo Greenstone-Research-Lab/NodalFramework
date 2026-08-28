@@ -42,13 +42,21 @@ internal static class RelationalDialects
 
         SELECT fk.name AS constraint_name, source_schema.name AS source_schema,
                source_table.name AS source_table, target_schema.name AS target_schema,
-               target_table.name AS target_table
+               target_table.name AS target_table, source_column.name AS source_column,
+               target_column.name AS target_column, fkc.constraint_column_id AS column_ordinal,
+               fk.delete_referential_action_desc AS delete_action,
+               fk.update_referential_action_desc AS update_action
         FROM sys.foreign_keys fk
+        INNER JOIN sys.foreign_key_columns fkc ON fkc.constraint_object_id = fk.object_id
         INNER JOIN sys.tables source_table ON source_table.object_id = fk.parent_object_id
         INNER JOIN sys.schemas source_schema ON source_schema.schema_id = source_table.schema_id
         INNER JOIN sys.tables target_table ON target_table.object_id = fk.referenced_object_id
         INNER JOIN sys.schemas target_schema ON target_schema.schema_id = target_table.schema_id
-        ORDER BY source_schema.name, source_table.name, fk.name;
+        INNER JOIN sys.columns source_column ON source_column.object_id = source_table.object_id
+            AND source_column.column_id = fkc.parent_column_id
+        INNER JOIN sys.columns target_column ON target_column.object_id = target_table.object_id
+            AND target_column.column_id = fkc.referenced_column_id
+        ORDER BY source_schema.name, source_table.name, fk.name, fkc.constraint_column_id;
         """;
 
     private const string PostgreSqlSchemaSql = """
@@ -74,14 +82,26 @@ internal static class RelationalDialects
 
         SELECT con.conname AS constraint_name, source_schema.nspname AS source_schema,
                source_table.relname AS source_table, target_schema.nspname AS target_schema,
-               target_table.relname AS target_table
+               target_table.relname AS target_table, source_column.attname AS source_column,
+               target_column.attname AS target_column, source_key.ordinal_position AS column_ordinal,
+               CASE con.confdeltype WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET_NULL'
+                    WHEN 'd' THEN 'SET_DEFAULT' WHEN 'r' THEN 'RESTRICT' ELSE 'NO_ACTION' END AS delete_action,
+               CASE con.confupdtype WHEN 'c' THEN 'CASCADE' WHEN 'n' THEN 'SET_NULL'
+                    WHEN 'd' THEN 'SET_DEFAULT' WHEN 'r' THEN 'RESTRICT' ELSE 'NO_ACTION' END AS update_action
         FROM pg_catalog.pg_constraint con
         INNER JOIN pg_catalog.pg_class source_table ON source_table.oid = con.conrelid
         INNER JOIN pg_catalog.pg_namespace source_schema ON source_schema.oid = source_table.relnamespace
         INNER JOIN pg_catalog.pg_class target_table ON target_table.oid = con.confrelid
         INNER JOIN pg_catalog.pg_namespace target_schema ON target_schema.oid = target_table.relnamespace
+        INNER JOIN LATERAL unnest(con.conkey) WITH ORDINALITY source_key(attnum, ordinal_position) ON TRUE
+        INNER JOIN LATERAL unnest(con.confkey) WITH ORDINALITY target_key(attnum, ordinal_position)
+            ON target_key.ordinal_position = source_key.ordinal_position
+        INNER JOIN pg_catalog.pg_attribute source_column ON source_column.attrelid = source_table.oid
+            AND source_column.attnum = source_key.attnum
+        INNER JOIN pg_catalog.pg_attribute target_column ON target_column.attrelid = target_table.oid
+            AND target_column.attnum = target_key.attnum
         WHERE con.contype = 'f'
-        ORDER BY source_schema.nspname, source_table.relname, con.conname;
+        ORDER BY source_schema.nspname, source_table.relname, con.conname, source_key.ordinal_position;
         """;
 
     public static RelationalDialect SqlServer { get; } = new(
@@ -221,18 +241,47 @@ public abstract class RelationalSourceAdapter : IRelationalSourceAdapter
         var sourceTable = reader.GetOrdinal("source_table");
         var targetSchema = reader.GetOrdinal("target_schema");
         var targetTable = reader.GetOrdinal("target_table");
-        var foreignKeys = new List<RelationalForeignKey>();
+        var sourceColumn = reader.GetOrdinal("source_column");
+        var targetColumn = reader.GetOrdinal("target_column");
+        var columnOrdinal = reader.GetOrdinal("column_ordinal");
+        var deleteAction = reader.GetOrdinal("delete_action");
+        var updateAction = reader.GetOrdinal("update_action");
+        var foreignKeys = new Dictionary<ForeignKeyIdentity, ForeignKeyAccumulator>();
         while (await reader.ReadAsync(cancellationToken).ConfigureAwait(false))
         {
-            foreignKeys.Add(new RelationalForeignKey(
+            var identity = new ForeignKeyIdentity(
                 reader.GetString(name),
                 reader.GetString(sourceSchema),
                 reader.GetString(sourceTable),
                 reader.GetString(targetSchema),
-                reader.GetString(targetTable)));
+                reader.GetString(targetTable));
+            if (!foreignKeys.TryGetValue(identity, out var accumulator))
+            {
+                accumulator = new ForeignKeyAccumulator(
+                    identity,
+                    ParseAction(reader.GetString(deleteAction)),
+                    ParseAction(reader.GetString(updateAction)));
+                foreignKeys.Add(identity, accumulator);
+            }
+
+            accumulator.Columns.Add(new RelationalForeignKeyColumn(
+                reader.GetString(sourceColumn),
+                reader.GetString(targetColumn),
+                Convert.ToInt32(reader.GetValue(columnOrdinal), System.Globalization.CultureInfo.InvariantCulture)));
         }
 
-        return foreignKeys;
+        return foreignKeys.Values.Select(item => new RelationalForeignKey(
+                item.Identity.Name,
+                item.Identity.SourceSchema,
+                item.Identity.SourceTable,
+                item.Identity.TargetSchema,
+                item.Identity.TargetTable)
+        {
+            Columns = item.Columns.OrderBy(column => column.Ordinal).ToArray(),
+            OnDelete = item.OnDelete,
+            OnUpdate = item.OnUpdate,
+        })
+            .ToArray();
     }
 
     private static void ValidateOpen(DbConnection connection)
@@ -254,6 +303,36 @@ public abstract class RelationalSourceAdapter : IRelationalSourceAdapter
 
         public List<RelationalColumn> Columns { get; } = [];
     }
+
+    private sealed record ForeignKeyIdentity(
+        string Name,
+        string SourceSchema,
+        string SourceTable,
+        string TargetSchema,
+        string TargetTable);
+
+    private sealed class ForeignKeyAccumulator(
+        ForeignKeyIdentity identity,
+        RelationalReferentialAction onDelete,
+        RelationalReferentialAction onUpdate)
+    {
+        public ForeignKeyIdentity Identity { get; } = identity;
+
+        public RelationalReferentialAction OnDelete { get; } = onDelete;
+
+        public RelationalReferentialAction OnUpdate { get; } = onUpdate;
+
+        public List<RelationalForeignKeyColumn> Columns { get; } = [];
+    }
+
+    private static RelationalReferentialAction ParseAction(string value) => value switch
+    {
+        "CASCADE" => RelationalReferentialAction.Cascade,
+        "RESTRICT" => RelationalReferentialAction.Restrict,
+        "SET_NULL" => RelationalReferentialAction.SetNull,
+        "SET_DEFAULT" => RelationalReferentialAction.SetDefault,
+        _ => RelationalReferentialAction.NoAction,
+    };
 
     private sealed record MetadataOrdinals(
         int Schema,

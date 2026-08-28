@@ -17,7 +17,42 @@ public sealed record RelationalTable(string Schema, string Name, string Kind, IR
 public sealed record RelationalColumn(string Name, string DataType, bool IsNullable, int Ordinal, bool IsPrimaryKey);
 
 /// <summary>Describes a foreign-key edge between two relational tables.</summary>
-public sealed record RelationalForeignKey(string Name, string SourceSchema, string SourceTable, string TargetSchema, string TargetTable);
+public sealed record RelationalForeignKey(string Name, string SourceSchema, string SourceTable, string TargetSchema, string TargetTable)
+{
+    /// <summary>Gets the ordered source-to-target column pairs that form the foreign key.</summary>
+    public IReadOnlyList<RelationalForeignKeyColumn> Columns { get; init; } = [];
+
+    /// <summary>Gets the action applied when a referenced row is deleted.</summary>
+    public RelationalReferentialAction OnDelete { get; init; }
+
+    /// <summary>Gets the action applied when a referenced key is updated.</summary>
+    public RelationalReferentialAction OnUpdate { get; init; }
+}
+
+/// <summary>Describes one ordered source-to-target column pair in a foreign key.</summary>
+/// <param name="SourceColumn">Column on the referencing table.</param>
+/// <param name="TargetColumn">Column on the referenced table.</param>
+/// <param name="Ordinal">One-based position inside a possibly composite foreign key.</param>
+public sealed record RelationalForeignKeyColumn(string SourceColumn, string TargetColumn, int Ordinal);
+
+/// <summary>Describes a portable referential action declared by a relational database.</summary>
+public enum RelationalReferentialAction
+{
+    /// <summary>No provider action was reported.</summary>
+    NoAction,
+
+    /// <summary>The operation is rejected while dependent rows exist.</summary>
+    Restrict,
+
+    /// <summary>The operation cascades to dependent rows.</summary>
+    Cascade,
+
+    /// <summary>Dependent key columns are set to null.</summary>
+    SetNull,
+
+    /// <summary>Dependent key columns are set to their default values.</summary>
+    SetDefault,
+}
 
 /// <summary>Reads database metadata through ADO.NET without exposing a vendor client from the import contract.</summary>
 public interface IRelationalSchemaReader
@@ -90,14 +125,56 @@ public sealed class AdoNetRelationalSchemaReader : IRelationalSchemaReader
             .Select(row => new RelationalTable(ReadString(row, "TABLE_SCHEMA"), ReadString(row, "TABLE_NAME"), ReadString(row, "TABLE_TYPE"),
                 columns.GetValueOrDefault(Key(ReadString(row, "TABLE_SCHEMA"), ReadString(row, "TABLE_NAME")), []))).ToArray();
 
-    private static RelationalForeignKey[] ReadForeignKeys(DataTable? data) => data is null ? [] : data.Rows.Cast<DataRow>()
-        .Select(row => new RelationalForeignKey(ReadString(row, "CONSTRAINT_NAME"), ReadString(row, "TABLE_SCHEMA"), ReadString(row, "TABLE_NAME"),
-            ReadString(row, "REFERENCED_TABLE_SCHEMA"), ReadString(row, "REFERENCED_TABLE_NAME"))).ToArray();
+    private static RelationalForeignKey[] ReadForeignKeys(DataTable? data)
+    {
+        if (data is null)
+        {
+            return [];
+        }
+
+        return data.Rows.Cast<DataRow>()
+            .GroupBy(row => new
+            {
+                Name = ReadString(row, "CONSTRAINT_NAME"),
+                SourceSchema = ReadString(row, "TABLE_SCHEMA"),
+                SourceTable = ReadString(row, "TABLE_NAME"),
+                TargetSchema = ReadString(row, "REFERENCED_TABLE_SCHEMA"),
+                TargetTable = ReadString(row, "REFERENCED_TABLE_NAME"),
+            })
+            .Select(group => new RelationalForeignKey(
+                group.Key.Name,
+                group.Key.SourceSchema,
+                group.Key.SourceTable,
+                group.Key.TargetSchema,
+                group.Key.TargetTable)
+            {
+                Columns = group.Select((row, index) => new RelationalForeignKeyColumn(
+                        ReadFirstString(row, "COLUMN_NAME", "FK_COLUMN_NAME"),
+                        ReadFirstString(row, "REFERENCED_COLUMN_NAME", "PK_COLUMN_NAME"),
+                        ReadInt32(row, "ORDINAL_POSITION") is var ordinal && ordinal > 0 ? ordinal : index + 1))
+                    .Where(pair => pair.SourceColumn.Length > 0 || pair.TargetColumn.Length > 0)
+                    .OrderBy(pair => pair.Ordinal)
+                    .ToArray(),
+                OnDelete = ParseAction(ReadFirstString(group.First(), "DELETE_RULE", "ON_DELETE")),
+                OnUpdate = ParseAction(ReadFirstString(group.First(), "UPDATE_RULE", "ON_UPDATE")),
+            })
+            .ToArray();
+    }
 
     private static string ReadString(DataRow row, string name) => row.Table.Columns.Contains(name) && row[name] is not DBNull ? Convert.ToString(row[name], System.Globalization.CultureInfo.InvariantCulture) ?? string.Empty : string.Empty;
+    private static string ReadFirstString(DataRow row, params string[] names) => names.Select(name => ReadString(row, name)).FirstOrDefault(value => value.Length > 0) ?? string.Empty;
     private static bool ReadBoolean(DataRow row, string name) => row.Table.Columns.Contains(name) && row[name] is not DBNull && Convert.ToBoolean(row[name], System.Globalization.CultureInfo.InvariantCulture);
     private static int ReadInt32(DataRow row, string name) => row.Table.Columns.Contains(name) && row[name] is not DBNull ? Convert.ToInt32(row[name], System.Globalization.CultureInfo.InvariantCulture) : 0;
     private static string Key(string schema, string table, string? column = null) => string.Join(".", [schema, table, column ?? string.Empty]);
+
+    private static RelationalReferentialAction ParseAction(string value) => value.Replace(" ", "_", StringComparison.Ordinal).ToUpperInvariant() switch
+    {
+        "RESTRICT" => RelationalReferentialAction.Restrict,
+        "CASCADE" => RelationalReferentialAction.Cascade,
+        "SET_NULL" => RelationalReferentialAction.SetNull,
+        "SET_DEFAULT" => RelationalReferentialAction.SetDefault,
+        _ => RelationalReferentialAction.NoAction,
+    };
 }
 
 /// <summary>Creates a reviewable graph-oriented draft from relational metadata; it never mutates a graph.</summary>
