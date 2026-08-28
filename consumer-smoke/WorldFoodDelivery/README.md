@@ -33,10 +33,10 @@ From the repository root, first pack the solution, then run:
 
 ```powershell
 ./eng/run-published-consumer-smoke.ps1 `
-  -PackageVersion '0.1.0-alpha.1' `
+  -PackageVersion '0.1.0-beta.1' `
   -PackageSource (Resolve-Path './TestResults/package-verification')
 ```
 
-The same command runs in CI against freshly built artifacts and, after an alpha
+The same command runs in CI against freshly built artifacts and, after a beta
 publication, against NuGet.org. The script fails if a project reference is
 introduced or any expected Nodal package is not restored.

@@ -25,6 +25,6 @@
     {"@id": "nodal:ConditionalAnalytics", "@type": "nodal:Capability", "name": "Conditional graph analytics", "description": "Analytics are advertised only when their provider extension or installed query is configured.", "algorithms": ["ArticleRank", "ArticulationPoints", "BetweennessCentrality", "Bridges", "CelfInfluenceMaximization", "ClosenessCentrality", "DegreeCentrality", "EigenvectorCentrality", "HarmonicCentrality", "Hits", "PageRank", "CliqueCounting", "Conductance", "Hdbscan", "KCoreDecomposition", "K1Coloring", "KMeans", "LabelPropagation", "Leiden", "LocalClusteringCoefficient", "Louvain", "Modularity", "ModularityOptimization", "StronglyConnectedComponents", "TriangleCount", "WeaklyConnectedComponents", "ApproximateMaximumKCut", "SpeakerListenerLabelPropagation", "ShortestPath", "AllShortestPaths", "Dijkstra", "AStar", "YenKShortestPaths"]},
     {"@id": "nodal:NodalMigrations", "@type": "nodal:Package", "name": "Nodal.Migrations", "description": "Portable graph schema intent, deterministic planning, and provider execution.", "requires": "nodal:MigrationDialect"}
   ],
-  "schema:version": "0.1.0-alpha",
-  "schema:dateModified": "2026-08-21"
+  "schema:version": "0.1.0-beta",
+  "schema:dateModified": "2026-08-28"
 }

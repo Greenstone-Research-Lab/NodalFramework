@@ -5,7 +5,7 @@
     <ImplicitUsings>enable</ImplicitUsings>
     <Nullable>enable</Nullable>
     <TreatWarningsAsErrors>true</TreatWarningsAsErrors>
-    <NodalPackageVersion Condition="'$(NodalPackageVersion)' == ''">0.1.0-alpha.1</NodalPackageVersion>
+    <NodalPackageVersion Condition="'$(NodalPackageVersion)' == ''">0.1.0-beta.1</NodalPackageVersion>
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Nodal.Core" Version="$(NodalPackageVersion)" />

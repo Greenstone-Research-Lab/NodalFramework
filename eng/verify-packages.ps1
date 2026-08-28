@@ -1,5 +1,5 @@
 param(
-    [string]$PackageVersion = '0.1.0-alpha.1'
+    [string]$PackageVersion = '0.1.0-beta.1'
 )
 
 $ErrorActionPreference = 'Stop'
@@ -64,6 +64,7 @@ foreach ($packageId in $expectedPackages.Keys) {
             @(
                 'LICENSE.txt'
                 'README.md'
+                'nodal-package-icon.png'
                 'tools/net10.0/any/DotnetToolSettings.xml'
                 'tools/net10.0/any/Nodal.Tool.dll'
                 'tools/net10.0/any/Nodal.Tool.xml'
@@ -75,6 +76,7 @@ foreach ($packageId in $expectedPackages.Keys) {
             @(
                 'LICENSE.txt'
                 'README.md'
+                'nodal-package-icon.png'
                 "lib/net10.0/$packageId.dll"
                 "lib/net10.0/$packageId.xml"
             )
@@ -106,7 +108,13 @@ foreach ($packageId in $expectedPackages.Keys) {
         $actualVersion = $metadata.SelectSingleNode("*[local-name()='version']").InnerText
         $license = $metadata.SelectSingleNode("*[local-name()='license']")
         $readme = $metadata.SelectSingleNode("*[local-name()='readme']").InnerText
+        $icon = $metadata.SelectSingleNode("*[local-name()='icon']").InnerText
         $repository = $metadata.SelectSingleNode("*[local-name()='repository']")
+        $authors = $metadata.SelectSingleNode("*[local-name()='authors']").InnerText
+        $description = $metadata.SelectSingleNode("*[local-name()='description']").InnerText
+        $tags = $metadata.SelectSingleNode("*[local-name()='tags']").InnerText
+        $projectUrl = $metadata.SelectSingleNode("*[local-name()='projectUrl']").InnerText
+        $releaseNotes = $metadata.SelectSingleNode("*[local-name()='releaseNotes']").InnerText
 
         if ($actualId -ne $packageId -or $actualVersion -ne $PackageVersion) {
             throw "Package identity mismatch. Expected '$packageId/$PackageVersion', found '$actualId/$actualVersion'."
@@ -120,9 +128,26 @@ foreach ($packageId in $expectedPackages.Keys) {
             throw "Package '$packageId' must declare README.md as its NuGet readme."
         }
 
+        if ($icon -ne 'nodal-package-icon.png') {
+            throw "Package '$packageId' must declare the shared Nodal package icon."
+        }
+
         if ($repository.type -ne 'git' -or
             $repository.url -ne 'https://github.com/Greenstone-Research-Lab/NodalFramework') {
             throw "Package '$packageId' has invalid repository metadata."
+        }
+
+        if ($authors -ne 'Greenstone Research Lab' -or [string]::IsNullOrWhiteSpace($description)) {
+            throw "Package '$packageId' must declare its author and a non-empty description."
+        }
+
+        if ($tags -notmatch '(^|[; ])graph($|[; ])' -or $tags -notmatch '(^|[; ])nodal($|[; ])') {
+            throw "Package '$packageId' must include the common graph and nodal tags."
+        }
+
+        if ($projectUrl -ne 'https://github.com/Greenstone-Research-Lab/NodalFramework' -or
+            $releaseNotes -ne 'https://github.com/Greenstone-Research-Lab/NodalFramework/releases') {
+            throw "Package '$packageId' has invalid project or release-notes metadata."
         }
 
         $actualDependencies = @(

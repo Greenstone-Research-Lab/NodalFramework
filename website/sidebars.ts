@@ -12,6 +12,7 @@ const sidebars: SidebarsConfig = {
     {type: 'category', label: 'Providers', items: ['providers/overview', 'providers/query-parity', 'providers/compatibility', 'providers/neo4j', 'providers/tigergraph']},
     'migrations',
     'architecture',
+    {type: 'category', label: 'Releases and security', items: ['releases/0.1-beta', 'releases/versioning-policy', 'security/dependency-risk']},
     'roadmap',
   ],
 };

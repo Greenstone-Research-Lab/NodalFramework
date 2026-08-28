@@ -18,11 +18,14 @@ the application project. The provider brings `Nodal.Core` transitively; add
 | TigerGraph, GSQL, and REST++ | [`Nodal.TigerGraph`](https://www.nuget.org/packages/Nodal.TigerGraph) |
 | Portable migration definitions and execution | [`Nodal.Migrations`](https://www.nuget.org/packages/Nodal.Migrations) |
 | Provider-neutral analytics contracts and capability integration | [`Nodal.Analytics`](https://www.nuget.org/packages/Nodal.Analytics) |
+| Provider-neutral bounded import planning | [`Nodal.Import`](https://www.nuget.org/packages/Nodal.Import) |
+| Streaming CSV import conventions | [`Nodal.Import.Csv`](https://www.nuget.org/packages/Nodal.Import.Csv) |
+| SQL Server/PostgreSQL metadata inspection and bounded reads | [`Nodal.Import.Relational`](https://www.nuget.org/packages/Nodal.Import.Relational) |
 | Provider authors and compiler-only tools | [`Nodal.Core`](https://www.nuget.org/packages/Nodal.Core) |
 | Migration planning in local and CI workflows | [`Nodal.Tool`](https://www.nuget.org/packages/Nodal.Tool) |
 
 All pre-release package versions move together. Do not mix different Nodal
-alpha versions in one application.
+beta versions in one application.
 
 Install the command-line package as a global or manifest-local .NET tool rather
 than an application package:
@@ -51,8 +54,8 @@ For a reproducible build, pin every Nodal package to the same published
 version:
 
 ```bash
-dotnet add package Nodal.Neo4j --version 0.1.0-alpha.2
-dotnet add package Nodal.Migrations --version 0.1.0-alpha.2
+dotnet add package Nodal.Neo4j --version 0.1.0-beta.1
+dotnet add package Nodal.Migrations --version 0.1.0-beta.1
 ```
 
 The equivalent project file is:
@@ -65,8 +68,8 @@ The equivalent project file is:
 </PropertyGroup>
 
 <ItemGroup>
-  <PackageReference Include="Nodal.Neo4j" Version="0.1.0-alpha.2" />
-  <PackageReference Include="Nodal.Migrations" Version="0.1.0-alpha.2" />
+  <PackageReference Include="Nodal.Neo4j" Version="0.1.0-beta.1" />
+  <PackageReference Include="Nodal.Migrations" Version="0.1.0-beta.1" />
 </ItemGroup>
 ```
 
