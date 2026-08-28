@@ -1,5 +1,5 @@
-OrderId,CustomerId,CustomerName,RestaurantId,RestaurantName,District,FoodId,FoodName,Category,Kitchen,UnitPrice,Quantity,CourierId,VehicleType
-order-001,customer-ada,Ada Lovelace,restaurant-asian,Tallinn Asian Kitchen,Kesklinn,food-ramen,Spicy Ramen,Noodles,Asian,12.50,1,courier-liis,Bicycle
-order-001,customer-ada,Ada Lovelace,restaurant-asian,Tallinn Asian Kitchen,Kesklinn,food-gyoza,Vegetable Gyoza,Starters,Asian,6.00,2,courier-liis,Bicycle
-order-002,customer-alan,Alan Turing,restaurant-italian,Little Napoli,Lasnamae,food-pasta,Truffle Pasta,Pasta,Italian,15.00,1,courier-martin,Scooter
-order-003,customer-ada,Ada Lovelace,restaurant-asian,Tallinn Asian Kitchen,Kesklinn,food-sushi,Salmon Sushi,Sushi,Asian,14.00,1,courier-liis,Bicycle
+OrderId,OrderedAt,DeliveredAt,PaymentMethod,CustomerId,CustomerName,LoyaltyTier,RestaurantId,RestaurantName,District,RestaurantRating,FoodId,FoodName,Category,Kitchen,UnitPrice,Quantity,CourierId,CourierName,CourierRating,VehicleType,ZoneId,ZoneName,WeatherId,WeatherCondition,TemperatureCelsius
+order-001,2026-08-27T12:00:00Z,2026-08-27T12:31:00Z,Card,customer-ada,Ada Lovelace,Gold,restaurant-asian,Tallinn Asian Kitchen,Kesklinn,4.7,food-ramen,Spicy Ramen,Noodles,Asian,12.50,1,courier-liis,Liis Tamm,4.9,Bicycle,zone-kesklinn,Kesklinn,weather-noon,Rain,14.5
+order-001,2026-08-27T12:00:00Z,2026-08-27T12:31:00Z,Card,customer-ada,Ada Lovelace,Gold,restaurant-asian,Tallinn Asian Kitchen,Kesklinn,4.7,food-gyoza,Vegetable Gyoza,Starters,Asian,6.00,2,courier-liis,Liis Tamm,4.9,Bicycle,zone-kesklinn,Kesklinn,weather-noon,Rain,14.5
+order-002,2026-08-27T13:10:00Z,2026-08-27T13:42:00Z,Wallet,customer-alan,Alan Turing,Silver,restaurant-italian,Little Napoli,Lasnamae,4.5,food-pasta,Truffle Pasta,Pasta,Italian,15.00,1,courier-martin,Martin Saar,4.8,Scooter,zone-lasnamae,Lasnamae,weather-afternoon,Cloudy,16.0
+order-003,2026-08-27T18:45:00Z,2026-08-27T19:19:00Z,Card,customer-ada,Ada Lovelace,Gold,restaurant-asian,Tallinn Asian Kitchen,Kesklinn,4.7,food-sushi,Salmon Sushi,Sushi,Asian,14.00,1,courier-liis,Liis Tamm,4.9,Bicycle,zone-kesklinn,Kesklinn,weather-noon,Rain,14.5

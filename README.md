@@ -70,6 +70,13 @@ The trusted host is selected through `NODAL_RELATIONAL_HOST_ASSEMBLY` and
 owns connection creation, pooling, authentication, secret retrieval, and the
 SQL Server or PostgreSQL adapter choice.
 
+The repository also contains a structured [World Food Delivery clean-room
+consumer](consumer-smoke/WorldFoodDelivery/README.md). It restores only NuGet
+packages and exercises CSV-to-POCO mapping, graph mutation planning, portable
+Neo4j/TigerGraph queries, migrations, and a normalized relational interaction
+network. Its domain nodes and relations use one type per file so the example
+can serve as an application template rather than an opaque CI fixture.
+
 Dry-run is the default. Applying a CSV requires both `--apply true` and, when
 property upserts or omissions are detected, `--approve-destructive true` plus a
 trusted provider-composed mutation host. The complete mapping format and apply
