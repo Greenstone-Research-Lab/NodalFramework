@@ -1,0 +1,3 @@
+customer_id,customer_name,order_id,total
+customer-1,Ada,order-1,18.50
+customer-2,Lin,order-2,24.00

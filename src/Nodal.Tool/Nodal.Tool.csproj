@@ -6,13 +6,15 @@
     <PackAsTool>true</PackAsTool>
     <ToolCommandName>nodal</ToolCommandName>
     <PackageId>Nodal.Tool</PackageId>
-    <Title>Nodal Framework Migration Tool</Title>
-    <Description>Command-line tooling for deterministic Nodal Framework schema snapshots, plans, immutable bundles, approved apply, and rollback workflows.</Description>
+    <Title>Nodal Framework Tool</Title>
+    <Description>Command-line tooling for deterministic Nodal Framework migrations and safe, evidence-driven graph imports.</Description>
     <GenerateDocumentationFile>true</GenerateDocumentationFile>
   </PropertyGroup>
 
   <ItemGroup>
     <ProjectReference Include="..\Nodal.Core\Nodal.Core.csproj" />
+    <ProjectReference Include="..\Nodal.Import\Nodal.Import.csproj" />
+    <ProjectReference Include="..\Nodal.Import.Csv\Nodal.Import.Csv.csproj" />
     <ProjectReference Include="..\Nodal.Migrations\Nodal.Migrations.csproj" />
   </ItemGroup>
 

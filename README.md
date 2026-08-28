@@ -19,7 +19,7 @@ Nodal Framework is a provider-based .NET graph data access prototype. It keeps t
 | `Nodal.Neo4j` | Neo4j/Cypher provider using the official pooled Bolt driver |
 | `Nodal.Analytics` | Provider-neutral analytics contracts and capability integration |
 | `Nodal.TigerGraph` | TigerGraph/GSQL provider using REST++ and an optional administrative transport |
-| `Nodal.Tool` | .NET global tool for deterministic migration snapshots, diffs, plans, and validation |
+| `Nodal.Tool` | .NET global tool for deterministic migrations and evidence-driven CSV imports |
 | `Nodal.Import` | Provider-neutral, bounded import orchestration and diagnostics |
 | `Nodal.Import.Csv` | Streaming CSV records with deterministic header normalization |
 | `Nodal.Import.Relational` | Relational schema metadata discovery and graph import-plan drafting |
@@ -35,12 +35,27 @@ dotnet add package Nodal.Neo4j --prerelease
 dotnet add package Nodal.Migrations --prerelease
 ```
 
-Install the migration CLI separately as a .NET tool:
+Install the CLI separately as a .NET tool:
 
 ```bash
 dotnet tool install --global Nodal.Tool --prerelease
 nodal migrations validate --snapshot nodal.snapshot.json
 ```
+
+The same tool validates a CSV import without connecting to a database and
+writes deterministic JSON evidence for review:
+
+```bash
+nodal import csv \
+  --input world-food-delivery.csv \
+  --mapping world-food-delivery.mapping.json \
+  --evidence import-evidence.json
+```
+
+Dry-run is the default. Applying a CSV requires both `--apply true` and, when
+property upserts or omissions are detected, `--approve-destructive true` plus a
+trusted provider-composed mutation host. The complete mapping format and apply
+boundary are documented in the [import guide](website/docs/imports.md).
 
 For one-time onboarding, `Nodal.Import` converts an explicitly mapped, bounded
 source batch into the same provider-neutral mutation plan accepted by Neo4j and
@@ -70,7 +85,7 @@ if (!planned.DryRun.Succeeded || planned.DryRun.HasDestructiveRisks)
 Duplicate identities are coalesced deterministically within the batch, nodes
 always precede relations, and missing identities or potential property
 overwrites remain visible in payload-safe diagnostics and risk indicators. See
-the [import planning guide](website/docs/imports.md) for the complete contract.
+the [import guide](website/docs/imports.md) for the complete contract.
 
 Immutable migration bundles capture provider identity, required capabilities,
 ordered up/down commands, execution channels, and destructive flags under a

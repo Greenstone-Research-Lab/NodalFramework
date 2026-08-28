@@ -22,7 +22,7 @@ public sealed class DependencyDirectionTests
     }
 
     [Fact]
-    public void MigrationToolDependsOnlyOnProviderNeutralProductAssemblies()
+    public void ToolDependsOnlyOnProviderNeutralProductAssemblies()
     {
         var references = typeof(NodalCli).Assembly
             .GetReferencedAssemblies()
@@ -30,6 +30,8 @@ public sealed class DependencyDirectionTests
             .ToArray();
 
         Assert.Contains("Nodal.Core", references);
+        Assert.Contains("Nodal.Import", references);
+        Assert.Contains("Nodal.Import.Csv", references);
         Assert.Contains("Nodal.Migrations", references);
         Assert.DoesNotContain("Nodal.Neo4j", references);
         Assert.DoesNotContain("Nodal.TigerGraph", references);

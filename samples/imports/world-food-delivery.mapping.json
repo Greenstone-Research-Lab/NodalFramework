@@ -1,0 +1,33 @@
+{
+  "formatVersion": 1,
+  "nodes": [
+    {
+      "name": "customer",
+      "type": "Customer",
+      "keyColumn": "customer_id",
+      "keyProperty": "Id",
+      "properties": [
+        { "column": "customer_name", "property": "Name" }
+      ]
+    },
+    {
+      "name": "order",
+      "type": "Order",
+      "keyColumn": "order_id",
+      "keyProperty": "Id",
+      "properties": [
+        { "column": "total", "property": "Total" }
+      ]
+    }
+  ],
+  "relations": [
+    {
+      "name": "placed",
+      "source": "customer",
+      "target": "order",
+      "type": "PLACED",
+      "directed": true,
+      "properties": []
+    }
+  ]
+}

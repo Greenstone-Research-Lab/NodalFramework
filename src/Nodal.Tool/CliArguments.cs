@@ -1,21 +1,25 @@
 namespace Nodal.Tool;
 
 internal sealed record CliArguments(
+    string Area,
     string Command,
     IReadOnlyDictionary<string, string> Options)
 {
     public static CliArguments Parse(IReadOnlyList<string> arguments)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        if (arguments.Count < 2 || !string.Equals(arguments[0], "migrations", StringComparison.Ordinal))
+        if (arguments.Count < 2 || arguments[0] is not ("migrations" or "import"))
         {
-            throw new CliUsageException("Expected 'nodal migrations <command>'.");
+            throw new CliUsageException("Expected 'nodal <migrations|import> <command>'.");
         }
 
+        var area = arguments[0];
         var command = arguments[1];
         if (command.StartsWith("--", StringComparison.Ordinal))
         {
-            throw new CliUsageException("A migration command is required.");
+            throw new CliUsageException(area == "migrations"
+                ? "A migration command is required."
+                : "An import command is required.");
         }
 
         var options = new Dictionary<string, string>(StringComparer.Ordinal);
@@ -33,7 +37,7 @@ internal sealed record CliArguments(
             }
         }
 
-        return new CliArguments(command, options);
+        return new CliArguments(area, command, options);
     }
 
     public string Require(string name)

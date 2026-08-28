@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Nodal.Core.Migrations;
+using Nodal.Core.Mutations;
 using Nodal.Migrations;
 using Nodal.Tool;
 
@@ -75,8 +76,8 @@ public sealed class NodalCliTests
     }
 
     [Theory]
-    [InlineData(new string[0], "Expected 'nodal migrations <command>'.")]
-    [InlineData(new[] { "other", "diff" }, "Expected 'nodal migrations <command>'.")]
+    [InlineData(new string[0], "Expected 'nodal <migrations|import> <command>'.")]
+    [InlineData(new[] { "other", "diff" }, "Expected 'nodal <migrations|import> <command>'.")]
     [InlineData(new[] { "migrations", "--format", "json" }, "A migration command is required.")]
     [InlineData(new[] { "migrations", "unknown" }, "Unknown migration command 'unknown'.")]
     [InlineData(new[] { "migrations", "validate" }, "Required option '--snapshot' was not supplied.")]
@@ -387,6 +388,140 @@ public sealed class NodalCliTests
         Assert.Throws<ArgumentNullException>(() => CliRenderers.RenderBundleExecution(null!, CliOutputFormat.Text));
     }
 
+    [Fact]
+    public async Task CsvImportDefaultsToDryRunAndWritesReviewableEvidence()
+    {
+        var files = ImportFiles();
+
+        var result = await RunAsync(
+            files,
+            "import", "csv", "--input", "orders.csv", "--mapping", "mapping.json",
+            "--evidence", "evidence.json", "--batch-size", "1");
+
+        Assert.Equal(NodalCli.Success, result.ExitCode);
+        Assert.Contains("CSV import dryRun: records=2 nodes=4 relations=2", result.Output, StringComparison.Ordinal);
+        using var evidence = JsonDocument.Parse(files.Content["evidence.json"]);
+        Assert.Equal("dryRun", evidence.RootElement.GetProperty("outcome").GetString());
+        Assert.False(evidence.RootElement.GetProperty("applied").GetBoolean());
+        Assert.Equal(2, evidence.RootElement.GetProperty("validatedBatchCount").GetInt32());
+        Assert.Equal(3, evidence.RootElement.GetProperty("mappingDecisions").GetArrayLength());
+        Assert.NotEmpty(evidence.RootElement.GetProperty("risks").EnumerateArray());
+    }
+
+    [Fact]
+    public async Task CsvImportRequiresApprovalBeforePropertyUpsertsAreApplied()
+    {
+        var files = ImportFiles();
+        var executor = new RecordingMutationExecutor();
+
+        var result = await RunWithImportExecutorAsync(
+            files,
+            executor,
+            "import", "csv", "--input", "orders.csv", "--mapping", "mapping.json",
+            "--evidence", "evidence.json", "--apply", "true");
+
+        Assert.Equal(NodalCli.InvalidData, result.ExitCode);
+        Assert.Empty(executor.Plans);
+        Assert.Contains("approvalRequired", result.Output, StringComparison.Ordinal);
+        Assert.Contains("ERROR-IMPORT-DESTRUCTIVE-APPROVAL-REQUIRED", files.Content["evidence.json"], StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CsvImportValidatesCompleteSourceThenAppliesBoundedAtomicBatches()
+    {
+        var files = ImportFiles();
+        var executor = new RecordingMutationExecutor();
+
+        var result = await RunWithImportExecutorAsync(
+            files,
+            executor,
+            "import", "csv", "--input", "orders.csv", "--mapping", "mapping.json",
+            "--evidence", "evidence.json", "--batch-size", "1", "--apply", "true",
+            "--approve-destructive", "true");
+
+        Assert.Equal(NodalCli.Success, result.ExitCode);
+        Assert.Equal(2, executor.Plans.Count);
+        Assert.All(executor.Plans, plan => Assert.Equal(3, plan.Operations.Count));
+        using var evidence = JsonDocument.Parse(files.Content["evidence.json"]);
+        Assert.Equal("applied", evidence.RootElement.GetProperty("outcome").GetString());
+        Assert.True(evidence.RootElement.GetProperty("applied").GetBoolean());
+        Assert.Equal(2, evidence.RootElement.GetProperty("appliedBatchCount").GetInt32());
+        Assert.True(evidence.RootElement.GetProperty("allAppliedBatchesAtomic").GetBoolean());
+    }
+
+    [Fact]
+    public async Task CsvImportRejectsInvalidRowsAndOperationOverflowBeforeApply()
+    {
+        var invalid = ImportFiles(csv: "customer_id,customer_name,order_id,total\n,Ada,order-1,10\n");
+        var executor = new RecordingMutationExecutor();
+        var missingKey = await RunWithImportExecutorAsync(
+            invalid,
+            executor,
+            "import", "csv", "--input", "orders.csv", "--mapping", "mapping.json",
+            "--evidence", "evidence.json", "--apply", "true", "--approve-destructive", "true");
+        var overflow = await RunAsync(
+            ImportFiles(),
+            "import", "csv", "--input", "orders.csv", "--mapping", "mapping.json",
+            "--evidence", "evidence.json", "--max-operations", "2");
+
+        Assert.Equal(NodalCli.InvalidData, missingKey.ExitCode);
+        Assert.Empty(executor.Plans);
+        Assert.Contains("ERROR-IMPORT-MISSING-NODE-KEY", invalid.Content["evidence.json"], StringComparison.Ordinal);
+        Assert.Equal(NodalCli.InvalidData, overflow.ExitCode);
+        Assert.Contains("invalid", overflow.Output, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(new[] { "import", "unknown" }, "Unknown import command 'unknown'.")]
+    [InlineData(new[] { "import", "csv" }, "Required option '--input' was not supplied.")]
+    [InlineData(new[] { "import", "csv", "--input", "a", "--mapping", "b", "--evidence", "c", "--batch-size", "0" }, "Option '--batch-size' must be a positive integer.")]
+    [InlineData(new[] { "import", "csv", "--input", "a", "--mapping", "b", "--evidence", "c", "--max-operations", "many" }, "Option '--max-operations' must be a positive integer.")]
+    [InlineData(new[] { "import", "csv", "--input", "a", "--mapping", "b", "--evidence", "c", "--apply", "yes" }, "Option '--apply' must be 'true' or 'false'.")]
+    [InlineData(new[] { "import", "csv", "--input", "a", "--mapping", "b", "--evidence", "c", "--unknown", "x" }, "Unknown option '--unknown'.")]
+    public async Task CsvImportUsageFailuresAreStable(string[] arguments, string expected)
+    {
+        var result = await RunAsync(ImportFiles(), arguments);
+
+        Assert.Equal(NodalCli.UsageError, result.ExitCode);
+        Assert.StartsWith(expected, result.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public async Task CsvImportReportsMalformedCsvAndMissingTrustedApplyHostSafely()
+    {
+        var malformed = ImportFiles(csv: "customer_id,customer_name\n\"open,Ada\n");
+        var invalidCsv = await RunAsync(
+            malformed,
+            "import", "csv", "--input", "orders.csv", "--mapping", "mapping.json", "--evidence", "evidence.json");
+        var noHost = await RunAsync(
+            ImportFiles(),
+            "import", "csv", "--input", "orders.csv", "--mapping", "mapping.json", "--evidence", "evidence.json",
+            "--apply", "true", "--approve-destructive", "true");
+
+        Assert.Equal(NodalCli.InvalidData, invalidCsv.ExitCode);
+        Assert.Equal("A CSV input is structurally invalid.", invalidCsv.Error.Trim());
+        Assert.Equal(NodalCli.InvalidData, noHost.ExitCode);
+        Assert.Contains(CliImportExecutionHostLoader.AssemblyVariable, noHost.Error, StringComparison.Ordinal);
+    }
+
+    [Fact]
+    public void ImportExecutionHostLoaderValidatesConfigurationAndSerializerGuardsNull()
+    {
+        Assert.Throws<ArgumentNullException>(() => CliImportExecutionHostLoader.Load(null!));
+        Assert.Throws<InvalidOperationException>(() => CliImportExecutionHostLoader.Load(_ => null));
+        Assert.Throws<InvalidOperationException>(() => CliImportExecutionHostLoader.Load(name =>
+            name == CliImportExecutionHostLoader.AssemblyVariable
+                ? typeof(NodalCliTests).Assembly.Location
+                : typeof(string).FullName));
+        var executor = CliImportExecutionHostLoader.Load(name =>
+            name == CliImportExecutionHostLoader.AssemblyVariable
+                ? typeof(NodalCliTests).Assembly.Location
+                : typeof(PublicMutationExecutor).FullName);
+
+        Assert.IsType<PublicMutationExecutor>(executor);
+        Assert.Throws<ArgumentNullException>(() => CsvImportEvidenceSerializer.Serialize(null!));
+    }
+
     private static async Task<CliResult> RunAsync(MemoryFileSystem files, params string[] arguments)
     {
         using var output = new StringWriter();
@@ -411,6 +546,60 @@ public sealed class NodalCliTests
             CancellationToken.None);
         return new CliResult(exitCode, output.ToString(), error.ToString());
     }
+
+    private static async Task<CliResult> RunWithImportExecutorAsync(
+        MemoryFileSystem files,
+        IGraphMutationExecutor executor,
+        params string[] arguments)
+    {
+        using var output = new StringWriter();
+        using var error = new StringWriter();
+        var exitCode = await NodalCli.RunAsync(
+            arguments,
+            output,
+            error,
+            files,
+            executionHost: null,
+            executor,
+            CancellationToken.None);
+        return new CliResult(exitCode, output.ToString(), error.ToString());
+    }
+
+    private static MemoryFileSystem ImportFiles(
+        string csv = "customer_id,customer_name,order_id,total\ncustomer-1,Ada,order-1,10\ncustomer-2,Lin,order-2,20\n") =>
+        Files(("orders.csv", csv), ("mapping.json", ImportMappingJson()));
+
+    private static string ImportMappingJson() => """
+        {
+          "formatVersion": 1,
+          "nodes": [
+            {
+              "name": "customer",
+              "type": "Customer",
+              "keyColumn": "customer_id",
+              "keyProperty": "Id",
+              "properties": [{ "column": "customer_name", "property": "Name" }]
+            },
+            {
+              "name": "order",
+              "type": "Order",
+              "keyColumn": "order_id",
+              "keyProperty": "Id",
+              "properties": [{ "column": "total", "property": "Total" }]
+            }
+          ],
+          "relations": [
+            {
+              "name": "placed",
+              "source": "customer",
+              "target": "order",
+              "type": "PLACED",
+              "directed": true,
+              "properties": []
+            }
+          ]
+        }
+        """;
 
     private static MemoryFileSystem Pair() => Files(
         ("before.json", Serialize(Before())),
@@ -473,6 +662,30 @@ public sealed class NodalCliTests
             ValueTask.FromResult(Result(bundle, NodalMigrationBundleExecutionOutcome.RevertPlanned));
     }
 
+    public sealed class PublicMutationExecutor : IGraphMutationExecutor
+    {
+        public ValueTask<GraphMutationResult> ExecuteAsync(
+            GraphMutationPlan plan,
+            CancellationToken cancellationToken = default) =>
+            ValueTask.FromResult(new GraphMutationResult(0, 0, true));
+    }
+
+    private sealed class RecordingMutationExecutor : IGraphMutationExecutor
+    {
+        public List<GraphMutationPlan> Plans { get; } = [];
+
+        public ValueTask<GraphMutationResult> ExecuteAsync(
+            GraphMutationPlan plan,
+            CancellationToken cancellationToken = default)
+        {
+            Plans.Add(plan);
+            return ValueTask.FromResult(new GraphMutationResult(
+                plan.Operations.Count(operation => operation is CreateNodeOperation),
+                plan.Operations.Count(operation => operation is CreateRelationOperation),
+                true));
+        }
+    }
+
     private sealed class RecordingExecutionHost : INodalMigrationBundleExecutionHost
     {
         public NodalMigrationBundleExecutionOptions? ApplyOptions { get; private set; }
@@ -515,6 +728,16 @@ public sealed class NodalCliTests
         public Exception? ReadException { get; init; }
 
         public Exception? WriteException { get; set; }
+
+        public TextReader OpenText(string path)
+        {
+            if (ReadException is not null)
+            {
+                throw ReadException;
+            }
+
+            return new StringReader(Content[path]);
+        }
 
         public ValueTask<string> ReadAllTextAsync(string path, CancellationToken cancellationToken)
         {
