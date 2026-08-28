@@ -24,7 +24,7 @@ Nodal Framework is a provider-based .NET graph data access prototype. It keeps t
 | `Nodal.Import.Csv` | Streaming CSV records with deterministic header normalization |
 | `Nodal.Import.Relational` | SQL Server/PostgreSQL discovery, bounded reads, and deterministic relational interaction models |
 
-The initial alpha targets .NET 10. Package versions move together so provider and core contracts remain compatible during the pre-release period.
+The beta line targets .NET 10. Package versions move together so provider and core contracts remain compatible during the pre-release period.
 
 Install one provider package; it brings `Nodal.Core` transitively. Add the
 migration package only when the application owns schema evolution:
@@ -135,7 +135,7 @@ the query and migration foundations. Advanced analytics implementations are not
 part of the open-source package contract.
 
 Pin all packages to the same version for reproducible builds, for example
-`0.1.0-alpha.2`. The complete console, worker, and ASP.NET Core setup is in the
+`0.1.0-beta.1`. The complete console, worker, and ASP.NET Core setup is in the
 [installation guide](website/docs/installation.md).
 
 ## Compatibility and provider capabilities
@@ -523,13 +523,13 @@ The repository has one local command matching the CI quality job:
 powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify.ps1
 ```
 
-It restores dependencies, verifies formatting, builds in Release mode, runs the complete test suite, enforces the Core package's minimum 95% line-coverage gate, and validates the publishable NuGet archives. Coverage can also be run independently:
+It restores dependencies, verifies formatting, builds in Release mode, runs the complete test suite, enforces at least 95% line coverage for every governed production package, and validates the publishable NuGet archives. Coverage can also be run independently:
 
 ```powershell
-powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-core-coverage.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-coverage.ps1
 ```
 
-The script rebuilds the Core tests, produces a Cobertura report under the ignored `TestResults` directory, and fails when line coverage falls below the threshold.
+The script rebuilds each governed package's tests, produces Cobertura reports under the ignored `TestResults` directory, and fails when any package falls below the threshold.
 
 Package verification can also be run independently:
 
@@ -537,15 +537,15 @@ Package verification can also be run independently:
 powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-packages.ps1
 ```
 
-The package gate produces all six `.nupkg` and `.snupkg` artifacts, then inspects their manifests and contents for the MPL-2.0 expression, repository metadata, README, license, IntelliSense XML, target framework, and required package dependencies.
+The package gate produces all nine `.nupkg` and `.snupkg` artifacts, then inspects their manifests and contents for the MPL-2.0 expression, repository metadata, README, license, IntelliSense XML, target framework, and required package dependencies.
 
 ## Publishing
 
-Alpha packages are published only after a pull request promotes `developer` to `staging`. The `Publish Alpha Packages` workflow assigns one immutable `0.1.0-alpha.<run>` version to all six packages, runs the complete QA gate, exchanges GitHub's OIDC identity for a short-lived NuGet credential, and publishes `Nodal.Core` before its dependent packages. No long-lived NuGet API key is stored by the repository.
+Beta packages are published only after a pull request promotes `developer` to `staging`. The `Publish Beta Packages` workflow assigns one immutable `0.1.0-beta.<run>` version to all nine packages, runs the complete QA gate, generates release evidence and an SPDX SBOM, attests package provenance, exchanges GitHub's OIDC identity for a short-lived NuGet credential, and publishes `Nodal.Core` before its dependent packages. No long-lived NuGet API key is stored by the repository.
 
 After publication, the same workflow runs a clean-room World Food Delivery consumer smoke test. It copies a small CSV order dataset into a fresh temporary console application, restores only the immutable packages from NuGet.org, imports customers, restaurants, foods, orders, couriers, and relationship payloads in one bounded unit of work, and validates migration planning plus Neo4j and TigerGraph query boundaries. The consumer project contains no `ProjectReference`; its resolved package identities are retained as a workflow artifact. This verifies the experience an external application receives, rather than merely rebuilding this repository.
 
-The GitHub `staging` environment must define `NUGET_USER` as the NuGet profile name. NuGet Trusted Publishing must match repository owner `Greenstone-Research-Lab`, repository `NodalFramework`, workflow file `publish-alpha.yml`, and environment `staging`. Publishing deliberately does not use `--skip-duplicate`, ensuring package conflicts and reserved identifiers fail visibly.
+The GitHub `staging` environment must define `NUGET_USER` as the NuGet profile name. NuGet Trusted Publishing must match repository owner `Greenstone-Research-Lab`, repository `NodalFramework`, workflow file `publish-alpha.yml`, and environment `staging`. The historical workflow filename is retained because it forms part of the existing trusted-publishing identity; its workflow and job names now describe the beta channel. Publishing deliberately does not use `--skip-duplicate`, ensuring package conflicts and reserved identifiers fail visibly.
 
 ## Live integration tests
 

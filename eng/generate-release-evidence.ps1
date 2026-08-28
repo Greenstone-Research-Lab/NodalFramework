@@ -30,6 +30,9 @@ $report = [ordered]@{
         'Nodal.Analytics'
         'Nodal.TigerGraph'
         'Nodal.Tool'
+        'Nodal.Import'
+        'Nodal.Import.Csv'
+        'Nodal.Import.Relational'
     )
     verifiedProviders = @(
         [ordered]@{ name = 'Neo4j'; version = '5.26 Community'; transport = 'Neo4j.Driver 6.3.0' }

@@ -21,10 +21,11 @@
     <PackageLicenseExpression>MPL-2.0</PackageLicenseExpression>
     <PackageRequireLicenseAcceptance>false</PackageRequireLicenseAcceptance>
     <PackageReadmeFile>README.md</PackageReadmeFile>
+    <PackageIcon>nodal-package-icon.png</PackageIcon>
     <PackageReleaseNotes>https://github.com/Greenstone-Research-Lab/NodalFramework/releases</PackageReleaseNotes>
     <PackageTags>graph;graph-database;dotnet;linq;orm;nodal</PackageTags>
     <VersionPrefix>0.1.0</VersionPrefix>
-    <VersionSuffix>alpha.1</VersionSuffix>
+    <VersionSuffix>beta.1</VersionSuffix>
     <IncludeSymbols>true</IncludeSymbols>
     <SymbolPackageFormat>snupkg</SymbolPackageFormat>
   </PropertyGroup>
@@ -32,5 +33,6 @@
   <ItemGroup Condition="'$(IsPackable)' != 'false'">
     <None Include="$(MSBuildThisFileDirectory)LICENSE.txt" Pack="true" PackagePath="" Visible="false" />
     <None Include="$(MSBuildThisFileDirectory)README.md" Pack="true" PackagePath="" Visible="false" />
+    <None Include="$(MSBuildThisFileDirectory)assets/nodal-package-icon.png" Pack="true" PackagePath="" Visible="false" />
   </ItemGroup>
 </Project>
