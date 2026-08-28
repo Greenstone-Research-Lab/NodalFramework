@@ -342,11 +342,36 @@ The adapter intentionally does not infer pagination tokens or silently execute
 all tables. The caller selects a bounded table slice, reviews the discovered
 schema, and maps the streamed rows into `Nodal.Import` batches.
 
+## Clean-room World Food Delivery example
+
+The repository's `consumer-smoke/WorldFoodDelivery` project is both a readable
+starter application and a package-isolation acceptance test. It contains no
+project references and restores the same immutable NuGet artifacts that an
+external application receives.
+
+Its Tallinn scenario demonstrates a complete vertical slice:
+
+- convention-based CSV-to-POCO mapping with one domain type per file;
+- atomic node and relation tracking through a provider-neutral context;
+- portable traversal and aggregation compilation for Neo4j and TigerGraph;
+- code-first graph migration planning;
+- a normalized food-delivery relational schema with entity and association
+  tables;
+- canonical interaction JSON plus GraphML, GEXF, and DOT projections;
+- explicit verification that semantic-looking relation labels remain review
+  suggestions rather than inferred business facts.
+
+The folders separate domain, application, persistence, infrastructure,
+relational inspection, and verification concerns. `Program.cs` only composes
+those pieces, making the example suitable as an application skeleton instead
+of hiding all behavior in a smoke-test script.
+
 ## Current scope
 
 This slice covers explicit mapping, bounded planning, streaming CSV input,
 deterministic CLI evidence, and a trusted provider execution boundary.
 SQL Server/PostgreSQL metadata, bounded streaming adapters, canonical relational
 interaction models, and visualization exports are available in
-`Nodal.Import.Relational`. Clean-room package samples and live provider
-acceptance tests remain separate beta-readiness slices.
+`Nodal.Import.Relational`. The World Food Delivery clean-room consumer now
+validates those package boundaries; live provider acceptance remains a
+separate beta-readiness slice.

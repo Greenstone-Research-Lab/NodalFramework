@@ -32,8 +32,19 @@ try {
     if (Select-String -Path $project -Pattern '<ProjectReference' -Quiet) { throw 'Clean-room consumer projects must not contain ProjectReference entries.' }
     $assets = Get-Content (Join-Path $workspace 'obj/project.assets.json') -Raw | ConvertFrom-Json
     $nodalLibraries = @($assets.libraries.PSObject.Properties.Name | Where-Object { $_ -match '^Nodal\.' })
-    foreach ($id in 'Nodal.Core', 'Nodal.Migrations', 'Nodal.Neo4j', 'Nodal.TigerGraph') { if ($nodalLibraries -notcontains "$id/$PackageVersion") { throw "Expected published package '$id/$PackageVersion' was not restored." } }
-    dotnet run --project $project --no-restore -p:NodalPackageVersion=$PackageVersion -- (Join-Path $workspace 'orders.csv')
+    $expectedPackages = @(
+        'Nodal.Core',
+        'Nodal.Import',
+        'Nodal.Import.Csv',
+        'Nodal.Import.Relational',
+        'Nodal.Migrations',
+        'Nodal.Neo4j',
+        'Nodal.TigerGraph'
+    )
+    foreach ($id in $expectedPackages) { if ($nodalLibraries -notcontains "$id/$PackageVersion") { throw "Expected published package '$id/$PackageVersion' was not restored." } }
+    dotnet run --project $project --no-restore -p:NodalPackageVersion=$PackageVersion -- `
+        (Join-Path $workspace 'orders.csv') `
+        (Join-Path $workspace 'artifacts')
     if ($LASTEXITCODE -ne 0) { throw 'The clean-room consumer execution failed.' }
     $evidence = [ordered]@{ packageVersion = $PackageVersion; packageSource = $PackageSource; packages = $nodalLibraries; verifiedAtUtc = [DateTimeOffset]::UtcNow.ToString('O') } | ConvertTo-Json
     $evidenceDirectory = Join-Path $root 'TestResults'
