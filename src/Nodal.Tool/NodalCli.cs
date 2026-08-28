@@ -1,6 +1,7 @@
 using System.Text.Json;
 using Nodal.Core.Migrations;
 using Nodal.Core.Mutations;
+using Nodal.Import.Relational;
 using Nodal.Migrations;
 
 namespace Nodal.Tool;
@@ -26,6 +27,7 @@ internal static class NodalCli
             fileSystem,
             executionHost: null,
             importExecutor: null,
+            relationalInspectionHost: null,
             cancellationToken).ConfigureAwait(false);
 
     internal static async Task<int> RunAsync(
@@ -42,6 +44,7 @@ internal static class NodalCli
             fileSystem,
             executionHost,
             importExecutor: null,
+            relationalInspectionHost: null,
             cancellationToken).ConfigureAwait(false);
 
     internal static async Task<int> RunAsync(
@@ -51,6 +54,24 @@ internal static class NodalCli
         ICliFileSystem fileSystem,
         INodalMigrationBundleExecutionHost? executionHost,
         IGraphMutationExecutor? importExecutor,
+        CancellationToken cancellationToken) => await RunAsync(
+            arguments,
+            output,
+            error,
+            fileSystem,
+            executionHost,
+            importExecutor,
+            relationalInspectionHost: null,
+            cancellationToken).ConfigureAwait(false);
+
+    internal static async Task<int> RunAsync(
+        IReadOnlyList<string> arguments,
+        TextWriter output,
+        TextWriter error,
+        ICliFileSystem fileSystem,
+        INodalMigrationBundleExecutionHost? executionHost,
+        IGraphMutationExecutor? importExecutor,
+        IRelationalInspectionHost? relationalInspectionHost,
         CancellationToken cancellationToken)
     {
         ArgumentNullException.ThrowIfNull(arguments);
@@ -63,10 +84,14 @@ internal static class NodalCli
             var request = CliArguments.Parse(arguments);
             if (request.Area == "import")
             {
-                return request.Command == "csv"
-                    ? await CliCsvImportCommand.RunAsync(
-                        request, output, fileSystem, importExecutor, cancellationToken).ConfigureAwait(false)
-                    : throw new CliUsageException($"Unknown import command '{request.Command}'.");
+                return request.Command switch
+                {
+                    "csv" => await CliCsvImportCommand.RunAsync(
+                        request, output, fileSystem, importExecutor, cancellationToken).ConfigureAwait(false),
+                    "relational" => await CliRelationalInspectionCommand.RunAsync(
+                        request, output, fileSystem, relationalInspectionHost, cancellationToken).ConfigureAwait(false),
+                    _ => throw new CliUsageException($"Unknown import command '{request.Command}'."),
+                };
             }
 
             return request.Command switch
@@ -152,7 +177,8 @@ internal static class NodalCli
 
     private const string Usage =
         "Usage: nodal migrations <snapshot|diff|plan|validate|bundle|list|apply|rollback> [--name value]" +
-        " or nodal import csv --input <file> --mapping <file> --evidence <file> [--name value]";
+        " or nodal import csv --input <file> --mapping <file> --evidence <file> [--name value]" +
+        " or nodal import relational --output <file> [--graphml <file>] [--gexf <file>] [--dot <file>]";
 
     private static async Task<int> SnapshotAsync(
         CliArguments request,

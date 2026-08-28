@@ -269,6 +269,60 @@ the free package. Turning a relational interaction network into a curated
 knowledge network is deliberately left to the consuming application and its
 domain experts.
 
+### Command-line inspection
+
+`Nodal.Tool` can produce all review artifacts from a trusted application-owned
+inspection host:
+
+```bash
+nodal import relational \
+  --output northwind.nodalmodel.json \
+  --graphml northwind.graphml \
+  --gexf northwind.gexf \
+  --dot northwind.dot
+```
+
+The canonical JSON output is required. Visualization outputs are optional and
+their destinations must be distinct. Metadata discovery runs once regardless
+of how many formats are requested.
+
+Implement the small composition boundary in an application assembly that
+references its normal ADO.NET provider:
+
+```csharp
+using Microsoft.Data.SqlClient;
+using Nodal.Import.Relational;
+
+public sealed class NorthwindInspectionHost : IRelationalInspectionHost
+{
+    public string ProviderName => "SqlServer";
+
+    public async ValueTask<RelationalSchemaSnapshot> InspectAsync(
+        CancellationToken cancellationToken = default)
+    {
+        string connectionString = Environment.GetEnvironmentVariable("NORTHWIND_CONNECTION")
+            ?? throw new InvalidOperationException("The database connection is not configured.");
+        await using var connection = new SqlConnection(connectionString);
+        await connection.OpenAsync(cancellationToken);
+        return await new SqlServerRelationalSourceAdapter()
+            .ReadAsync(connection, cancellationToken);
+    }
+}
+```
+
+For PostgreSQL, use the application's `NpgsqlConnection` and
+`PostgreSqlRelationalSourceAdapter`. Then point the tool at the compiled host:
+
+```powershell
+$env:NODAL_RELATIONAL_HOST_ASSEMBLY = "C:\apps\Northwind.Host.dll"
+$env:NODAL_RELATIONAL_HOST_TYPE = "NorthwindInspectionHost"
+nodal import relational --output northwind.nodalmodel.json --graphml northwind.graphml
+```
+
+Connection strings remain in the application's secret source and are never
+accepted as command arguments, written to artifacts, or printed in summaries.
+The host is also the boundary for pooling and managed-identity authentication.
+
 ### Relational performance contract
 
 - Catalog discovery is one set-based command with two normalized result sets,
