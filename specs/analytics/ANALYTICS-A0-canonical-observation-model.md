@@ -1,7 +1,7 @@
 ---
 id: ANALYTICS-A0
 title: Canonical analytics observation model
-status: draft
+status: implemented
 type: feature
 owners: Nodal maintainers
 last-reviewed: 2026-08-29
@@ -11,79 +11,178 @@ last-reviewed: 2026-08-29
 
 ## Objective and user value
 
-Define the provider-neutral observation contract consumed by public analytics
-without exposing provider payloads or private pattern-recognition techniques.
-Applications should request bounded graph observations once and pass a stable,
-typed representation to analytics components regardless of Neo4j or TigerGraph.
+Define the provider-neutral snapshot consumed by public analytics without
+exposing provider payloads or private pattern-recognition techniques. An
+application can convert a normalized provider result into one bounded,
+immutable representation and pass that representation between analytics
+components without depending on Neo4j, TigerGraph, Cypher, GSQL, or a provider
+SDK.
+
+The first vertical slice owns normalization after provider execution. Provider
+query planning and transport adapters are delivered by later specifications so
+this contract can remain small and independently testable.
 
 ## Non-goals
 
-- Implement similarity, pattern recognition, narrative generation, or premium
-  research models in this public repository.
+- Implement similarity, pattern recognition, narrative generation, embeddings,
+  or premium research models in this public repository.
+- Compile or execute provider queries in the first vertical slice.
 - Emulate provider algorithms client-side when semantic parity is uncertain.
+- Include scalar aggregates, analytics rows, or route collections in the first
+  observation format.
 - Define cloud tenancy, billing, or dedicated execution infrastructure.
 
 ## Terminology and invariants
 
-An observation is a bounded, immutable snapshot of node identities, labels,
-relation identities, directions, timestamps, and explicitly selected
-properties. Identity and edge direction are preserved. Parallel edges are not
-collapsed unless the request explicitly selects that operation.
+An **observation** is a self-contained snapshot of nodes and directed
+relationships. A **key** is the invariant, typed representation of a provider
+identity. A **projection** is the explicit set of properties permitted to enter
+the observation.
+
+- Node identity is the combination of node type and canonical key.
+- Relationship identity is the combination of relationship type and canonical
+  key.
+- Relationship direction is always `Source -> Target`.
+- Every relationship endpoint must exist in the same observation.
+- Duplicate node or relationship identities are rejected.
+- Input order is preserved for both nodes and relationships.
+- Parallel relationships are preserved when their identities differ.
+- Property names use ordinal comparison and property values are recursively
+  copied into read-only collections.
+- An empty projection includes no properties. Properties are never included
+  implicitly.
+- Exceeding a configured bound fails the entire materialization. No partial
+  observation is returned as success.
 
 ## API and usage examples
 
-The final API will accept a provider-neutral request containing projection,
-filter, traversal, ordering, and limit information and return an immutable
-observation. The implementation specification must include compile-safe C#
-examples before this document can become accepted.
+The public API belongs to `Nodal.Analytics.Observations`:
+
+```csharp
+var options = new GraphObservationOptions
+{
+    MaxNodes = 1_000,
+    MaxRelations = 5_000,
+    NodeProperties = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "name",
+        "category",
+    },
+    RelationProperties = new HashSet<string>(StringComparer.Ordinal)
+    {
+        "orderedAt",
+    },
+};
+
+GraphObservation observation = GraphObservationMaterializer.Materialize(
+    providerResult,
+    options);
+```
+
+`GraphObservationOptions` defaults to 10,000 nodes, 50,000 relationships,
+10,000 items per projected collection, a property nesting depth of 16, and
+empty property projections. `GraphObservationMaterializer` accepts only the
+provider-neutral `GraphQueryResult` defined by `Nodal.Core`.
+
+Canonical keys support string, GUID, signed and unsigned integer identities.
+Unsupported identity types fail with a descriptive exception instead of using
+locale-sensitive `ToString()` behavior.
 
 ## Provider and version scope
 
-Neo4j and TigerGraph are the initial providers. Acceptance requires a versioned
-capability statement for each provider and explicit unsupported behavior when
-either cannot preserve the observation invariants.
+The first vertical slice begins after the provider has produced a
+`GraphQueryResult`, so its behavior is identical for every conforming provider.
+The currently verified upstream normalization boundaries are:
+
+| Provider | Verified version | First-slice behavior |
+| --- | --- | --- |
+| Neo4j | 5.26 Community | Normalized result can be materialized; direct observation query adapter is deferred. |
+| TigerGraph | 4.2.4 Community | Normalized result can be materialized; direct observation query adapter is deferred. |
+
+A later provider-capability specification must define projection compilation,
+server-side limits, result ordering, and live integration evidence before a
+provider advertises direct observation execution.
 
 ## Architecture and dependencies
 
-Contracts belong in the public analytics boundary and depend inward on
-`Nodal.Core` abstractions. Provider compilation remains in provider packages.
-Advanced analysis implementations remain outside this public repository.
+Public observation contracts and materialization live in `Nodal.Analytics`,
+which depends inward on `Nodal.Core`. `Nodal.Core` and provider packages do not
+depend on `Nodal.Analytics`. The materializer is a pure, stateless boundary; it
+does not own a transport, service locator, cache, or provider switch.
+
+Provider adapters will depend on an observation-source abstraction introduced
+by their own accepted specification. Advanced analysis implementations remain
+outside this public repository.
 
 ## Operational behavior
 
-Requests are bounded, cancellable, and safe to retry only when read-only.
-Cancellation propagates to the provider transport. Partial results are not
-returned as successful observations. Concurrency and ordering semantics must be
-declared before acceptance.
+Materialization is synchronous because its input is already in memory. It
+performs no I/O and is safe to repeat. Node and relationship order match the
+normalized provider result. The returned object graph exposes read-only
+collections and does not retain mutable input collections.
+
+Cancellation belongs to the later provider execution boundary. A provider
+adapter must propagate cancellation and must not call this materializer after a
+cancelled or partially failed read. Partial provider results are never promoted
+to a successful observation.
 
 ## Security and privacy
 
-Properties are opt-in, diagnostics exclude values by default, and credentials
-never enter the observation. The contract must support data minimization and
-tenant isolation at the application boundary.
+Properties are opt-in and use separate node and relationship projections.
+Unknown properties are ignored; values outside the projection do not enter the
+snapshot. Diagnostics and exception messages contain counts, types, and
+property names but not property values or credentials. Tenant isolation remains
+the responsibility of the provider query and application boundary.
 
 ## Verification strategy
 
-Acceptance requires unit tests for invariants, shared provider contract tests,
-provider compiler tests, live version-gated integration tests, cancellation and
-limit tests, architecture rules, and at least 95% line coverage for added
-product code.
+- Unit tests cover bounds, projection, immutable copying, ordering, canonical
+  key formatting, endpoint validation, duplicate identities, parallel edges,
+  unsupported identifiers, and null arguments.
+- `Nodal.Analytics.Tests` is added to the solution and to the product coverage
+  gate.
+- Architecture tests continue to enforce that `Nodal.Core` does not depend on
+  `Nodal.Analytics` and that analytics does not depend on providers.
+- Provider compiler, cancellation, and live version-gated tests are required by
+  the later direct-observation provider specification.
+- Added product code must maintain at least 95% line coverage.
+
+Evidence locations:
+
+- Tests: `tests/Nodal.Analytics.Tests`
+- Architecture rules: `tests/Nodal.ArchitectureTests`
+- Coverage enforcement: `eng/verify-coverage.ps1`
+- User documentation: `website/docs/concepts/analytics-boundary.md`
+- Release evidence: the package artifact and CI summary for the implementing PR
 
 ## Performance budget
 
-The accepted revision will define maximum default result size, allocation
-targets for materialization, and reproducible provider-specific latency
-baselines. Unbounded extraction is prohibited.
+Default limits are 10,000 nodes, 50,000 relationships, 10,000 items in one
+projected collection, and 16 nested property levels. Node and relationship
+bounds are evaluated before allocating observation records; collection bounds
+are enforced while copying. Materialization is O(nodes + relationships +
+selected properties), preserves provider ordering without a sort, and performs
+no reflection. A reproducible benchmark is required before raising defaults or
+publishing throughput claims.
 
 ## Delivery impact
 
-No package or API is changed by this draft. Acceptance will identify package
-ownership, compatibility impact, documentation pages, migration implications,
-and release-note entries.
+- Package: additive public API in `Nodal.Analytics`; no new package.
+- Compatibility: no existing public API is removed or changed.
+- Providers: no provider behavior or capability declaration changes in the
+  first slice.
+- Migrations: no impact.
+- Documentation: analytics boundary page gains the observation contract and an
+  executable-style example.
+- Release notes: record the canonical observation model as an additive beta
+  capability.
 
 ## Acceptance criteria and evidence
 
-- [ ] Compile-safe public API examples are approved.
-- [ ] Neo4j and TigerGraph capability/version contracts are linked.
-- [ ] Cancellation, ordering, parallel-edge, and partial-result semantics are explicit.
-- [ ] Security, performance, test, package, and documentation evidence locations are defined.
+- [x] Compile-safe public API and example are defined.
+- [x] Neo4j and TigerGraph normalization scope and tested versions are explicit.
+- [x] Ordering, direction, parallel-edge, cancellation, and partial-result semantics are explicit.
+- [x] Data-minimization and immutable-copy behavior are explicit.
+- [x] Default limits and asymptotic materialization budget are defined.
+- [x] Test, coverage, architecture, documentation, and release evidence locations are defined.
+- [x] The first vertical slice is implemented; CI evidence is linked from the implementing PR.
