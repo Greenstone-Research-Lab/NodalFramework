@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Nodal.Core.Migrations;
+using Nodal.Core.Modeling;
 using Nodal.Core.Mutations;
 using Nodal.Import.Relational;
 using Nodal.Migrations;
@@ -82,6 +83,12 @@ internal static class NodalCli
         try
         {
             var request = CliArguments.Parse(arguments);
+            if (request.Area == "model")
+            {
+                return await CliModelCommand.RunAsync(request, output, fileSystem, cancellationToken)
+                    .ConfigureAwait(false);
+            }
+
             if (request.Area == "import")
             {
                 return request.Command switch
@@ -133,6 +140,11 @@ internal static class NodalCli
             await error.WriteLineAsync("A schema snapshot contains invalid JSON.").ConfigureAwait(false);
             return InvalidData;
         }
+        catch (GraphModelValidationException exception)
+        {
+            await error.WriteLineAsync(exception.Message).ConfigureAwait(false);
+            return InvalidData;
+        }
         catch (FormatException)
         {
             await error.WriteLineAsync("A CSV input is structurally invalid.").ConfigureAwait(false);
@@ -178,7 +190,8 @@ internal static class NodalCli
     private const string Usage =
         "Usage: nodal migrations <snapshot|diff|plan|validate|bundle|list|apply|rollback> [--name value]" +
         " or nodal import csv --input <file> --mapping <file> --evidence <file> [--name value]" +
-        " or nodal import relational --output <file> [--graphml <file>] [--gexf <file>] [--dot <file>]";
+        " or nodal import relational --output <file> [--descriptor <file>] [--graphml <file>] [--gexf <file>] [--dot <file>]" +
+        " or nodal model <generate|validate|inspect|diff> [--name value]";
 
     private static async Task<int> SnapshotAsync(
         CliArguments request,

@@ -9,6 +9,7 @@ const sidebars: SidebarsConfig = {
     {type: 'category', label: 'Querying', items: ['querying/query-engine', 'querying/traversals-and-paths', 'querying/graph-analytics', 'querying/compiled-and-native-queries']},
     {type: 'category', label: 'Data changes', items: ['data-changes/unit-of-work', 'data-changes/change-tracking']},
     'imports',
+    'modeling',
     {type: 'category', label: 'Providers', items: ['providers/overview', 'providers/query-parity', 'providers/compatibility', 'providers/neo4j', 'providers/tigergraph']},
     'migrations',
     'architecture',

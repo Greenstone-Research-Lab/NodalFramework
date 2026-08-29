@@ -19,7 +19,7 @@ Nodal Framework is a provider-based .NET graph data access prototype. It keeps t
 | `Nodal.Neo4j` | Neo4j/Cypher provider using the official pooled Bolt driver |
 | `Nodal.Analytics` | Provider-neutral analytics contracts and capability integration |
 | `Nodal.TigerGraph` | TigerGraph/GSQL provider using REST++ and an optional administrative transport |
-| `Nodal.Tool` | .NET global tool for deterministic migrations and evidence-driven CSV imports |
+| `Nodal.Tool` | .NET global tool for migrations, import evidence, canonical model validation/diff, and strong-type generation |
 | `Nodal.Import` | Provider-neutral, bounded import orchestration and diagnostics |
 | `Nodal.Import.Csv` | Streaming CSV records with deterministic header normalization |
 | `Nodal.Import.Relational` | SQL Server/PostgreSQL discovery, bounded reads, and deterministic relational interaction models |
@@ -65,9 +65,15 @@ metadata pass:
 ```bash
 nodal import relational \
   --output northwind.nodalmodel.json \
+  --descriptor northwind.nodal.json \
   --graphml northwind.graphml \
   --gexf northwind.gexf \
   --dot northwind.dot
+
+nodal model validate --descriptor northwind.nodal.json
+nodal model inspect --descriptor northwind.nodal.json
+nodal model generate --descriptor northwind.nodal.json --output Generated
+nodal model diff --from previous.nodal.json --to current.nodal.json --fail-on-breaking true
 ```
 
 The trusted host is selected through `NODAL_RELATIONAL_HOST_ASSEMBLY` and
@@ -78,9 +84,11 @@ SQL Server or PostgreSQL adapter choice.
 The repository also contains a structured [World Food Delivery clean-room
 consumer](consumer-smoke/WorldFoodDelivery/README.md). It restores only NuGet
 packages and exercises CSV-to-POCO mapping, graph mutation planning, portable
-Neo4j/TigerGraph queries, migrations, and a normalized relational interaction
-network. Its domain nodes and relations use one type per file so the example
-can serve as an application template rather than an opaque CI fixture.
+Neo4j/TigerGraph queries, provider-native analytics planning, canonical
+observations, bounded derived analytics, migrations, relational discovery,
+strong-type generation, and schema diff/regeneration. Its domain nodes and
+relations use one type per file so the example can serve as an application
+template rather than an opaque CI fixture.
 
 Dry-run is the default. Applying a CSV requires both `--apply true` and, when
 property upserts or omissions are detected, `--approve-destructive true` plus a

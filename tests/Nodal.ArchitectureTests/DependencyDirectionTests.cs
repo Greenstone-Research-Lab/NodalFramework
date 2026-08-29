@@ -3,6 +3,7 @@ using Nodal.Core.Analytics;
 using Nodal.Core.Providers;
 using Nodal.Import;
 using Nodal.Import.Relational;
+using Nodal.Modeling.CodeGeneration;
 using Nodal.Tool;
 
 namespace Nodal.ArchitectureTests;
@@ -35,8 +36,22 @@ public sealed class DependencyDirectionTests
         Assert.Contains("Nodal.Import.Csv", references);
         Assert.Contains("Nodal.Import.Relational", references);
         Assert.Contains("Nodal.Migrations", references);
+        Assert.Contains("Nodal.Modeling.CodeGeneration", references);
         Assert.DoesNotContain("Nodal.Neo4j", references);
         Assert.DoesNotContain("Nodal.TigerGraph", references);
+    }
+
+    [Fact]
+    public void CodeGenerationDependsOnlyOnCoreProductContracts()
+    {
+        var references = typeof(GraphModelCodeGenerator).Assembly
+            .GetReferencedAssemblies()
+            .Select(reference => reference.Name)
+            .Where(name => name?.StartsWith("Nodal.", StringComparison.Ordinal) == true)
+            .Select(name => name!)
+            .ToArray();
+
+        Assert.Equal(["Nodal.Core"], references);
     }
 
     [Fact]

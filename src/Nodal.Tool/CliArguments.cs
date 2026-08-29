@@ -8,18 +8,21 @@ internal sealed record CliArguments(
     public static CliArguments Parse(IReadOnlyList<string> arguments)
     {
         ArgumentNullException.ThrowIfNull(arguments);
-        if (arguments.Count < 2 || arguments[0] is not ("migrations" or "import"))
+        if (arguments.Count < 2 || arguments[0] is not ("migrations" or "import" or "model"))
         {
-            throw new CliUsageException("Expected 'nodal <migrations|import> <command>'.");
+            throw new CliUsageException("Expected 'nodal <migrations|import|model> <command>'.");
         }
 
         var area = arguments[0];
         var command = arguments[1];
         if (command.StartsWith("--", StringComparison.Ordinal))
         {
-            throw new CliUsageException(area == "migrations"
-                ? "A migration command is required."
-                : "An import command is required.");
+            throw new CliUsageException(area switch
+            {
+                "migrations" => "A migration command is required.",
+                "import" => "An import command is required.",
+                _ => "A model command is required.",
+            });
         }
 
         var options = new Dictionary<string, string>(StringComparer.Ordinal);

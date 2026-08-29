@@ -13,9 +13,14 @@ internal sealed class RelationalInspectionWorkflow(IRelationalInspectionHost hos
 
         var snapshot = await host.InspectAsync(cancellationToken);
         var model = RelationalInteractionModelBuilder.Build(snapshot, host.ProviderName);
+        var descriptor = RelationalGraphModelDescriptorBuilder.Build(model);
         await File.WriteAllTextAsync(
             Path.Combine(outputDirectory, "world-food-delivery.nodalmodel.json"),
             RelationalInteractionModelJson.Serialize(model),
+            cancellationToken);
+        await File.WriteAllTextAsync(
+            Path.Combine(outputDirectory, "world-food-delivery.nodal.json"),
+            Nodal.Core.Modeling.GraphModelDescriptorJson.Serialize(descriptor),
             cancellationToken);
         Write(model, RelationalInteractionExportFormat.GraphMl, outputDirectory, "world-food-delivery.graphml");
         Write(model, RelationalInteractionExportFormat.Gexf, outputDirectory, "world-food-delivery.gexf");

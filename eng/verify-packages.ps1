@@ -70,6 +70,7 @@ foreach ($packageId in $expectedPackages.Keys) {
                 'tools/net10.0/any/Nodal.Tool.xml'
                 'tools/net10.0/any/Nodal.Migrations.dll'
                 'tools/net10.0/any/Nodal.Import.Relational.dll'
+                'tools/net10.0/any/Nodal.Modeling.CodeGeneration.dll'
             )
         }
         else {

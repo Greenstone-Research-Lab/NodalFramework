@@ -1,5 +1,6 @@
 using System.Text.Json;
 using Nodal.Import.Relational;
+using Nodal.Core.Modeling;
 using WorldFoodDelivery.Relational;
 
 namespace WorldFoodDelivery.Verification;
@@ -16,6 +17,15 @@ internal sealed class RelationalScenarioVerifier
 
         var jsonPath = Path.Combine(outputDirectory, "world-food-delivery.nodalmodel.json");
         var model = RelationalInteractionModelJson.Deserialize(File.ReadAllText(jsonPath));
+        var descriptorPath = Path.Combine(outputDirectory, "world-food-delivery.nodal.json");
+        var descriptor = GraphModelDescriptorJson.Deserialize(File.ReadAllText(descriptorPath));
+        var validation = GraphModelValidation.Validate(descriptor);
+        Ensure(
+            validation.IsValid,
+            "The relational descriptor did not pass canonical validation: " +
+            string.Join("; ", validation.Issues.Select(issue => $"[{issue.Code}] {issue.Path}: {issue.Message}")));
+        Ensure(descriptor.Nodes.Count == result.Objects, "The descriptor did not retain every relational object.");
+        Ensure(descriptor.Relations.Count == result.Relations, "The descriptor did not retain every foreign key.");
         Ensure(model.Objects.Count(item => item.Role == RelationalInteractionObjectRole.Association) == 2,
             "OrderLines and RestaurantFoods must be recognized as association tables.");
         Ensure(model.Relations.All(relation => relation.Display.RequiresReview),
