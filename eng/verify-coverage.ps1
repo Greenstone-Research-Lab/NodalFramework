@@ -7,6 +7,7 @@ $repositoryRoot = Split-Path -Parent $PSScriptRoot
 $runId = [guid]::NewGuid().ToString('N')
 $targets = @(
     @{ Package = 'Nodal.Core'; Project = 'tests/Nodal.Core.Tests/Nodal.Core.Tests.csproj' },
+    @{ Package = 'Nodal.Analytics'; Project = 'tests/Nodal.Analytics.Tests/Nodal.Analytics.Tests.csproj' },
     @{ Package = 'Nodal.Migrations'; Project = 'tests/Nodal.Migrations.Tests/Nodal.Migrations.Tests.csproj' },
     @{ Package = 'Nodal.Neo4j'; Project = 'tests/Nodal.Neo4j.Tests/Nodal.Neo4j.Tests.csproj' },
     @{ Package = 'Nodal.TigerGraph'; Project = 'tests/Nodal.TigerGraph.Tests/Nodal.TigerGraph.Tests.csproj' },

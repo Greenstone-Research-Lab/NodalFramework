@@ -136,8 +136,10 @@ enter arguments, plans, bundles, or command output.
 
 `Nodal.Analytics` is an optional public contract layer above providers. It keeps
 provider-executed analytics integration and capability declarations separate from
-the query and migration foundations. Advanced analytics implementations are not
-part of the open-source package contract.
+the query and migration foundations. Its canonical observation model converts
+normalized provider results into bounded, immutable snapshots with opt-in
+properties and preserved edge direction. Advanced analytics implementations are
+not part of the open-source package contract.
 
 Pin all packages to the same version for reproducible builds, for example
 `0.1.0-beta.1`. The complete console, worker, and ASP.NET Core setup is in the

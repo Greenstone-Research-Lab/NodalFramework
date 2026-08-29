@@ -18,6 +18,7 @@
   </Folder>
   <Folder Name="/tests/">
     <Project Path="tests/Nodal.ArchitectureTests/Nodal.ArchitectureTests.csproj" />
+    <Project Path="tests/Nodal.Analytics.Tests/Nodal.Analytics.Tests.csproj" />
     <Project Path="tests/Nodal.Core.Tests/Nodal.Core.Tests.csproj" />
     <Project Path="tests/Nodal.IntegrationTests/Nodal.IntegrationTests.csproj" />
     <Project Path="tests/Nodal.Migrations.Tests/Nodal.Migrations.Tests.csproj" />

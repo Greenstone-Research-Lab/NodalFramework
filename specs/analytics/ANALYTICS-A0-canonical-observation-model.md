@@ -1,7 +1,7 @@
 ---
 id: ANALYTICS-A0
 title: Canonical analytics observation model
-status: accepted
+status: implemented
 type: feature
 owners: Nodal maintainers
 last-reviewed: 2026-08-29
@@ -79,7 +79,8 @@ GraphObservation observation = GraphObservationMaterializer.Materialize(
     options);
 ```
 
-`GraphObservationOptions` defaults to 10,000 nodes, 50,000 relationships, and
+`GraphObservationOptions` defaults to 10,000 nodes, 50,000 relationships,
+10,000 items per projected collection, a property nesting depth of 16, and
 empty property projections. `GraphObservationMaterializer` accepts only the
 provider-neutral `GraphQueryResult` defined by `Nodal.Core`.
 
@@ -156,11 +157,13 @@ Evidence locations:
 
 ## Performance budget
 
-Default limits are 10,000 nodes and 50,000 relationships. Bounds are evaluated
-before allocating observation records. Materialization is O(nodes +
-relationships + selected properties), preserves provider ordering without a
-sort, and performs no reflection. A reproducible benchmark is required before
-raising defaults or publishing throughput claims.
+Default limits are 10,000 nodes, 50,000 relationships, 10,000 items in one
+projected collection, and 16 nested property levels. Node and relationship
+bounds are evaluated before allocating observation records; collection bounds
+are enforced while copying. Materialization is O(nodes + relationships +
+selected properties), preserves provider ordering without a sort, and performs
+no reflection. A reproducible benchmark is required before raising defaults or
+publishing throughput claims.
 
 ## Delivery impact
 
@@ -182,4 +185,4 @@ raising defaults or publishing throughput claims.
 - [x] Data-minimization and immutable-copy behavior are explicit.
 - [x] Default limits and asymptotic materialization budget are defined.
 - [x] Test, coverage, architecture, documentation, and release evidence locations are defined.
-- [ ] The first vertical slice is implemented and its CI evidence is linked from the implementing PR.
+- [x] The first vertical slice is implemented; CI evidence is linked from the implementing PR.
