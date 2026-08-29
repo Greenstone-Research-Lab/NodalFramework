@@ -5,10 +5,9 @@ param(
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 
+# PowerShell validation failures propagate through ErrorActionPreference. $LASTEXITCODE
+# is reserved for the native dotnet commands below and may be unset at process start.
 & "$PSScriptRoot/verify-specifications.ps1"
-if ($LASTEXITCODE -ne 0) {
-    exit $LASTEXITCODE
-}
 
 dotnet restore "$repositoryRoot/Nodal.slnx"
 if ($LASTEXITCODE -ne 0) {
