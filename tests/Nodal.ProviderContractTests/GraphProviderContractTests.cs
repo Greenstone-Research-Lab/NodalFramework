@@ -31,23 +31,23 @@ public abstract class GraphProviderContractTests
         await using var fixture = CreateProvider();
         var provider = fixture.Provider;
 
-        Assert.IsAssignableFrom<IGraphQueryCapabilityProvider>(provider);
-        Assert.IsAssignableFrom<IGraphMutationProvider>(provider);
-        Assert.IsAssignableFrom<IGraphMigrationProvider>(provider);
-        Assert.IsAssignableFrom<IGraphMigrationHistoryProvider>(provider);
-        Assert.IsAssignableFrom<IGraphMigrationLockProvider>(provider);
-        Assert.IsAssignableFrom<IGraphAnalyticsProvider>(provider);
-        Assert.IsAssignableFrom<IGraphAnalyticsRuntimeProvider>(provider);
-        Assert.IsAssignableFrom<IGraphSchemaIntrospectionProvider>(provider);
+        Assert.IsType<IGraphQueryCapabilityProvider>(provider, exactMatch: false);
+        Assert.IsType<IGraphMutationProvider>(provider, exactMatch: false);
+        Assert.IsType<IGraphMigrationProvider>(provider, exactMatch: false);
+        Assert.IsType<IGraphMigrationHistoryProvider>(provider, exactMatch: false);
+        Assert.IsType<IGraphMigrationLockProvider>(provider, exactMatch: false);
+        Assert.IsType<IGraphAnalyticsProvider>(provider, exactMatch: false);
+        Assert.IsType<IGraphAnalyticsRuntimeProvider>(provider, exactMatch: false);
+        Assert.IsType<IGraphSchemaIntrospectionProvider>(provider, exactMatch: false);
     }
 
     [Fact]
     public async Task CapabilityMetadataIsNamedVersionedAndInternallyConsistent()
     {
         await using var fixture = CreateProvider();
-        var queryProvider = Assert.IsAssignableFrom<IGraphQueryCapabilityProvider>(fixture.Provider);
-        var mutationProvider = Assert.IsAssignableFrom<IGraphMutationProvider>(fixture.Provider);
-        var analyticsProvider = Assert.IsAssignableFrom<IGraphAnalyticsProvider>(fixture.Provider);
+        var queryProvider = Assert.IsType<IGraphQueryCapabilityProvider>(fixture.Provider, exactMatch: false);
+        var mutationProvider = Assert.IsType<IGraphMutationProvider>(fixture.Provider, exactMatch: false);
+        var analyticsProvider = Assert.IsType<IGraphAnalyticsProvider>(fixture.Provider, exactMatch: false);
 
         Assert.Equal(ExpectedProviderName, queryProvider.QueryCapabilities.ProviderName);
         Assert.False(string.IsNullOrWhiteSpace(queryProvider.QueryCapabilities.TestedProviderVersion));
@@ -67,7 +67,7 @@ public abstract class GraphProviderContractTests
     {
         const string identity = "contract-person-sensitive-value";
         await using var fixture = CreateProvider();
-        var capabilityProvider = Assert.IsAssignableFrom<IGraphQueryCapabilityProvider>(fixture.Provider);
+        var capabilityProvider = Assert.IsType<IGraphQueryCapabilityProvider>(fixture.Provider, exactMatch: false);
         var model = new GraphSet<ContractPerson>()
             .Match(person => person.Id == identity)
             .Distinct()
@@ -88,7 +88,7 @@ public abstract class GraphProviderContractTests
     public async Task MigrationExecutionAvailabilityMatchesRuntimeAccess()
     {
         await using var fixture = CreateProvider();
-        var migrationProvider = Assert.IsAssignableFrom<IGraphMigrationProvider>(fixture.Provider);
+        var migrationProvider = Assert.IsType<IGraphMigrationProvider>(fixture.Provider, exactMatch: false);
 
         if (migrationProvider.SupportsMigrationExecution)
         {
