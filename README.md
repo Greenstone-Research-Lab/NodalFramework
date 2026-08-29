@@ -134,9 +134,9 @@ destructive approval, and optional exclusive provider locking. CLI `apply` and
 variables; connection credentials remain inside that deployment host and never
 enter arguments, plans, bundles, or command output.
 
-`Nodal.Analytics` is an optional public contract layer above providers. It keeps
-provider-executed analytics integration and capability declarations separate from
-the query and migration foundations. Its canonical observation model converts
+`Nodal.Analytics` is an optional public layer for bounded observations and
+derived in-memory networks. Database-resident analytics execute through the
+active provider and never fall back to client-side computation silently. Its canonical observation model converts
 normalized provider results into bounded, immutable snapshots with opt-in
 properties and preserved edge direction. Advanced analytics implementations are
 not part of the open-source package contract.
@@ -160,6 +160,7 @@ Nodal distinguishes vendor client compatibility from versions verified by this r
 | Transaction boundary | Client-managed transaction | Atomic request or installed query |
 | Migration execution | Supported | Requires administrative transport |
 | Centrality and community detection | Requires compatible GDS and named projection | Requires explicitly configured installed GSQL query |
+| Multi-relation homogeneous analytics scope | GDS fingerprinted projection; unit coefficients and common weight shape | Verified scope binding or opt-in managed PageRank |
 | Weighted analytics | Algorithm-specific | Must be declared for each installed query |
 | Typed shortest paths | Native Cypher; GDS for weighted algorithms | Configured installed GSQL query |
 
@@ -313,9 +314,19 @@ var communities = await context.People.Query()
     .Louvain(new LouvainOptions(MaximumLevels: 8))
     .OnProjection("social")
     .ToListAsync();
+
+var influence = GraphAnalyticsScope.For<Person>("person-influence")
+    .Include(context.Friendships)
+    .Include(context.SharedInterests);
+
+var crossRelationRanks = await context.People.Query()
+    .Analyze(influence)
+    .PageRank()
+    .Top(20)
+    .ToListAsync();
 ```
 
-The analytics contract covers the full centrality and community-detection families and preserves algorithm-specific metrics for HITS, bridges, components, cliques, clustering, and modularity. Neo4j uses explicitly enabled GDS procedures; TigerGraph advertises only explicitly configured installed GSQL query endpoints. Unsupported operations fail before transport execution and are never emulated by downloading the graph into application memory.
+The analytics contract covers the full centrality and community-detection families and preserves algorithm-specific metrics for HITS, bridges, components, cliques, clustering, and modularity. Multi-relation scopes use canonical fingerprints and provider-native execution. Neo4j uses explicitly enabled GDS procedures; TigerGraph advertises verified installed GSQL bindings or explicitly enabled managed PageRank definitions. Unsupported operations fail before transport execution and are never emulated by downloading the graph into application memory.
 
 Shortest paths keep both endpoints strongly typed:
 

@@ -405,6 +405,15 @@ public sealed class GraphQuery<TNode>
         return new GraphAnalyticsBuilder<TNode, TRelation>(model, executor, relationSet.Metadata);
     }
 
+    /// <summary>Begins a provider-native analytics operation over a homogeneous multi-relation scope.</summary>
+    /// <param name="scope">The immutable scope describing every participating relationship family.</param>
+    /// <returns>A strongly typed analytics builder.</returns>
+    public GraphAnalyticsScopeBuilder<TNode> Analyze(GraphAnalyticsScope<TNode> scope)
+    {
+        ArgumentNullException.ThrowIfNull(scope);
+        return new GraphAnalyticsScopeBuilder<TNode>(model, executor, scope);
+    }
+
     /// <summary>Begins an unweighted shortest-path query between two strongly typed node selectors.</summary>
     public GraphShortestPathQuery<TNode, TRelation> ShortestPathTo<TRelation>(
         GraphQuery<TNode> target,

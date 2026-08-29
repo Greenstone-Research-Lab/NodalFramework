@@ -37,6 +37,26 @@ foreach (var member in communities)
 }
 ```
 
+## Multi-relation analytics scopes
+
+Centrality can describe one node network through several relationship families. The scope is immutable, homogeneous, and canonical: every relation connects the same node type, inclusion order does not change its binding identity, and the database provider performs the calculation.
+
+```csharp
+var influence = GraphAnalyticsScope.For<Author>("author-influence")
+    .Include(context.CoAuthorships)
+    .Include(context.SharedInterests);
+
+var ranks = await context.Authors.Query()
+    .Analyze(influence)
+    .PageRank()
+    .Top(20)
+    .ToListAsync();
+```
+
+Nodal derives a versioned fingerprint from the algorithm, node type, relationship types, direction, weights, and coefficients. Neo4j uses it in an idempotent multi-relation GDS projection name. TigerGraph resolves the same shape through a verified installed-query binding. An unsupported semantic shape fails before database transport; Nodal does not silently switch to `Nodal.Analytics` or download the graph.
+
+Per-relation coefficients and different weight-property names remain part of the portable contract but require a provider binding that declares those semantics. Neo4j's current native-projection path accepts unit coefficients and, when weighted, one common weight property across all relations. Nodal-managed TigerGraph generation currently accepts unweighted unit-coefficient PageRank; richer shapes use an explicitly verified binding.
+
 ## Algorithm coverage
 
 The provider-neutral contract models the complete centrality and community families rather than forcing every operation into a single score:
@@ -67,7 +87,7 @@ GraphRoute<Person, Knows> route = await context.People
     .SingleAsync();
 ```
 
-TigerGraph algorithms execute through installed GSQL REST++ endpoints. Configure only queries that are actually installed:
+TigerGraph algorithms execute through installed GSQL REST++ endpoints. The legacy single-relation map remains supported:
 
 ```csharp
 var options = new TigerGraphOptions

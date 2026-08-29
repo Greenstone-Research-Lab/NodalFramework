@@ -34,6 +34,16 @@ public sealed class TigerGraphOptions
     public IReadOnlySet<GraphAnalyticsAlgorithm> WeightedAnalyticsAlgorithms { get; init; } =
         new HashSet<GraphAnalyticsAlgorithm>();
 
+    /// <summary>Gets verified scope-level installed analytics query bindings.</summary>
+    public TigerGraphAnalyticsBindingManifest? AnalyticsBindingManifest { get; init; }
+
+    /// <summary>Gets the explicit policy for missing Nodal-managed analytics bindings.</summary>
+    public TigerGraphAnalyticsProvisioningMode AnalyticsProvisioningMode { get; init; } =
+        TigerGraphAnalyticsProvisioningMode.ValidateOnly;
+
+    /// <summary>Gets the canonical Nodal analytics response-contract version.</summary>
+    public string AnalyticsContractVersion { get; init; } = "1";
+
     /// <summary>
     /// Gets the optional installed-query extension contract for advanced TigerGraph query shapes.
     /// Configuring a manifest alone does not advertise a capability; Nodal requires a verified

@@ -22,6 +22,7 @@ public sealed class Neo4jProvider :
     IGraphAnalyticsRuntimeProvider,
     IGraphSchemaIntrospectionProvider,
     IGraphQueryCapabilityProvider,
+    IGraphAnalyticsScopeCapabilityProvider,
     IAsyncDisposable
 {
     private readonly IDriver driver;
@@ -130,6 +131,40 @@ public sealed class Neo4jProvider :
 
     /// <inheritdoc />
     public GraphAnalyticsCapabilities AnalyticsCapabilities { get; }
+
+    /// <inheritdoc />
+    public void ValidateAnalyticsScope(GraphAnalyticsQueryModel query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        if (query.Family == GraphAnalyticsFamily.PathFinding && query.EffectiveRelationships.Count != 1)
+        {
+            throw new NodalCapabilityNotSupportedException(
+                "Neo4j",
+                "NODAL-ANALYTICS-PATH-MULTI-RELATION",
+                "Typed path algorithms require exactly one relationship type.");
+        }
+        if (query.EffectiveRelationships.Any(
+                relationship => Math.Abs(relationship.Coefficient - 1d) > 1e-12))
+        {
+            throw new NodalCapabilityNotSupportedException(
+                "Neo4j",
+                "NODAL-NEO4J-ANALYTICS-COEFFICIENT",
+                "Neo4j native projections cannot apply per-relationship coefficients without a transformed projection.");
+        }
+        var weightedRelationships = query.EffectiveRelationships
+            .Where(relationship => relationship.WeightProperty is not null)
+            .ToArray();
+        if (weightedRelationships.Length != 0 &&
+            (weightedRelationships.Length != query.EffectiveRelationships.Count ||
+             weightedRelationships.Select(relationship => relationship.WeightProperty)
+                 .Distinct(StringComparer.Ordinal).Count() != 1))
+        {
+            throw new NodalCapabilityNotSupportedException(
+                "Neo4j",
+                "NODAL-NEO4J-ANALYTICS-WEIGHT-SHAPE",
+                "Neo4j multi-relation native analytics requires every projected relationship to use the same weight property.");
+        }
+    }
 
     /// <inheritdoc />
     public IGraphAnalyticsRuntime AnalyticsRuntime { get; }

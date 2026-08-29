@@ -43,4 +43,19 @@ Managed environments can implement the same control-plane contract without expos
 
 Analytics use explicitly configured installed GSQL queries. `TigerGraphOptions.AnalyticsQueries` maps each available `GraphAnalyticsAlgorithm` to its installed query name. This makes the capability set truthful across TigerGraph editions and deployments instead of assuming that every algorithm library has been installed.
 
+Multi-relation scopes use `TigerGraphAnalyticsBindingManifest`. Each binding maps a canonical Nodal fingerprint to one verified installed query, so applications do not maintain procedure names per relation combination:
+
+```csharp
+var manifest = new TigerGraphAnalyticsBindingManifest(
+[
+    new TigerGraphAnalyticsBinding(
+        GraphAnalyticsAlgorithm.PageRank,
+        Fingerprint: "74b05be431a4afa6",
+        QueryName: "verified_author_pagerank",
+        SupportsWeights: true),
+]);
+```
+
+`ValidateOnly` is the default and performs no administrative write. `InstallMissing` requires an explicit `ITigerGraphAdministrativeTransport` and can generate, install, and reuse deterministic unweighted, unit-coefficient PageRank definitions. Unsupported algorithms and richer weight/coefficient shapes require a verified manifest binding and fail before REST++ execution when absent. Generated names include the canonical contract version and fingerprint; user-owned query names are never inferred or replaced.
+
 Installed queries are unweighted by default. Add an algorithm to `WeightedAnalyticsAlgorithms` only when that query's declared parameters accept `nodal_weight_property`. The current live QA baseline is TigerGraph 4.2.4 Community; broader server-version compatibility is not yet a Nodal promise.
