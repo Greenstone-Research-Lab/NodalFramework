@@ -18,7 +18,9 @@ public static partial class TigerGraphInstalledQueryDefinitionFactory
             throw new NotSupportedException("The managed TigerGraph analytics generator currently supports PageRank only.");
         }
         var relationships = query.EffectiveRelationships;
-        if (relationships.Any(item => item.WeightProperty is not null || item.Coefficient != 1))
+        if (relationships.Any(item =>
+                item.WeightProperty is not null ||
+                Math.Abs(item.Coefficient - 1d) > 1e-12))
         {
             throw new NotSupportedException("Generated TigerGraph PageRank currently requires unweighted unit-coefficient relationships.");
         }

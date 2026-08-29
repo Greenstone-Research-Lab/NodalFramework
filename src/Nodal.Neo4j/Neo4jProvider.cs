@@ -143,7 +143,8 @@ public sealed class Neo4jProvider :
                 "NODAL-ANALYTICS-PATH-MULTI-RELATION",
                 "Typed path algorithms require exactly one relationship type.");
         }
-        if (query.EffectiveRelationships.Any(relationship => relationship.Coefficient != 1))
+        if (query.EffectiveRelationships.Any(
+                relationship => Math.Abs(relationship.Coefficient - 1d) > 1e-12))
         {
             throw new NodalCapabilityNotSupportedException(
                 "Neo4j",
