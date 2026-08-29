@@ -125,6 +125,13 @@ an explicit architecture decision record and approval in the pull request.
 - Live provider tests are environment-gated and must state the exact database
   version they verify.
 - Architecture tests enforce dependency direction and provider isolation.
+- ArchUnitNET rules enforce assembly boundaries and product dependency cycles;
+  architecture changes require corresponding executable rule updates.
+- Every provider implementation runs through the shared provider contract test
+  suite. Provider-specific tests supplement, but never replace, those behavioral
+  substitution checks.
+- The Sonar intended-architecture model mirrors the executable dependency rules.
+  A change to one model must update the other in the same pull request.
 - Public examples should compile and run in CI where practical.
 - Formatting, build, tests, coverage, package validation, and security checks
   must pass before merge.
@@ -156,6 +163,13 @@ an explicit architecture decision record and approval in the pull request.
 
 - English is the canonical language for source documentation and the public
   documentation site.
+- Product behavior starts with a versioned specification under `specs/`.
+  Implementation may begin only after the specification is accepted.
+- Scope changes discovered during implementation update the accepted
+  specification before merge; the pull request links the specification,
+  architecture decisions, tests, documentation, and release evidence.
+- Superseded and rejected specifications remain in history with their status
+  and replacement or rejection rationale. They are not silently deleted.
 - Architecture decisions, provider limitations, and compatibility claims must
   be documented close to the affected feature.
 - Every change should state its scope, tests, provider impact, and migration or

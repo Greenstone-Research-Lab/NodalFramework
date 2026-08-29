@@ -44,6 +44,17 @@ jobs:
         with:
           global-json-file: global.json
 
+      - name: Verify specification repository
+        shell: pwsh
+        run: ./eng/verify-specifications.ps1
+
+      - name: Verify pull request specification reference
+        if: github.event_name == 'pull_request' && github.actor != 'dependabot[bot]'
+        shell: pwsh
+        env:
+          NODAL_PULL_REQUEST_BODY: ${{ github.event.pull_request.body }}
+        run: ./eng/verify-pr-specification.ps1 -PullRequestBody $env:NODAL_PULL_REQUEST_BODY
+
       - name: Restore
         run: dotnet restore Nodal.slnx
 
@@ -55,6 +66,22 @@ jobs:
 
       - name: Run test suite
         run: dotnet test Nodal.slnx --configuration Release --no-build --logger "console;verbosity=normal"
+
+      - name: Enforce architecture rules with debug artifacts
+        run: >-
+          dotnet test tests/Nodal.ArchitectureTests/Nodal.ArchitectureTests.csproj
+          --configuration Debug
+          --no-restore
+          --filter FullyQualifiedName~ProductArchitectureRules
+          --logger "console;verbosity=normal"
+
+      - name: Enforce provider contracts
+        run: >-
+          dotnet test tests/Nodal.ProviderContractTests/Nodal.ProviderContractTests.csproj
+          --configuration Release
+          --no-build
+          --no-restore
+          --logger "console;verbosity=normal"
 
       - name: Enforce product coverage
         shell: pwsh
