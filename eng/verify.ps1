@@ -5,6 +5,11 @@ param(
 $ErrorActionPreference = 'Stop'
 $repositoryRoot = Split-Path -Parent $PSScriptRoot
 
+& "$PSScriptRoot/verify-specifications.ps1"
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+
 dotnet restore "$repositoryRoot/Nodal.slnx"
 if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE

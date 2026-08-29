@@ -26,6 +26,11 @@ Nodal Framework is a provider-based .NET graph data access prototype. It keeps t
 
 The beta line targets .NET 10. Package versions move together so provider and core contracts remain compatible during the pre-release period.
 
+Development is specification-driven. Accepted feature contracts, provider
+capability decisions, and architecture records live in the versioned
+[specification repository](specs/README.md); CI rejects undocumented or
+unreferenced behavioral work before it reaches `developer`.
+
 Install one provider package; it brings `Nodal.Core` transitively. Add the
 migration package only when the application owns schema evolution:
 
