@@ -295,6 +295,152 @@ public sealed class GraphAnalyticsTests
         Assert.True(snapshot.IsLiveDiscovery);
     }
 
+    [Fact]
+    public void LegacyAnalyticsRecordConstructorsAndDeconstructorsRemainCompatible()
+    {
+        var nodes = new GraphQueryModel("Person", "node", null, [], null, []);
+        var legacy = new GraphAnalyticsQueryModel(
+            GraphAnalyticsAlgorithm.PageRank,
+            GraphAnalyticsFamily.Centrality,
+            nodes,
+            "KNOWS",
+            true,
+            "social",
+            "strength",
+            20,
+            new Dictionary<string, object?> { ["maxIterations"] = 20 },
+            null,
+            null);
+        legacy.Deconstruct(
+            out var algorithm,
+            out var family,
+            out var deconstructedNodes,
+            out var relationshipType,
+            out var directed,
+            out var projectionName,
+            out var weightProperty,
+            out var limit,
+            out var configuration,
+            out var targetNodes,
+            out var maxDepth);
+        var projection = new GraphProjectionDefinition("social", "Person", "KNOWS", true, "strength");
+        projection.Deconstruct(
+            out var projectionNameValue,
+            out var nodeType,
+            out var projectionRelationship,
+            out var projectionDirected,
+            out var projectionWeight);
+
+        Assert.Equal(GraphAnalyticsAlgorithm.PageRank, algorithm);
+        Assert.Equal(GraphAnalyticsFamily.Centrality, family);
+        Assert.Same(nodes, deconstructedNodes);
+        Assert.Equal("KNOWS", relationshipType);
+        Assert.True(directed);
+        Assert.Equal("social", projectionName);
+        Assert.Equal("strength", weightProperty);
+        Assert.Equal(20, limit);
+        Assert.NotNull(configuration);
+        Assert.Null(targetNodes);
+        Assert.Null(maxDepth);
+        Assert.Equal("social", projectionNameValue);
+        Assert.Equal("Person", nodeType);
+        Assert.Equal("KNOWS", projectionRelationship);
+        Assert.True(projectionDirected);
+        Assert.Equal("strength", projectionWeight);
+    }
+
+    [Fact]
+    public async Task MultiRelationScopeIsCanonicalWeightedAndExecutable()
+    {
+        var provider = new AnalyticsProvider([GraphAnalyticsAlgorithm.PageRank], supportsWeights: true);
+        var context = new SocialContext(provider);
+        var scope = GraphAnalyticsScope.For<Person>("author-influence")
+            .Include(context.Likes, edge => edge.Similarity, 0.30)
+            .Include(context.Knows, edge => edge.Strength, 0.70);
+
+        var query = context.People.Query().Analyze(scope)
+            .PageRank(new PageRankOptions(0.85, 20, 0.001, 2))
+            .Top(10);
+        var result = await query.ToListAsync();
+        var model = query.ToQueryModel();
+
+        Assert.Single(result);
+        Assert.StartsWith("author-influence-", model.ProjectionName, StringComparison.Ordinal);
+        Assert.Equal(["KNOWS", "LIKES"], model.EffectiveRelationships.Select(item => item.RelationshipType));
+        Assert.Equal([0.70, 0.30], model.EffectiveRelationships.Select(item => item.Coefficient));
+        Assert.Equal(10, model.Limit);
+        Assert.Equal(20, model.EffectiveConfiguration["maxIterations"]);
+        Assert.Equal(model, provider.Compiler.Query);
+    }
+
+    [Fact]
+    public async Task MultiRelationExecutionEnsuresProviderProjectionBeforeCompilation()
+    {
+        var provider = new AnalyticsProvider(
+            [GraphAnalyticsAlgorithm.PageRank],
+            supportsWeights: false,
+            supportsProjectionManagement: true);
+        var context = new SocialContext(provider);
+        var scope = GraphAnalyticsScope.For<Person>("author-influence")
+            .Include(context.Likes)
+            .Include(context.Knows);
+
+        await context.People.Query().Analyze(scope).PageRank().ToListAsync();
+
+        Assert.NotNull(provider.Runtime.Projection);
+        Assert.StartsWith("author-influence-", provider.Runtime.Projection.Name, StringComparison.Ordinal);
+        Assert.Equal(["KNOWS", "LIKES"],
+            provider.Runtime.Projection.EffectiveRelationships.Select(item => item.RelationshipType));
+        Assert.Equal("projection", provider.Runtime.Events[0]);
+        Assert.NotNull(provider.Compiler.Query);
+        Assert.Equal(1, provider.ScopeValidationCount);
+    }
+
+    [Fact]
+    public void MultiRelationScopeValidatesShapeAndProducesStableBinding()
+    {
+        var context = new SocialContext(new QueryOnlyProvider());
+        var first = GraphAnalyticsScope.For<Person>("influence")
+            .Include(context.Likes)
+            .Include(context.Knows);
+        var second = GraphAnalyticsScope.For<Person>("influence")
+            .Include(context.Knows)
+            .Include(context.Likes);
+        var firstModel = context.People.Query().Analyze(first).PageRank().ToQueryModel();
+        var secondModel = context.People.Query().Analyze(second).PageRank().ToQueryModel();
+
+        Assert.Equal(
+            GraphAnalyticsBindingKey.Create(firstModel).Fingerprint,
+            GraphAnalyticsBindingKey.Create(secondModel).Fingerprint);
+        var binding = GraphAnalyticsBindingKey.Create(firstModel);
+        Assert.Equal(16, binding.Fingerprint.Length);
+        Assert.Equal(GraphAnalyticsAlgorithm.PageRank, binding.Algorithm);
+        Assert.Equal("Person", binding.NodeType);
+        Assert.Equal("1", binding.ContractVersion);
+        Assert.Equal(["KNOWS", "LIKES"], binding.Relationships.Select(item => item.RelationshipType));
+        Assert.Throws<InvalidOperationException>(() => first.Include(context.Knows));
+        Assert.Throws<ArgumentOutOfRangeException>(() => GraphAnalyticsScope.For<Person>("x").Include(context.Knows, 0));
+        Assert.Throws<ArgumentException>(() => GraphAnalyticsScope.For<Person>("x").Include(context.Knows, edge => edge.Note));
+        Assert.Throws<InvalidOperationException>(() => context.People.Query()
+            .Analyze(GraphAnalyticsScope.For<Person>("empty")).PageRank());
+        Assert.Throws<ArgumentException>(() => context.People.Query().Analyze(first).Using(GraphAnalyticsAlgorithm.ShortestPath));
+        Assert.Throws<ArgumentException>(() => GraphAnalyticsBindingKey.Create(firstModel, " "));
+    }
+
+    [Fact]
+    public void MultiRelationQueryValidatesExecutionOptions()
+    {
+        var context = new SocialContext(new QueryOnlyProvider());
+        var scope = GraphAnalyticsScope.For<Person>("influence").Include(context.Knows);
+        var query = context.People.Query().Analyze(scope).PageRank();
+
+        Assert.Throws<ArgumentOutOfRangeException>(() => query.Top(0));
+        Assert.Throws<ArgumentNullException>(() => query.Configure(null!));
+        Assert.Throws<ArgumentOutOfRangeException>(() => query.Configure(new PageRankOptions(1)));
+        Assert.Throws<InvalidOperationException>(() => context.People.Query().Analyze(scope)
+            .Using(GraphAnalyticsAlgorithm.Louvain).Configure(new PageRankOptions()));
+    }
+
     [GraphNode("Person")]
     private sealed record Person(
         [property: GraphKey] string Id,
@@ -305,10 +451,14 @@ public sealed class GraphAnalyticsTests
     [GraphRelation("KNOWS")]
     private sealed record Knows([property: GraphProperty("strength")] double Strength, string Note);
 
+    [GraphRelation("LIKES", Directed = false)]
+    private sealed record Likes([property: GraphProperty("similarity")] double Similarity);
+
     private sealed class SocialContext(IGraphProvider provider) : NodalContext(provider)
     {
         public GraphSet<Person> People => Set<Person>();
         public RelationSet<Person, Knows, Person> Knows => Relations<Person, Knows, Person>();
+        public RelationSet<Person, Likes, Person> Likes => Relations<Person, Likes, Person>();
     }
 
     private sealed class QueryOnlyProvider : IGraphProvider
@@ -318,12 +468,14 @@ public sealed class GraphAnalyticsTests
         public IGraphResultMaterializer ResultMaterializer => throw new NotSupportedException();
     }
 
-    private sealed class AnalyticsProvider : IGraphProvider, IGraphAnalyticsProvider
+    private sealed class AnalyticsProvider : IGraphProvider, IGraphAnalyticsProvider, IGraphAnalyticsRuntimeProvider,
+        IGraphAnalyticsScopeCapabilityProvider
     {
         public AnalyticsProvider(
             IEnumerable<GraphAnalyticsAlgorithm> algorithms,
             bool supportsWeights,
-            bool? detailSupportsWeights = null)
+            bool? detailSupportsWeights = null,
+            bool supportsProjectionManagement = false)
         {
             var supported = algorithms.ToHashSet();
             Compiler = new AnalyticsCompiler();
@@ -333,6 +485,7 @@ public sealed class GraphAnalyticsTests
                 ProviderName = "TestProvider",
                 Algorithms = supported,
                 SupportsWeightedRelationships = supportsWeights,
+                SupportsProjectionManagement = supportsProjectionManagement,
                 AlgorithmDetails = detailSupportsWeights is null
                     ? new Dictionary<GraphAnalyticsAlgorithm, GraphAlgorithmCapability>()
                     : supported.ToDictionary(
@@ -348,11 +501,38 @@ public sealed class GraphAnalyticsTests
 
         public AnalyticsCompiler Compiler { get; }
         public AnalyticsCommandExecutor Executor { get; }
+        public RecordingAnalyticsRuntime Runtime { get; } = new();
+        public int ScopeValidationCount { get; private set; }
         public IGraphQueryCompiler QueryCompiler => throw new NotSupportedException();
         public IGraphCommandExecutor CommandExecutor => Executor;
         public IGraphResultMaterializer ResultMaterializer { get; } = new JsonGraphResultMaterializer();
         public IGraphAnalyticsCompiler AnalyticsCompiler => Compiler;
         public GraphAnalyticsCapabilities AnalyticsCapabilities { get; }
+        public IGraphAnalyticsRuntime AnalyticsRuntime => Runtime;
+
+        public void ValidateAnalyticsScope(GraphAnalyticsQueryModel query) => ScopeValidationCount++;
+    }
+
+    private sealed class RecordingAnalyticsRuntime : IGraphAnalyticsRuntime
+    {
+        public GraphProjectionDefinition? Projection { get; private set; }
+        public List<string> Events { get; } = [];
+
+        public ValueTask<GraphAnalyticsRuntimeSnapshot> DiscoverAsync(
+            bool forceRefresh = false,
+            CancellationToken cancellationToken = default) => throw new NotSupportedException();
+
+        public ValueTask EnsureProjectionAsync(
+            GraphProjectionDefinition projection,
+            CancellationToken cancellationToken = default)
+        {
+            Projection = projection;
+            Events.Add("projection");
+            return ValueTask.CompletedTask;
+        }
+
+        public ValueTask DropProjectionAsync(string name, CancellationToken cancellationToken = default) =>
+            throw new NotSupportedException();
     }
 
     private sealed class AnalyticsCompiler : IGraphAnalyticsCompiler

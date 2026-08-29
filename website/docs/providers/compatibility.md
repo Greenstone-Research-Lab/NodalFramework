@@ -51,6 +51,7 @@ Legend: **Yes** is implemented; **Conditional** requires the condition shown; **
 | Atomic mutation plan | Yes | Conditional: REST++ or installed mutation query |
 | Migration execution | Yes | Conditional: verified administrative control plane and graph lock |
 | Centrality/community analytics | Conditional: compatible GDS and named projection | Conditional: configured installed GSQL query |
+| Homogeneous multi-relation analytics scope | Conditional: compatible GDS; fingerprinted projection; unit coefficients and common weight shape | Conditional: verified scope binding, or managed unweighted PageRank with administration opt-in |
 | Weighted analytics | Algorithm-specific GDS capability | Explicitly declared per installed query |
 | Analytics deployment discovery | Live GDS discovery with bounded cache | Configured installed-query snapshot |
 | Analytics projection lifecycle | Yes: explicit create/reuse/drop | Not applicable; algorithms use the database graph |

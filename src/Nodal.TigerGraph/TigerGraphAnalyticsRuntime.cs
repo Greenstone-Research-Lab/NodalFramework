@@ -9,13 +9,22 @@ public sealed class TigerGraphAnalyticsRuntime : IGraphAnalyticsRuntime
 
     /// <summary>Initializes a runtime snapshot from explicitly configured installed queries.</summary>
     public TigerGraphAnalyticsRuntime(IReadOnlyDictionary<GraphAnalyticsAlgorithm, string> installedQueries)
+        : this(installedQueries, null)
+    {
+    }
+
+    internal TigerGraphAnalyticsRuntime(
+        IReadOnlyDictionary<GraphAnalyticsAlgorithm, string> installedQueries,
+        TigerGraphAnalyticsBindingManifest? bindingManifest)
     {
         ArgumentNullException.ThrowIfNull(installedQueries);
+        var bindings = bindingManifest?.Bindings.Values ?? [];
         snapshot = new GraphAnalyticsRuntimeSnapshot(
             null,
-            installedQueries.Values.ToHashSet(StringComparer.Ordinal),
+            installedQueries.Values.Concat(bindings.Select(binding => binding.QueryName))
+                .ToHashSet(StringComparer.Ordinal),
             new HashSet<string>(StringComparer.Ordinal),
-            installedQueries.Keys.ToHashSet(),
+            installedQueries.Keys.Concat(bindings.Select(binding => binding.Algorithm)).ToHashSet(),
             false);
     }
 

@@ -10,6 +10,12 @@ database-provider packages. It provides provider-neutral contracts and
 capability-aware integration for analytics that supported graph platforms can
 execute.
 
+Database-resident centrality and community requests do not pass through this
+package. They belong to `Nodal.Core`'s fluent contract and execute through the
+active provider's native analytics engine. `Nodal.Analytics` remains useful for
+bounded observations and derived networks created in application memory; it is
+never an automatic fallback for a missing provider capability.
+
 It is not a provider, does not become a dependency of provider packages, and
 does not promise that every provider offers the same analytics capability.
 Applications should inspect the compatibility matrix and handle unavailable

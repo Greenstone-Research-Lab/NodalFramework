@@ -107,14 +107,39 @@ internal sealed class ProviderGraphQueryExecutor(
             throw new NotSupportedException(
                 $"Graph provider '{provider.GetType().Name}' does not support analytics algorithm '{query.Algorithm}'.");
         }
+        if (provider is IGraphAnalyticsScopeCapabilityProvider scopeCapabilities)
+        {
+            scopeCapabilities.ValidateAnalyticsScope(query);
+        }
         var capabilities = analyticsProvider.AnalyticsCapabilities;
         var algorithmSupportsWeights = !capabilities.AlgorithmDetails.TryGetValue(query.Algorithm, out var details) ||
             details.SupportsWeights;
-        if (query.RelationshipWeightProperty is not null &&
+        var requestsWeights = query.EffectiveRelationships.Any(relationship => relationship.WeightProperty is not null);
+        if (requestsWeights &&
             (!capabilities.SupportsWeightedRelationships || !algorithmSupportsWeights))
         {
             throw new NotSupportedException(
                 $"Graph provider '{provider.GetType().Name}' does not support weighted analytics relationships.");
+        }
+
+        if (query.Relationships is { Count: > 0 } &&
+            capabilities.SupportsProjectionManagement &&
+            provider is IGraphAnalyticsRuntimeProvider runtimeProvider)
+        {
+            var projection = new GraphProjectionDefinition(
+                query.ProjectionName,
+                query.Nodes.NodeType,
+                query.RelationshipType,
+                query.Directed,
+                query.RelationshipWeightProperty,
+                query.EffectiveRelationships.Select(relationship => new GraphProjectionRelationshipDefinition(
+                    relationship.RelationshipType,
+                    relationship.Directed,
+                    relationship.WeightProperty,
+                    relationship.Coefficient)).ToArray());
+            await runtimeProvider.AnalyticsRuntime
+                .EnsureProjectionAsync(projection, cancellationToken)
+                .ConfigureAwait(false);
         }
 
         var command = analyticsProvider.AnalyticsCompiler.Compile(query);

@@ -1,7 +1,7 @@
 ---
 id: ANALYTICS-P0
 title: Provider-native multi-relation analytics scope
-status: accepted
+status: implemented
 type: feature
 owners: Nodal maintainers
 last-reviewed: 2026-08-29
@@ -31,9 +31,9 @@ run provider-native PageRank through the same provider-neutral fluent API.
 ## Terminology and invariants
 
 An **analytics scope** contains one node type and one or more same-node
-relationship descriptors. A **binding** is the canonical combination of graph,
+relationship descriptors. A **binding** is the canonical combination of
 algorithm, node type, ordered relationship descriptors, projection contract,
-and version. Relationship descriptors are sorted ordinally before hashing, so
+and version within one configured provider graph. Relationship descriptors are sorted ordinally before hashing, so
 fluent inclusion order never changes identity.
 
 - Every relationship connects the scope node type to itself.
@@ -50,8 +50,8 @@ fluent inclusion order never changes identity.
 ## API and usage examples
 
 ```csharp
-var influence = GraphAnalyticsScope<Author>
-    .Create("author-influence")
+var influence = GraphAnalyticsScope
+    .For<Author>("author-influence")
     .Include(context.CoAuthorships,
         relation => relation.SharedPaperCount,
         coefficient: 0.70)
@@ -100,8 +100,6 @@ administrative transport and opt-in provisioning policy.
 - `ValidateOnly` rejects a missing or incompatible binding before HTTP I/O.
 - `InstallMissing` may register and install a deterministic Nodal-managed
   definition through the explicit administrative transport.
-- `UpgradeManaged` may replace only definitions whose manifest identifies them
-  as Nodal-managed; user-owned query names are never overwritten.
 - Concurrent installation of one fingerprint is coalesced.
 - Cancellation is propagated through discovery, installation, and execution.
 - Neo4j projection creation is idempotent and uses the existing runtime gate.
@@ -151,12 +149,12 @@ algorithm rows and never materializes the analysed graph in application memory.
 
 ## Acceptance criteria and evidence
 
-- [ ] One homogeneous scope accepts multiple mapped same-node relationship types.
-- [ ] Existing single-relation analytics source and binary behavior is preserved.
-- [ ] Canonical binding identity is stable across relationship inclusion order.
-- [ ] Capability validation is binding-aware and occurs before transport.
-- [ ] Neo4j creates a multi-relation GDS projection and executes against its name.
-- [ ] TigerGraph resolves deterministic verified bindings without manual per-relation options.
-- [ ] Missing TigerGraph PageRank bindings can be installed only under explicit policy and administration.
-- [ ] Unsupported generated algorithms fail before transport.
-- [ ] Tests, coverage, package validation, documentation build, and release evidence pass.
+- [x] One homogeneous scope accepts multiple mapped same-node relationship types.
+- [x] Existing single-relation analytics source and binary behavior is preserved.
+- [x] Canonical binding identity is stable across relationship inclusion order.
+- [x] Capability validation is binding-aware and occurs before transport.
+- [x] Neo4j creates a multi-relation GDS projection and executes against its name.
+- [x] TigerGraph resolves deterministic verified bindings without manual per-relation options.
+- [x] Missing TigerGraph PageRank bindings can be installed only under explicit policy and administration.
+- [x] Unsupported generated algorithms fail before transport.
+- [x] Tests, coverage, package validation, documentation build, and release evidence pass.

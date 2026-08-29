@@ -1,17 +1,62 @@
 namespace Nodal.Core.Analytics;
 
+/// <summary>Describes one relationship family in a server-side analytics projection.</summary>
+/// <param name="RelationshipType">The mapped relationship type.</param>
+/// <param name="Directed">Whether the projected relationship retains direction.</param>
+/// <param name="WeightProperty">The optional mapped numeric relationship property.</param>
+/// <param name="Coefficient">The positive relationship-family coefficient.</param>
+public sealed record GraphProjectionRelationshipDefinition(
+    string RelationshipType,
+    bool Directed = true,
+    string? WeightProperty = null,
+    double Coefficient = 1);
+
 /// <summary>Describes a named server-side graph projection.</summary>
 /// <param name="Name">Stable projection name.</param>
 /// <param name="NodeType">Mapped node label or vertex type.</param>
 /// <param name="RelationshipType">Mapped relationship or edge type.</param>
 /// <param name="Directed">Whether the projected relationship retains direction.</param>
 /// <param name="WeightProperty">Optional mapped numeric relationship property.</param>
+/// <param name="Relationships">Optional canonical multi-relation projection descriptors.</param>
 public sealed record GraphProjectionDefinition(
     string Name,
     string NodeType,
     string RelationshipType,
     bool Directed = true,
-    string? WeightProperty = null);
+    string? WeightProperty = null,
+    IReadOnlyList<GraphProjectionRelationshipDefinition>? Relationships = null)
+{
+    /// <summary>Preserves the original single-relation constructor contract.</summary>
+    public GraphProjectionDefinition(
+        string Name,
+        string NodeType,
+        string RelationshipType,
+        bool Directed,
+        string? WeightProperty)
+        : this(Name, NodeType, RelationshipType, Directed, WeightProperty, null)
+    {
+    }
+
+    /// <summary>Preserves the original single-relation deconstruction contract.</summary>
+    public void Deconstruct(
+        out string Name,
+        out string NodeType,
+        out string RelationshipType,
+        out bool Directed,
+        out string? WeightProperty)
+    {
+        Name = this.Name;
+        NodeType = this.NodeType;
+        RelationshipType = this.RelationshipType;
+        Directed = this.Directed;
+        WeightProperty = this.WeightProperty;
+    }
+
+    /// <summary>Gets multi-relation descriptors or the legacy single relationship descriptor.</summary>
+    public IReadOnlyList<GraphProjectionRelationshipDefinition> EffectiveRelationships => Relationships is { Count: > 0 }
+        ? Relationships
+        : [new GraphProjectionRelationshipDefinition(RelationshipType, Directed, WeightProperty)];
+}
 
 /// <summary>Reports analytics features observed or declared by the active deployment.</summary>
 /// <param name="ProviderVersion">Runtime analytics component or database version, when discoverable.</param>

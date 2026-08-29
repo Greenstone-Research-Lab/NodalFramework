@@ -83,14 +83,14 @@ public sealed class Neo4jAnalyticsRuntime : IGraphAnalyticsRuntime, IDisposable
             return;
         }
 
-        var relationship = new Dictionary<string, object>
-        {
-            [projection.RelationshipType] = new Dictionary<string, object?>
+        var relationship = projection.EffectiveRelationships.ToDictionary(
+            item => item.RelationshipType,
+            item => (object)new Dictionary<string, object?>
             {
-                ["orientation"] = projection.Directed ? "NATURAL" : "UNDIRECTED",
-                ["properties"] = projection.WeightProperty is null ? Array.Empty<string>() : new[] { projection.WeightProperty },
+                ["orientation"] = item.Directed ? "NATURAL" : "UNDIRECTED",
+                ["properties"] = item.WeightProperty is null ? Array.Empty<string>() : new[] { item.WeightProperty },
             },
-        };
+            StringComparer.Ordinal);
         await ExecuteAsync(
             "CALL gds.graph.project($name, $nodeType, $relationships) YIELD graphName RETURN graphName AS value",
             new Dictionary<string, object>
@@ -167,7 +167,19 @@ public sealed class Neo4jAnalyticsRuntime : IGraphAnalyticsRuntime, IDisposable
         ArgumentNullException.ThrowIfNull(projection);
         ArgumentException.ThrowIfNullOrWhiteSpace(projection.Name);
         ArgumentException.ThrowIfNullOrWhiteSpace(projection.NodeType);
-        ArgumentException.ThrowIfNullOrWhiteSpace(projection.RelationshipType);
+        var names = new HashSet<string>(StringComparer.Ordinal);
+        foreach (var relationship in projection.EffectiveRelationships)
+        {
+            ArgumentException.ThrowIfNullOrWhiteSpace(relationship.RelationshipType);
+            if (!names.Add(relationship.RelationshipType))
+            {
+                throw new ArgumentException($"Projection relationship '{relationship.RelationshipType}' is duplicated.", nameof(projection));
+            }
+            if (!double.IsFinite(relationship.Coefficient) || relationship.Coefficient <= 0)
+            {
+                throw new ArgumentOutOfRangeException(nameof(projection), "Projection coefficients must be finite and greater than zero.");
+            }
+        }
     }
 
     /// <summary>Releases the discovery synchronization primitive.</summary>

@@ -139,6 +139,7 @@ public sealed record GraphAlgorithmCapability(
 /// <param name="Configuration">Algorithm-specific, separately transported configuration.</param>
 /// <param name="TargetNodes">The typed target selector for path-finding operations.</param>
 /// <param name="MaxDepth">The optional maximum path length.</param>
+/// <param name="Relationships">The optional canonical multi-relation analytics scope.</param>
 public sealed record GraphAnalyticsQueryModel(
     GraphAnalyticsAlgorithm Algorithm,
     GraphAnalyticsFamily Family,
@@ -150,11 +151,73 @@ public sealed record GraphAnalyticsQueryModel(
     int? Limit = null,
     IReadOnlyDictionary<string, object?>? Configuration = null,
     GraphQueryModel? TargetNodes = null,
-    int? MaxDepth = null)
+    int? MaxDepth = null,
+    IReadOnlyList<GraphAnalyticsRelationshipDefinition>? Relationships = null)
 {
+    /// <summary>Preserves the original single-relation constructor contract.</summary>
+    public GraphAnalyticsQueryModel(
+        GraphAnalyticsAlgorithm Algorithm,
+        GraphAnalyticsFamily Family,
+        GraphQueryModel Nodes,
+        string RelationshipType,
+        bool Directed,
+        string ProjectionName,
+        string? RelationshipWeightProperty,
+        int? Limit,
+        IReadOnlyDictionary<string, object?>? Configuration,
+        GraphQueryModel? TargetNodes,
+        int? MaxDepth)
+        : this(
+            Algorithm,
+            Family,
+            Nodes,
+            RelationshipType,
+            Directed,
+            ProjectionName,
+            RelationshipWeightProperty,
+            Limit,
+            Configuration,
+            TargetNodes,
+            MaxDepth,
+            null)
+    {
+    }
+
+    /// <summary>Preserves the original single-relation deconstruction contract.</summary>
+    public void Deconstruct(
+        out GraphAnalyticsAlgorithm Algorithm,
+        out GraphAnalyticsFamily Family,
+        out GraphQueryModel Nodes,
+        out string RelationshipType,
+        out bool Directed,
+        out string ProjectionName,
+        out string? RelationshipWeightProperty,
+        out int? Limit,
+        out IReadOnlyDictionary<string, object?>? Configuration,
+        out GraphQueryModel? TargetNodes,
+        out int? MaxDepth)
+    {
+        Algorithm = this.Algorithm;
+        Family = this.Family;
+        Nodes = this.Nodes;
+        RelationshipType = this.RelationshipType;
+        Directed = this.Directed;
+        ProjectionName = this.ProjectionName;
+        RelationshipWeightProperty = this.RelationshipWeightProperty;
+        Limit = this.Limit;
+        Configuration = this.Configuration;
+        TargetNodes = this.TargetNodes;
+        MaxDepth = this.MaxDepth;
+    }
+
     /// <summary>Gets normalized algorithm configuration.</summary>
     public IReadOnlyDictionary<string, object?> EffectiveConfiguration => Configuration ??
         new Dictionary<string, object?>();
+
+    /// <summary>Gets the canonical relationship scope, falling back to the legacy single relationship.</summary>
+    public IReadOnlyList<GraphAnalyticsRelationshipDefinition> EffectiveRelationships => Relationships is { Count: > 0 }
+        ? Relationships
+        : [new GraphAnalyticsRelationshipDefinition(RelationshipType, Directed, RelationshipWeightProperty)];
 }
 
 /// <summary>Represents one analytics row while preserving provider-specific measurements.</summary>

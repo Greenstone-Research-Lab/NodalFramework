@@ -13,7 +13,8 @@ namespace Nodal.TigerGraph;
 /// Provides the complete Nodal query pipeline for a TigerGraph graph.
 /// </summary>
 public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityProvider, IGraphMutationProvider, IGraphMigrationProvider, IGraphMigrationHistoryProvider,
-    IGraphMigrationLockProvider, IGraphAnalyticsProvider, IGraphAnalyticsRuntimeProvider, IGraphSchemaIntrospectionProvider
+    IGraphMigrationLockProvider, IGraphAnalyticsProvider, IGraphAnalyticsRuntimeProvider, IGraphSchemaIntrospectionProvider,
+    IGraphAnalyticsScopeCapabilityProvider
 {
     private readonly IGraphMigrationExecutor? migrationExecutor;
     private readonly IGraphMigrationHistoryStore? migrationHistory;
@@ -35,25 +36,34 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
         MutationExecutor = new TigerGraphMutationExecutor(httpClient, options, graphName);
         ResultMaterializer = new JsonGraphResultMaterializer();
         MigrationDialect = new TigerGraphMigrationDialect(graphName);
-        AnalyticsCompiler = new TigerGraphAnalyticsCompiler(graphName, options.AnalyticsQueries);
+        AnalyticsCompiler = CreateAnalyticsCompiler(options, null);
+        var configuredAlgorithms = options.AnalyticsQueries.Keys
+            .Concat(options.AnalyticsBindingManifest?.Bindings.Values.Select(binding => binding.Algorithm) ?? [])
+            .ToHashSet();
+        if (options.AnalyticsProvisioningMode != TigerGraphAnalyticsProvisioningMode.ValidateOnly)
+        {
+            configuredAlgorithms.Add(GraphAnalyticsAlgorithm.PageRank);
+        }
         AnalyticsCapabilities = new GraphAnalyticsCapabilities
         {
             ProviderName = "TigerGraph",
             TestedProviderVersion = "4.2.4 Community",
             ClientVersion = "REST++ / GSQL 4.2.4 baseline",
-            Algorithms = options.AnalyticsQueries.Keys.ToHashSet(),
+            Algorithms = configuredAlgorithms,
             SupportsWeightedRelationships = options.WeightedAnalyticsAlgorithms.Count > 0,
             SupportsProjectionManagement = false,
-            AlgorithmDetails = options.AnalyticsQueries.ToDictionary(
-                item => item.Key,
-                item => new GraphAlgorithmCapability(
-                    item.Key,
+            AlgorithmDetails = configuredAlgorithms.ToDictionary(
+                algorithm => algorithm,
+                algorithm => new GraphAlgorithmCapability(
+                    algorithm,
                     GraphAnalyticsAvailability.InstalledQuery,
                     GraphCapabilityVerification.Compiler,
-                    $"Installed GSQL query '{item.Value}' returning the Nodal analytics response contract.",
-                    SupportsWeights: options.WeightedAnalyticsAlgorithms.Contains(item.Key))),
+                    options.AnalyticsQueries.TryGetValue(algorithm, out var queryName)
+                        ? $"Installed TigerGraph query '{queryName}'."
+                        : "Verified scope binding or explicitly enabled Nodal-managed installed query.",
+                    SupportsWeights: options.WeightedAnalyticsAlgorithms.Contains(algorithm))),
         };
-        AnalyticsRuntime = new TigerGraphAnalyticsRuntime(options.AnalyticsQueries);
+        AnalyticsRuntime = new TigerGraphAnalyticsRuntime(options.AnalyticsQueries, options.AnalyticsBindingManifest);
         SchemaIntrospector = new UnavailableTigerGraphSchemaIntrospector();
     }
 
@@ -68,16 +78,22 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
         : this(httpClient, options, graphName)
     {
         ArgumentNullException.ThrowIfNull(administrativeTransport);
-        if (options.GeneratedQueryExtensions.Contains(TigerGraphQueryExtensionFeature.CorrelatedExistence))
+        var requiresGeneratedCatalog = options.GeneratedQueryExtensions.Contains(TigerGraphQueryExtensionFeature.CorrelatedExistence) ||
+            options.AnalyticsProvisioningMode != TigerGraphAnalyticsProvisioningMode.ValidateOnly;
+        if (requiresGeneratedCatalog)
         {
             var installedQueries = new TigerGraphInstalledQueryCatalog(graphName);
-            QueryCompiler = new TigerGraphQueryCompiler(graphName, installedQueries);
+            if (options.GeneratedQueryExtensions.Contains(TigerGraphQueryExtensionFeature.CorrelatedExistence))
+            {
+                QueryCompiler = new TigerGraphQueryCompiler(graphName, installedQueries);
+                QueryCapabilities = CreateQueryCapabilities(GraphQueryCapability.CorrelatedSubquery);
+            }
+            AnalyticsCompiler = CreateAnalyticsCompiler(options, installedQueries);
             CommandExecutor = new TigerGraphCommandExecutor(
                 httpClient,
                 options,
                 installedQueries,
                 new TigerGraphInstalledQueryInstaller(administrativeTransport, graphName));
-            QueryCapabilities = CreateQueryCapabilities(GraphQueryCapability.CorrelatedSubquery);
         }
         MutationExecutor = new TigerGraphMutationExecutor(
             httpClient,
@@ -159,10 +175,20 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
     };
 
     /// <inheritdoc />
-    public IGraphAnalyticsCompiler AnalyticsCompiler { get; }
+    public IGraphAnalyticsCompiler AnalyticsCompiler { get; private set; }
 
     /// <inheritdoc />
     public GraphAnalyticsCapabilities AnalyticsCapabilities { get; }
+
+    /// <inheritdoc />
+    public void ValidateAnalyticsScope(GraphAnalyticsQueryModel query)
+    {
+        ArgumentNullException.ThrowIfNull(query);
+        if (AnalyticsCompiler is TigerGraphAnalyticsCompiler compiler)
+        {
+            compiler.Validate(query);
+        }
+    }
 
     /// <inheritdoc />
     public IGraphAnalyticsRuntime AnalyticsRuntime { get; }
@@ -221,6 +247,17 @@ public sealed class TigerGraphProvider : IGraphProvider, IGraphQueryCapabilityPr
         ArgumentNullException.ThrowIfNull(snapshot);
         VerifiedQueryExtensions = snapshot;
     }
+
+    private TigerGraphAnalyticsCompiler CreateAnalyticsCompiler(
+        TigerGraphOptions options,
+        TigerGraphInstalledQueryCatalog? generatedQueries) => new(
+            graphName,
+            options.AnalyticsQueries,
+            options.AnalyticsBindingManifest,
+            options.AnalyticsProvisioningMode,
+            options.AnalyticsContractVersion,
+            generatedQueries);
+
 }
 
 [ExcludeFromCodeCoverage]

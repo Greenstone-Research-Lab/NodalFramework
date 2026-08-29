@@ -19,11 +19,13 @@ an explicit architecture decision record and approval in the pull request.
   dialects and executors remain in their provider packages.
 - `Nodal.Analytics` is an optional layer above providers. It must not become a
   hidden dependency of `Nodal.Core` or provider packages.
-- The public analytics boundary contains provider-neutral contracts and
-  provider-executed analytics integration only. Advanced analytics
-  implementations, their configuration, and related research assets are not
-  introduced into this public repository without an explicit commercial and
-  licensing decision.
+- Database-resident analytics stay in provider packages and execute through
+  provider-native engines. Generic algorithms over bounded observations or
+  derived in-memory networks may live in `Nodal.Analytics`; they are never an
+  automatic fallback for a missing provider capability. Pattern recognition,
+  similarity research, premium models, and related assets are not introduced
+  into this public repository without an explicit commercial and licensing
+  decision.
 - Samples, benchmarks, and tests may depend on product packages but product
   code must not depend on samples or tests.
 - New providers must implement existing contracts and capability declarations;
