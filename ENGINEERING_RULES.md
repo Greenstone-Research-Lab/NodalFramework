@@ -163,6 +163,13 @@ an explicit architecture decision record and approval in the pull request.
 
 - English is the canonical language for source documentation and the public
   documentation site.
+- Product behavior starts with a versioned specification under `specs/`.
+  Implementation may begin only after the specification is accepted.
+- Scope changes discovered during implementation update the accepted
+  specification before merge; the pull request links the specification,
+  architecture decisions, tests, documentation, and release evidence.
+- Superseded and rejected specifications remain in history with their status
+  and replacement or rejection rationale. They are not silently deleted.
 - Architecture decisions, provider limitations, and compatibility claims must
   be documented close to the affected feature.
 - Every change should state its scope, tests, provider impact, and migration or
