@@ -5,9 +5,6 @@ on:
     branches: [staging]
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 concurrency:
   group: nuget-staging
   cancel-in-progress: false
@@ -152,6 +149,8 @@ jobs:
   published-consumer-smoke:
     name: Validate published package consumer
     needs: publish-beta
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
