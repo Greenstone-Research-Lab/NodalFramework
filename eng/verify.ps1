@@ -35,4 +35,19 @@ if ($LASTEXITCODE -ne 0) {
 }
 
 & "$PSScriptRoot/verify-packages.ps1" -PackageVersion $PackageVersion
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+
+& "$PSScriptRoot/verify-reproducible-packages.ps1" -PackageVersion $PackageVersion
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+
+& "$PSScriptRoot/verify-documentation-contract.ps1" -PackageVersion $PackageVersion
+if ($LASTEXITCODE -ne 0) {
+    exit $LASTEXITCODE
+}
+
+& "$PSScriptRoot/verify-dependencies.ps1"
 exit $LASTEXITCODE

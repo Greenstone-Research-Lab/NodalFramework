@@ -27,8 +27,15 @@ $packagePath = Join-Path $repositoryRoot $PackageDirectory
 if (-not (Test-Path -LiteralPath $packagePath -PathType Container)) {
     throw "Package directory '$packagePath' was not found."
 }
+$sourcePath = Join-Path $repositoryRoot 'src'
+if (-not (Test-Path -LiteralPath $sourcePath -PathType Container)) {
+    throw "Product source directory '$sourcePath' was not found."
+}
 
 $destination = Join-Path $repositoryRoot $OutputDirectory
+if (Test-Path -LiteralPath $destination) {
+    Remove-Item -LiteralPath $destination -Recurse -Force
+}
 New-Item -ItemType Directory -Path $destination -Force | Out-Null
 $toolPath = Join-Path ([System.IO.Path]::GetTempPath()) "nodal-$assetName"
 $downloadUrl = "https://github.com/microsoft/sbom-tool/releases/download/v$toolVersion/$assetName"
@@ -49,7 +56,7 @@ try {
 
     & $toolPath generate `
         -b $packagePath `
-        -bc $repositoryRoot `
+        -bc $sourcePath `
         -pn 'Nodal Framework packages' `
         -pv $PackageVersion `
         -ps 'Greenstone Research Lab' `

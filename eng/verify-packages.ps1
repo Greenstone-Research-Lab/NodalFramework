@@ -33,6 +33,9 @@ if ($LASTEXITCODE -ne 0) {
     exit $LASTEXITCODE
 }
 
+& (Join-Path $PSScriptRoot 'normalize-nuget-packages.ps1') `
+    -PackageDirectory $outputDirectory
+
 Add-Type -AssemblyName System.IO.Compression.FileSystem
 $packages = @(Get-ChildItem -LiteralPath $outputDirectory -Filter '*.nupkg')
 $symbolPackages = @(Get-ChildItem -LiteralPath $outputDirectory -Filter '*.snupkg')
