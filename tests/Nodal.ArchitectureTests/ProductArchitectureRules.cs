@@ -16,6 +16,7 @@ public sealed class ProductArchitectureRules
         "Nodal.Import.Csv",
         "Nodal.Import.Relational",
         "Nodal.Migrations",
+        "Nodal.Modeling.CodeGeneration",
         "Nodal.Neo4j",
         "Nodal.TigerGraph",
         "Nodal.Tool",
@@ -28,6 +29,7 @@ public sealed class ProductArchitectureRules
         .LoadFilteredDirectory(AppContext.BaseDirectory, "Nodal.Import.Csv.dll", SearchOption.TopDirectoryOnly)
         .LoadFilteredDirectory(AppContext.BaseDirectory, "Nodal.Import.Relational.dll", SearchOption.TopDirectoryOnly)
         .LoadFilteredDirectory(AppContext.BaseDirectory, "Nodal.Migrations.dll", SearchOption.TopDirectoryOnly)
+        .LoadFilteredDirectory(AppContext.BaseDirectory, "Nodal.Modeling.CodeGeneration.dll", SearchOption.TopDirectoryOnly)
         .LoadFilteredDirectory(AppContext.BaseDirectory, "Nodal.Neo4j.dll", SearchOption.TopDirectoryOnly)
         .LoadFilteredDirectory(AppContext.BaseDirectory, "Nodal.TigerGraph.dll", SearchOption.TopDirectoryOnly)
         .LoadFilteredDirectory(AppContext.BaseDirectory, "Nodal.Tool.dll", SearchOption.TopDirectoryOnly)
@@ -60,6 +62,7 @@ public sealed class ProductArchitectureRules
         AssertRule(MustNotDependOn("Nodal.Core", "Nodal.Analytics"));
         AssertRule(MustNotDependOn("Nodal.Core", "Nodal.Import"));
         AssertRule(MustNotDependOn("Nodal.Core", "Nodal.Tool"));
+        AssertRule(MustNotDependOn("Nodal.Core", "Nodal.Modeling.CodeGeneration"));
     }
 
     [Fact]
@@ -84,6 +87,19 @@ public sealed class ProductArchitectureRules
     {
         AssertRule(MustNotDependOn("Nodal.Tool", "Nodal.Neo4j"));
         AssertRule(MustNotDependOn("Nodal.Tool", "Nodal.TigerGraph"));
+    }
+
+    [Fact]
+    public void CodeGenerationMustRemainAProviderNeutralLeafAboveCore()
+    {
+        foreach (var assemblyName in new[]
+                 {
+                     "Nodal.Analytics", "Nodal.Import", "Nodal.Import.Csv", "Nodal.Import.Relational",
+                     "Nodal.Migrations", "Nodal.Neo4j", "Nodal.TigerGraph", "Nodal.Tool",
+                 })
+        {
+            AssertRule(MustNotDependOn("Nodal.Modeling.CodeGeneration", assemblyName));
+        }
     }
 
     [Fact]

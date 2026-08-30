@@ -1,6 +1,7 @@
 using System.Text.Json;
 using System.Xml.Linq;
 using Nodal.Core.Migrations;
+using Nodal.Core.Modeling;
 using Nodal.Core.Mutations;
 using Nodal.Import.Relational;
 using Nodal.Migrations;
@@ -78,8 +79,8 @@ public sealed class NodalCliTests
     }
 
     [Theory]
-    [InlineData(new string[0], "Expected 'nodal <migrations|import> <command>'.")]
-    [InlineData(new[] { "other", "diff" }, "Expected 'nodal <migrations|import> <command>'.")]
+    [InlineData(new string[0], "Expected 'nodal <migrations|import|model> <command>'.")]
+    [InlineData(new[] { "other", "diff" }, "Expected 'nodal <migrations|import|model> <command>'.")]
     [InlineData(new[] { "migrations", "--format", "json" }, "A migration command is required.")]
     [InlineData(new[] { "migrations", "unknown" }, "Unknown migration command 'unknown'.")]
     [InlineData(new[] { "migrations", "validate" }, "Required option '--snapshot' was not supplied.")]
@@ -534,6 +535,7 @@ public sealed class NodalCliTests
             files,
             host,
             "import", "relational", "--output", "northwind.nodalmodel.json",
+            "--descriptor", "model.nodal.json",
             "--graphml", "northwind.graphml", "--gexf", "northwind.gexf", "--dot", "northwind.dot");
 
         Assert.Equal(NodalCli.Success, result.ExitCode);
@@ -543,6 +545,9 @@ public sealed class NodalCliTests
         Assert.Equal("SqlServer", model.Source.Provider);
         Assert.Equal(2, model.Objects.Count);
         Assert.Single(model.Relations);
+        var descriptor = GraphModelDescriptorJson.Deserialize(files.Content["model.nodal.json"]);
+        Assert.Equal(2, descriptor.Nodes.Count);
+        Assert.Single(descriptor.Relations);
         Assert.NotNull(XDocument.Parse(files.Content["northwind.graphml"]).Root);
         Assert.NotNull(XDocument.Parse(files.Content["northwind.gexf"]).Root);
         Assert.Contains("digraph RelationalInteractionNetwork", files.Content["northwind.dot"], StringComparison.Ordinal);
@@ -610,6 +615,68 @@ public sealed class NodalCliTests
 
         Assert.IsType<PublicRelationalInspectionHost>(host);
         Assert.IsType<NotSupportedException>(creationFailure.InnerException);
+    }
+
+    [Fact]
+    public async Task ModelGenerateInspectAndValidateProvideDeterministicEvidence()
+    {
+        var descriptor = ModelDescriptor();
+        var files = Files(("model.nodal.json", GraphModelDescriptorJson.Serialize(descriptor)));
+
+        var generation = await RunAsync(
+            files,
+            "model", "generate", "--descriptor", "model.nodal.json", "--output", "generated",
+            "--namespace", "Northwind.Graph", "--context", "NorthwindContext");
+        var inspection = await RunAsync(
+            files,
+            "model", "inspect", "--descriptor", "model.nodal.json", "--format", "json",
+            "--output", "inspection.json");
+        var validation = await RunAsync(files, "model", "validate", "--descriptor", "model.nodal.json");
+
+        Assert.Equal(NodalCli.Success, generation.ExitCode);
+        Assert.Contains("Generated 5 files", generation.Output, StringComparison.Ordinal);
+        Assert.Contains("public sealed class NorthwindContext", files.Content["generated/NorthwindContext.cs"], StringComparison.Ordinal);
+        Assert.Contains("\"nodeCount\": 1", files.Content["inspection.json"], StringComparison.Ordinal);
+        Assert.Equal(NodalCli.Success, inspection.ExitCode);
+        Assert.Equal("Valid graph model descriptor.", validation.Output.Trim());
+        Assert.Equal(NodalCli.Success, validation.ExitCode);
+    }
+
+    [Fact]
+    public async Task ModelDiffReportsAndCanFailOnBreakingChanges()
+    {
+        var before = ModelDescriptor();
+        var after = before with { Nodes = [], Relations = [] };
+        var files = Files(
+            ("before.json", GraphModelDescriptorJson.Serialize(before)),
+            ("after.json", GraphModelDescriptorJson.Serialize(after)));
+
+        var report = await RunAsync(
+            files,
+            "model", "diff", "--from", "before.json", "--to", "after.json", "--format", "json");
+        var gate = await RunAsync(
+            files,
+            "model", "diff", "--from", "before.json", "--to", "after.json", "--fail-on-breaking", "true");
+
+        Assert.Equal(NodalCli.Success, report.ExitCode);
+        Assert.Contains("nodeRemoved", report.Output, StringComparison.Ordinal);
+        Assert.Equal(NodalCli.InvalidData, gate.ExitCode);
+        Assert.Contains("NODAL-MODEL-BREAKING", gate.Error, StringComparison.Ordinal);
+    }
+
+    [Theory]
+    [InlineData(new[] { "model", "unknown" }, "Unknown model command 'unknown'.")]
+    [InlineData(new[] { "model", "generate", "--descriptor", "x", "--output", " " }, "Required option '--output' was not supplied.")]
+    [InlineData(new[] { "model", "inspect", "--descriptor", "x", "--format", "xml" }, "Option '--format' must be 'text' or 'json'.")]
+    [InlineData(new[] { "model", "diff", "--from", "x", "--to", "x", "--fail-on-breaking", "yes" }, "Option '--fail-on-breaking' must be 'true' or 'false'.")]
+    public async Task ModelUsageFailuresAreStable(string[] arguments, string expected)
+    {
+        var files = Files(("x", GraphModelDescriptorJson.Serialize(ModelDescriptor())));
+
+        var result = await RunAsync(files, arguments);
+
+        Assert.Equal(NodalCli.UsageError, result.ExitCode);
+        Assert.StartsWith(expected, result.Error, StringComparison.Ordinal);
     }
 
     private static async Task<CliResult> RunAsync(MemoryFileSystem files, params string[] arguments)
@@ -745,6 +812,13 @@ public sealed class NodalCliTests
     };
 
     private static string ManifestJson() => JsonSerializer.Serialize(Manifest(), CamelCaseJson);
+
+    private static GraphModelDescriptor ModelDescriptor() => new(
+        GraphModelFormat.CurrentVersion,
+        [new NodeTypeDescriptor(
+            "person", "Person", "Person", new GraphKeyDescriptor(["id"]),
+            [new GraphPropertyDescriptor("id", "Id", GraphValueKind.Text, false)])],
+        [new RelationTypeDescriptor("knows", "KNOWS", "Knows", "person", "person", true, [])]);
 
     private static NodalMigrationBundleManifest Manifest() => new(
         "20260825_001_people",
@@ -925,6 +999,10 @@ public sealed class NodalCliTests
 
             Content[path] = content;
             return ValueTask.CompletedTask;
+        }
+
+        public void CreateDirectory(string path)
+        {
         }
 
         public IReadOnlyList<string> EnumerateFiles(string directory, string searchPattern)

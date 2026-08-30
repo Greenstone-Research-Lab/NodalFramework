@@ -17,6 +17,7 @@ internal sealed class FoodDeliveryContext(IGraphProvider provider) : NodalContex
     public GraphSet<WeatherObservation> WeatherObservations => Set<WeatherObservation>();
 
     public RelationSet<Customer, PlacedOrder, FoodOrder> PlacedOrders => Relations<Customer, PlacedOrder, FoodOrder>();
+    public RelationSet<Customer, ReferredCustomer, Customer> CustomerReferrals => Relations<Customer, ReferredCustomer, Customer>();
     public RelationSet<FoodOrder, ContainsFood, Food> ContainsFoods => Relations<FoodOrder, ContainsFood, Food>();
     public RelationSet<FoodOrder, FromRestaurant, Restaurant> FromRestaurants => Relations<FoodOrder, FromRestaurant, Restaurant>();
     public RelationSet<FoodOrder, FulfilledBy, Courier> FulfilledOrders => Relations<FoodOrder, FulfilledBy, Courier>();

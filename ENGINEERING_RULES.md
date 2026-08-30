@@ -19,6 +19,11 @@ an explicit architecture decision record and approval in the pull request.
   dialects and executors remain in their provider packages.
 - `Nodal.Analytics` is an optional layer above providers. It must not become a
   hidden dependency of `Nodal.Core` or provider packages.
+- Canonical model descriptors live in `Nodal.Core.Modeling`. Deterministic
+  strong-type generation depends only on those contracts and remains public.
+  Runtime dictionary execution, tenant compilation, proprietary enrichment,
+  and intelligence models remain outside this public repository unless an
+  explicit commercial and source-custody decision changes that boundary.
 - Database-resident analytics stay in provider packages and execute through
   provider-native engines. Generic algorithms over bounded observations or
   derived in-memory networks may live in `Nodal.Analytics`; they are never an
@@ -135,6 +140,8 @@ an explicit architecture decision record and approval in the pull request.
 - The Sonar intended-architecture model mirrors the executable dependency rules.
   A change to one model must update the other in the same pull request.
 - Public examples should compile and run in CI where practical.
+- Generated source must be deterministic, carry its descriptor fingerprint,
+  use one public model type per file, and compile in an isolated consumer test.
 - Formatting, build, tests, coverage, package validation, and security checks
   must pass before merge.
 - Benchmarks must publish method, dataset, runtime, provider version, and

@@ -15,6 +15,7 @@ internal sealed class FoodDeliveryMigration : NodalMigration
         .CreateNode<DeliveryZone>()
         .CreateNode<WeatherObservation>()
         .CreateRelation<PlacedOrder, Customer, FoodOrder>()
+        .CreateRelation<ReferredCustomer, Customer, Customer>()
         .CreateRelation<ContainsFood, FoodOrder, Food>()
         .CreateRelation<FromRestaurant, FoodOrder, Restaurant>()
         .CreateRelation<FulfilledBy, FoodOrder, Courier>()

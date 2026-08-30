@@ -9,6 +9,7 @@
   </PropertyGroup>
   <ItemGroup>
     <PackageReference Include="Nodal.Core" Version="$(NodalPackageVersion)" />
+    <PackageReference Include="Nodal.Analytics" Version="$(NodalPackageVersion)" />
     <PackageReference Include="Nodal.Import.Csv" Version="$(NodalPackageVersion)" />
     <PackageReference Include="Nodal.Import.Relational" Version="$(NodalPackageVersion)" />
     <PackageReference Include="Nodal.Migrations" Version="$(NodalPackageVersion)" />

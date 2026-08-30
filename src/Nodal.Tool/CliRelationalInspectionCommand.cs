@@ -1,4 +1,5 @@
 using System.Globalization;
+using Nodal.Core.Modeling;
 using Nodal.Import.Relational;
 
 namespace Nodal.Tool;
@@ -12,7 +13,7 @@ internal static class CliRelationalInspectionCommand
         IRelationalInspectionHost? inspectionHost,
         CancellationToken cancellationToken)
     {
-        request.EnsureOnly("--output", "--graphml", "--gexf", "--dot");
+        request.EnsureOnly("--output", "--descriptor", "--graphml", "--gexf", "--dot");
         var destination = request.Require("--output");
         ValidateDestinations(request, destination);
         var ownsHost = inspectionHost is null;
@@ -25,6 +26,15 @@ internal static class CliRelationalInspectionCommand
                 destination,
                 string.Concat(RelationalInteractionModelJson.Serialize(model), Environment.NewLine),
                 cancellationToken).ConfigureAwait(false);
+
+            if (request.Options.TryGetValue("--descriptor", out var descriptorDestination))
+            {
+                var descriptor = RelationalGraphModelDescriptorBuilder.Build(model);
+                await fileSystem.WriteAllTextAsync(
+                    descriptorDestination,
+                    string.Concat(GraphModelDescriptorJson.Serialize(descriptor), Environment.NewLine),
+                    cancellationToken).ConfigureAwait(false);
+            }
 
             var exportCount = 0;
             exportCount += await WriteExportAsync(
@@ -80,7 +90,7 @@ internal static class CliRelationalInspectionCommand
         {
             canonicalDestination,
         };
-        foreach (var option in new[] { "--graphml", "--gexf", "--dot" })
+        foreach (var option in new[] { "--descriptor", "--graphml", "--gexf", "--dot" })
         {
             if (!request.Options.TryGetValue(option, out var path))
             {

@@ -107,3 +107,41 @@ Installed queries return `nodal_node` and `nodal_metrics` fields. Algorithms tha
 Weight support is algorithm-specific. Neo4j publishes it in each `GraphAlgorithmCapability`; TigerGraph requires the host to include compatible installed queries in `WeightedAnalyticsAlgorithms`. See [Compatibility and capabilities](../providers/compatibility.md) for version baselines, verification levels, and the provider matrix.
 
 Reusable analytics shapes can be compiled once with `NodalCompiledAnalyticsQuery.Compile(...)`; `CreateCacheKey(...)` supplies a deterministic SHA-256 shape key for application caches.
+
+## Bounded observations and derived networks
+
+`Nodal.Analytics` is intentionally a second analytics surface. It does not
+replace provider-native algorithms for a database-resident graph. It operates
+only after an explicitly bounded subgraph query has become a canonical
+`GraphObservation`, which is useful when an application constructs a new
+derived network that does not exist in Neo4j or TigerGraph.
+
+```csharp
+var request = new GraphObservationRequest(
+    query.ToQueryModel() with { Projection = GraphQueryProjection.Subgraph },
+    new GraphObservationOptions
+    {
+        MaxNodes = 5_000,
+        MaxRelations = 20_000,
+        NodeProperties = new HashSet<string>(["segment"], StringComparer.Ordinal),
+        RelationProperties = new HashSet<string>(["observedAt"], StringComparer.Ordinal),
+    },
+    Timeout: TimeSpan.FromSeconds(30));
+
+var source = new GraphQueryObservationSource(provider);
+GraphObservation observation = await source.ObserveAsync(request, cancellationToken);
+
+DerivedNetworkAnalysis result = GraphObservationNetworkAnalyzer.Analyze(
+    observation,
+    new DerivedNetworkAnalysisOptions
+    {
+        RelationTypes = new HashSet<string>(["FOLLOWED_BY"], StringComparer.Ordinal),
+        TreatAsUndirected = false,
+    });
+```
+
+The public baseline computes in/out/total degree, weakly connected components,
+and deterministic PageRank. Server and client bounds, cancellation, timeout,
+endpoint integrity, convergence, and relation selection are explicit. An
+oversized or malformed observation fails; there is no silent partial result or
+silent fallback from provider-native analytics.

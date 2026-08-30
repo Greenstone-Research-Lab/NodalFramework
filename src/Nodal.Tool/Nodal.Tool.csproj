@@ -17,6 +17,7 @@
     <ProjectReference Include="..\Nodal.Import.Csv\Nodal.Import.Csv.csproj" />
     <ProjectReference Include="..\Nodal.Import.Relational\Nodal.Import.Relational.csproj" />
     <ProjectReference Include="..\Nodal.Migrations\Nodal.Migrations.csproj" />
+    <ProjectReference Include="..\Nodal.Modeling.CodeGeneration\Nodal.Modeling.CodeGeneration.csproj" />
   </ItemGroup>
 
 </Project>

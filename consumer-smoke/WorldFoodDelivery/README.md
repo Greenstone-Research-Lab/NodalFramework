@@ -6,9 +6,16 @@ repository.
 
 The scenario imports a small Tallinn food-delivery dataset, tracks a
 provider-neutral graph mutation batch, compiles portable queries for Neo4j and
-TigerGraph, plans a graph migration, and inspects the equivalent normalized
-relational design. Relational inspection produces canonical JSON plus GraphML,
-GEXF, and DOT projections and then verifies their structural meaning.
+TigerGraph, compiles provider-native PageRank plans, creates a bounded canonical
+observation, runs transparent derived-network metrics, plans a graph migration,
+and inspects the equivalent normalized relational design. Relational inspection
+produces an interaction model, a canonical graph descriptor, GraphML, GEXF, and
+DOT projections and then verifies their structural meaning.
+
+The clean-room script installs the published `Nodal.Tool`, validates and
+inspects the descriptor, generates one strong type per file, recompiles the
+consumer with those generated types, and proves an additive schema
+diff/regeneration round. No repository project reference is allowed.
 
 When run directly, generated inspection files are retained in `artifacts/`.
 Pass a second command-line argument to select another output directory.

@@ -10,6 +10,8 @@ internal interface ICliFileSystem
 
     ValueTask WriteAllTextAsync(string path, string content, CancellationToken cancellationToken);
 
+    void CreateDirectory(string path);
+
     IReadOnlyList<string> EnumerateFiles(string directory, string searchPattern);
 }
 
@@ -36,6 +38,8 @@ internal sealed class PhysicalCliFileSystem : ICliFileSystem
         CancellationToken cancellationToken) =>
         await File.WriteAllTextAsync(path, content, Utf8WithoutByteOrderMark, cancellationToken)
             .ConfigureAwait(false);
+
+    public void CreateDirectory(string path) => Directory.CreateDirectory(path);
 
     public IReadOnlyList<string> EnumerateFiles(string directory, string searchPattern) =>
         Directory.GetFiles(directory, searchPattern, SearchOption.TopDirectoryOnly)
