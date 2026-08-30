@@ -27,6 +27,13 @@ the application project. The provider brings `Nodal.Core` transitively; add
 All pre-release package versions move together. Do not mix different Nodal
 beta versions in one application.
 
+The repository's World Food Delivery reference application is the canonical
+package-only documentation contract. CI restores these packages into a clean
+workspace, runs the complete scenario, and compiles generated strong types
+without any repository project reference. See
+[release evidence and reproducibility](./releases/release-evidence) for the
+verification chain.
+
 Install the command-line package as a global or manifest-local .NET tool rather
 than an application package:
 

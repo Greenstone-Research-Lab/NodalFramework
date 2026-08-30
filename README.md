@@ -549,7 +549,7 @@ The repository has one local command matching the CI quality job:
 powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify.ps1
 ```
 
-It restores dependencies, verifies formatting, builds in Release mode, runs the complete test suite, enforces at least 95% line coverage for every governed production package, and validates the publishable NuGet archives. Coverage can also be run independently:
+It restores dependencies, verifies formatting, builds in Release mode, runs the complete test suite, enforces public API conventions and at least 95% line coverage for every governed production package, validates the publishable NuGet archives, proves byte-for-byte package reproducibility, checks the package-only documentation contract, and audits transitive dependencies. Coverage can also be run independently:
 
 ```powershell
 powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-coverage.ps1
@@ -565,11 +565,18 @@ powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-packages.ps1
 
 The package gate produces all nine `.nupkg` and `.snupkg` artifacts, then inspects their manifests and contents for the MPL-2.0 expression, repository metadata, README, license, IntelliSense XML, target framework, and required package dependencies.
 
+Reproducibility and documentation/package alignment can be checked separately:
+
+```powershell
+powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-reproducible-packages.ps1
+powershell -NoProfile -ExecutionPolicy Bypass -File ./eng/verify-documentation-contract.ps1
+```
+
 ## Publishing
 
 Beta packages are published only after a pull request promotes `developer` to `staging`. The `Publish Beta Packages` workflow assigns one immutable `0.1.0-beta.<run>` version to all nine packages, runs the complete QA gate, generates release evidence and an SPDX SBOM, attests package provenance, exchanges GitHub's OIDC identity for a short-lived NuGet credential, and publishes `Nodal.Core` before its dependent packages. No long-lived NuGet API key is stored by the repository.
 
-After publication, the same workflow runs a clean-room World Food Delivery consumer smoke test. It copies a small CSV order dataset into a fresh temporary console application, restores only the immutable packages from NuGet.org, imports customers, restaurants, foods, orders, couriers, and relationship payloads in one bounded unit of work, and validates migration planning plus Neo4j and TigerGraph query boundaries. The consumer project contains no `ProjectReference`; its resolved package identities are retained as a workflow artifact. This verifies the experience an external application receives, rather than merely rebuilding this repository.
+After publication, the same workflow runs a clean-room World Food Delivery consumer smoke test. It copies a small CSV order dataset into a fresh temporary console application, restores only the immutable packages from NuGet.org, imports customers, restaurants, foods, orders, couriers, and relationship payloads in one bounded unit of work, and validates migration planning plus Neo4j and TigerGraph query boundaries. The consumer project contains no `ProjectReference`; its resolved package identities are retained as a workflow artifact. This verifies the experience an external application receives, rather than merely rebuilding this repository. A successful consumer run then creates the immutable version tag and GitHub prerelease for the exact staging commit and attaches the packages, symbols, SBOM, hashes, dependency audit, provenance, reproducibility, and consumer evidence.
 
 The GitHub `staging` environment must define `NUGET_USER` as the NuGet profile name. NuGet Trusted Publishing must match repository owner `Greenstone-Research-Lab`, repository `NodalFramework`, workflow file `publish-alpha.yml`, and environment `staging`. The historical workflow filename is retained because it forms part of the existing trusted-publishing identity; its workflow and job names now describe the beta channel. Publishing deliberately does not use `--skip-duplicate`, ensuring package conflicts and reserved identifiers fail visibly.
 

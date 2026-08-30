@@ -5,9 +5,6 @@ on:
     branches: [staging]
   workflow_dispatch:
 
-permissions:
-  contents: read
-
 concurrency:
   group: nuget-staging
   cancel-in-progress: false
@@ -26,6 +23,7 @@ jobs:
       id-token: write
     outputs:
       package_version: ${{ steps.version.outputs.package_version }}
+      source_sha: ${{ github.sha }}
     if: github.ref == 'refs/heads/staging'
     runs-on: ubuntu-latest
     timeout-minutes: 20
@@ -61,13 +59,6 @@ jobs:
         shell: pwsh
         run: ./eng/verify.ps1 -PackageVersion $env:PACKAGE_VERSION
 
-      - name: Generate release evidence and capability report
-        shell: pwsh
-        run: |
-          ./eng/generate-release-evidence.ps1 `
-            -PackageVersion $env:PACKAGE_VERSION `
-            -CommitSha '${{ github.sha }}'
-
       - name: Audit NuGet dependencies and attach release evidence
         shell: pwsh
         run: ./eng/verify-dependencies.ps1 -OutputFile 'TestResults/release-evidence/dependency-audit.json'
@@ -75,6 +66,13 @@ jobs:
       - name: Generate SPDX SBOM
         shell: pwsh
         run: ./eng/generate-sbom.ps1 -PackageVersion $env:PACKAGE_VERSION
+
+      - name: Generate release evidence and capability report
+        shell: pwsh
+        run: |
+          ./eng/generate-release-evidence.ps1 `
+            -PackageVersion $env:PACKAGE_VERSION `
+            -CommitSha '${{ github.sha }}'
 
       - name: Upload verified package artifacts
         uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
@@ -151,6 +149,8 @@ jobs:
   published-consumer-smoke:
     name: Validate published package consumer
     needs: publish-beta
+    permissions:
+      contents: read
     runs-on: ubuntu-latest
     timeout-minutes: 25
     steps:
@@ -175,3 +175,53 @@ jobs:
           path: TestResults/published-consumer-smoke.json
           if-no-files-found: error
           retention-days: 30
+
+  release-record:
+    name: Create immutable beta release record
+    needs: [publish-beta, published-consumer-smoke]
+    permissions:
+      contents: write
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    steps:
+      - name: Download verified release artifacts
+        uses: actions/download-artifact@d3f86a106a0bac45b974a628896c90dbdf5c8093 # v4
+        with:
+          pattern: '*${{ needs.publish-beta.outputs.package_version }}*'
+          path: release-artifacts
+          merge-multiple: true
+
+      - name: Create or verify immutable prerelease
+        shell: pwsh
+        env:
+          GH_TOKEN: ${{ github.token }}
+          PACKAGE_VERSION: ${{ needs.publish-beta.outputs.package_version }}
+          SOURCE_SHA: ${{ needs.publish-beta.outputs.source_sha }}
+        run: |
+          $tag = "v$env:PACKAGE_VERSION"
+          $repository = '${{ github.repository }}'
+          $assets = @(Get-ChildItem -LiteralPath 'release-artifacts' -File -Recurse |
+            ForEach-Object FullName)
+          if ($assets.Count -lt 22) {
+            throw "Expected package, SBOM, audit, reproducibility, and consumer evidence; found $($assets.Count) files."
+          }
+          $existing = gh release view $tag --repo $repository --json targetCommitish,url 2>$null
+          if ($LASTEXITCODE -eq 0) {
+            $release = $existing | ConvertFrom-Json
+            if ($release.targetCommitish -ne $env:SOURCE_SHA) {
+              throw "Release '$tag' already targets '$($release.targetCommitish)', not '$env:SOURCE_SHA'."
+            }
+            Write-Host "Verified existing immutable release $($release.url)."
+          }
+          else {
+            gh release create $tag `
+              --repo $repository `
+              --target $env:SOURCE_SHA `
+              --title "Nodal Framework $env:PACKAGE_VERSION" `
+              --notes "Automated beta release from protected staging commit $env:SOURCE_SHA. Package hashes, SBOM, dependency audit, provenance, and clean-room evidence are attached." `
+              --prerelease `
+              $assets
+            if ($LASTEXITCODE -ne 0) {
+              throw "GitHub prerelease '$tag' could not be created."
+            }
+          }

@@ -9,6 +9,7 @@
 
   <ItemGroup>
     <ProjectReference Include="..\..\src\Nodal.Import\Nodal.Import.csproj" />
+    <ProjectReference Include="..\..\src\Nodal.Import.Csv\Nodal.Import.Csv.csproj" />
     <ProjectReference Include="..\..\src\Nodal.Import.Relational\Nodal.Import.Relational.csproj" />
     <ProjectReference Include="..\..\src\Nodal.Analytics\Nodal.Analytics.csproj" />
     <PackageReference Include="coverlet.collector" Version="6.0.4" />

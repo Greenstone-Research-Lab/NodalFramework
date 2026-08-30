@@ -14,7 +14,7 @@ const sidebars: SidebarsConfig = {
     'migrations',
     'architecture',
     {type: 'category', label: 'Contributing', items: ['contributing/spec-driven-development']},
-    {type: 'category', label: 'Releases and security', items: ['releases/0.1-beta', 'releases/versioning-policy', 'security/dependency-risk']},
+    {type: 'category', label: 'Releases and security', items: ['releases/0.1-beta', 'releases/versioning-policy', 'releases/release-evidence', 'security/dependency-risk']},
     'roadmap',
   ],
 };

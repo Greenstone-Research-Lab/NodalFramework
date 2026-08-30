@@ -4,6 +4,10 @@ This project proves that a new application can restore and use Nodal only from
 immutable NuGet packages. It deliberately has no project reference to the Nodal
 repository.
 
+It is also the canonical package-only documentation contract. Public guide
+examples are accepted for a beta only when this external-consumer journey
+continues to compile and run against the exact package set.
+
 The scenario imports a small Tallinn food-delivery dataset, tracks a
 provider-neutral graph mutation batch, compiles portable queries for Neo4j and
 TigerGraph, compiles provider-native PageRank plans, creates a bounded canonical

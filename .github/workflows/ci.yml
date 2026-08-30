@@ -91,6 +91,14 @@ jobs:
         shell: pwsh
         run: ./eng/verify-packages.ps1
 
+      - name: Verify reproducible NuGet packages
+        shell: pwsh
+        run: ./eng/verify-reproducible-packages.ps1
+
+      - name: Verify documentation and package contract
+        shell: pwsh
+        run: ./eng/verify-documentation-contract.ps1
+
       - name: Verify clean-room consumer against package artifacts
         shell: pwsh
         run: |
@@ -102,6 +110,17 @@ jobs:
       - name: Audit NuGet dependencies
         shell: pwsh
         run: ./eng/verify-dependencies.ps1
+
+      - name: Upload beta-closure evidence
+        uses: actions/upload-artifact@ea165f8d65b6e75b540449e92b4886f43607fa02 # v4
+        with:
+          name: beta-closure-${{ github.sha }}
+          path: |
+            TestResults/dependency-audit.json
+            TestResults/published-consumer-smoke.json
+            TestResults/reproducible-packages/reproducibility.json
+          if-no-files-found: error
+          retention-days: 14
 
   neo4j-smoke:
     name: Neo4j live smoke
